@@ -1,0 +1,29 @@
+name: WACRM CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'feat/**']
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test --if-present
+      - run: npm run build
+        env:
+          # Build must not need real provider or production secrets.
+          DATABASE_URL: postgresql://build:build@127.0.0.1:5432/wacrm
+          AUTH_SECRET: ci-only-not-a-production-secret
+          APP_URL: http://localhost:3000
