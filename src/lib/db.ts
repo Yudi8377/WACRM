@@ -8,7 +8,7 @@ export const db = globalForDb.wacrmPool ?? new Pool({
   max: 5,
   idleTimeoutMillis: 10_000,
   connectionTimeoutMillis: 5_000,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: true } : undefined
+  ssl: { rejectUnauthorized: true }
 });
 
 if (process.env.NODE_ENV !== 'production') globalForDb.wacrmPool = db;
