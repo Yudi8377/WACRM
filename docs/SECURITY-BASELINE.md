@@ -11,3 +11,10 @@
 - Sebelum produksi: uji lintas tenant, SSRF, CSRF, XSS, kebocoran log, webhook spoofing, token expiry, backup/restore, dan penghapusan data.
 
 Dokumen ini adalah target kontrol keamanan, bukan pernyataan bahwa aplikasi sudah diaudit atau siap produksi.
+
+## Catatan verifikasi Neon saat inisialisasi
+
+- Role bawaan `neondb_owner` pada branch development terverifikasi memiliki `rolbypassrls=true`; role ini **tidak boleh** dipakai sebagai kredensial runtime aplikasi.
+- Pembuatan role runtime melalui konektor Neon pada sesi ini juga menghasilkan role dengan `BYPASSRLS`; role percobaan tersebut telah dihapus dan tidak digunakan.
+- Sebelum aplikasi dihubungkan ke data pelanggan, provision role runtime melalui mekanisme administrasi Neon yang mendukung `NOBYPASSRLS`, lalu verifikasi `rolsuper=false` dan `rolbypassrls=false` pada role tersebut. Jangan lanjut ke produksi sebelum pemeriksaan ini lulus.
+- RLS policy aktif pada 12 tabel branch development, tetapi keberadaan policy tidak cukup bila role koneksi dapat melewati RLS.
