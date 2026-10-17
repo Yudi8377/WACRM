@@ -1,22 +1,9 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { db } from '@/lib/db';
+import { safeEqual, verifyMetaSignature } from '@/lib/connectors/meta-signature';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function safeEqual(left: string, right: string): boolean {
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-function verifySignature(rawBody: string, signature: string | null, appSecret: string): boolean {
-  if (!signature?.startsWith('sha256=')) return false;
-  const suppliedHex = signature.slice('sha256='.length);
-  if (!/^[a-f0-9]{64}$/i.test(suppliedHex)) return false;
-  const expectedHex = createHmac('sha256', appSecret).update(rawBody, 'utf8').digest('hex');
-  return safeEqual(expectedHex.toLowerCase(), suppliedHex.toLowerCase());
-}
 
 function getProviderAccountId(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object') return null;
@@ -49,7 +36,7 @@ export async function POST(request: Request) {
 
   const rawBody = await request.text();
   if (rawBody.length > 1_000_000) return Response.json({ error: 'Payload too large' }, { status: 413 });
-  if (!verifySignature(rawBody, request.headers.get('x-hub-signature-256'), appSecret)) {
+  if (!verifyMetaSignature(rawBody, request.headers.get('x-hub-signature-256'), appSecret)) {
     return Response.json({ error: 'Invalid webhook signature' }, { status: 401 });
   }
 
