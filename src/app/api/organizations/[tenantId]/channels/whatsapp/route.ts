@@ -3,7 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { withTenantContext, TenantAccessError } from "@/lib/tenant-context";
 import { encryptConnectorToken } from "@/lib/connectors/token-crypto";
-import { MetaWhatsAppValidationError, validateMetaWhatsAppConnection } from "@/lib/connectors/meta-whatsapp-validation";
+import { MetaWhatsAppValidationError, validateMetaWhatsAppConnection, type ValidatedMetaWhatsAppConnection } from "@/lib/connectors/meta-whatsapp-validation";
 import { isUuid } from "@/lib/connectors/whatsapp-policy";
 
 export const runtime = "nodejs";
@@ -45,7 +45,7 @@ export async function POST(request: Request, context: { params: Promise<{ tenant
     return Response.json({ error: "Workspace belum dapat diverifikasi." }, { status: 500 });
   }
 
-  let validated;
+  let validated: ValidatedMetaWhatsAppConnection;
   try {
     validated = await validateMetaWhatsAppConnection({
       appId: process.env.META_APP_ID,
