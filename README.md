@@ -21,6 +21,12 @@ WACRM adalah aplikasi CRM omnichannel mandiri yang dibangun untuk WhatsApp Busin
 
 Status 'fondasi' tidak berarti akun platform sudah tersambung atau App Review sudah disetujui.
 
+## Autentikasi dan workspace
+- Autentikasi email/kata sandi ditangani Better Auth pada server, dengan sesi disimpan di Neon.
+- Gunakan kata sandi minimal 12 karakter dan `AUTH_SECRET` acak yang kuat (minimal 32 karakter); jangan pernah commit secret.
+- Setelah daftar/masuk, pengguna dapat membuat workspace organisasi. RLS dan membership tetap membatasi akses data tenant.
+- Migrasi `0004_better_auth_and_membership_listing.sql` harus diuji pada branch `development` sebelum produksi. Berikan hak tabel autentikasi kepada role runtime secara eksplisit.
+
 ## Database
 Gunakan Neon branch `development` untuk migrasi dan pengujian. Branch `production` tidak boleh dimigrasikan sebelum hasil pengujian development ditinjau.
 
