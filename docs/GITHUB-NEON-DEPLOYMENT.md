@@ -43,9 +43,16 @@ GitHub + Neon do not run the Next.js server by themselves. The repository now in
 2. Clone this repository on the VPS and check out the reviewed `main` commit.
 3. Copy `.env.example` to `.env`. Set `APP_DOMAIN`, production `DATABASE_URL`, `AUTH_SECRET`, `APP_ENCRYPTION_KEY`, `META_APP_ID`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, and `WEBHOOK_WORKER_DATABASE_URL`. Use secret values only in the VPS environment / Neon credential manager; never commit `.env`.
 4. Generate secrets on the VPS, for example `openssl rand -base64 48` for `AUTH_SECRET`, `openssl rand -base64 32` for `APP_ENCRYPTION_KEY`, and `openssl rand -hex 32` for the webhook verify token.
-5. On the Neon production branch, create separate least-privilege roles before applying migrations:
+5. On the Neon production branch, create separate least-privilege roles before applying migrations. Run as the Neon database owner (only if these roles do not already exist):
+
+   ```sql
+   CREATE ROLE wacrm_runtime LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+   CREATE ROLE wacrm_worker NOLOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+   ```
+
+   Set the runtime password through the approved Neon role credential flow. Set the worker password the same way, then enable its login with `ALTER ROLE wacrm_worker LOGIN;`.
    - `wacrm_runtime`: LOGIN, NOINHERIT, NOSUPERUSER, NOBYPASSRLS, NOCREATEDB, NOCREATEROLE.
-   - `wacrm_worker`: start as NOLOGIN, NOINHERIT, NOSUPERUSER, NOBYPASSRLS, NOCREATEDB, NOCREATEROLE; set a password through the approved Neon role credential flow, then enable LOGIN.
+   - `wacrm_worker`: LOGIN only after its password is configured; otherwise keep NOLOGIN.
    - Confirm neither role is a member of `neon_superuser`. Do not use the Neon role-creation shortcut if it adds elevated membership.
 6. Take a backup/confirm recovery first, then apply migrations `0001` through `0006` in order on production only after the development validation is accepted. Migration `0005` requires the `wacrm_worker` role to exist first. Migrations are not run automatically by the app or CI.
 7. After the migrations, grant the runtime role schema/table/sequence privileges required by the application, then verify RLS is enabled/forced and the role flags are safe. Use the dedicated worker connection string only for the worker service.
