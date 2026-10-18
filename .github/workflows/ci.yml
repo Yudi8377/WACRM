@@ -21,6 +21,17 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - name: Validate self-hosted Compose configuration
+        env:
+          APP_DOMAIN: crm.example.com
+          DATABASE_URL: postgresql://build:build@127.0.0.1:5432/wacrm
+          AUTH_SECRET: wacrm-ci-build-only-placeholder-secret-not-for-runtime
+          APP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          META_APP_ID: 12345
+          META_APP_SECRET: ci-only-placeholder
+          META_WEBHOOK_VERIFY_TOKEN: ci-only-placeholder
+          WEBHOOK_WORKER_DATABASE_URL: postgresql://worker:worker@127.0.0.1:5432/wacrm
+        run: docker compose config --quiet
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test --if-present
