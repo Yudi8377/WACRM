@@ -24,7 +24,7 @@ export const auth = betterAuth({
   database: authPool,
   secret: process.env.AUTH_SECRET,
   baseURL: process.env.AUTH_URL || process.env.APP_URL || "http://localhost:3000",
-  trustedOrigins: [process.env.APP_URL || "http://localhost:3000"],
+  trustedOrigins: [...new Set([process.env.APP_URL, process.env.AUTH_URL, "http://localhost:3000"].filter((origin): origin is string => Boolean(origin)))],
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 12,
