@@ -1,7 +1,3 @@
-{
-  email {$ACME_EMAIL:admin@example.com}
-}
-
 {$APP_DOMAIN} {
   encode zstd gzip
   reverse_proxy web:3000
