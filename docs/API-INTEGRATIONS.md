@@ -34,6 +34,10 @@ Webhook callback Meta: `https://<domain-anda>/api/webhooks/meta`. Konfigurasikan
 - Pengiriman sinkron dengan catatan idempotensi persisten; jika respons 502/503 atau status `queued`, jangan melakukan retry otomatis dengan kunci baru karena provider mungkin telah menerima pesan. Periksa status terlebih dahulu.
 - Rate limiting per tenant dan outbox retry otomatis tetap menjadi gerbang sebelum volume komersial tinggi.
 
+## Evolution API (opsional, bukan default)
+
+Penilaian, daftar komponen, batasan adapter, arsitektur, dan pemeriksaan lisensi tersedia di [`EVOLUTION-API-ADOPTION.md`](./EVOLUTION-API-ADOPTION.md). Helper `src/lib/connectors/evolution-api.ts` adalah adapter dasar server-side; belum terhubung ke alur pelanggan atau webhook inbound. Meta WhatsApp Cloud API tetap provider default. Sebelum memakai Evolution API dalam SaaS komersial, pin versi, tinjau kewajiban aktivasi runtime dan ketentuan notifikasi lisensi, serta dapatkan konfirmasi tertulis bila diperlukan.
+
 ## Facebook Messenger (P1)
 Dokumentasi: https://developers.facebook.com/docs/messenger-platform/
 - Perlu Page access token, webhook subscription, izin Messenger dan App Review/Advanced Access bila disyaratkan.
