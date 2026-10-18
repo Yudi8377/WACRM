@@ -15,6 +15,12 @@ Dokumentasi: https://developers.facebook.com/docs/whatsapp/cloud-api/
 - Webhook: verifikasi challenge GET dan tanda tangan `X-Hub-Signature-256` pada POST menggunakan raw body dan HMAC-SHA256.
 - Pesan bisnis tunduk pada aturan jendela layanan, template, kualitas, kebijakan, dan biaya Meta yang berlaku.
 
+### Pengaturan koneksi WhatsApp di dashboard
+
+Buka **Dashboard → workspace → Kelola kanal WhatsApp**. Pemilik/admin dapat memasukkan WABA ID, Phone Number ID, dan system-user access token dari Meta Business Manager. Server memeriksa token terhadap `META_APP_ID`/`META_APP_SECRET`, memastikan izin `whatsapp_business_management` dan `whatsapp_business_messaging`, memverifikasi nomor berada di WABA yang dipilih, lalu menyimpan token terenkripsi menggunakan `APP_ENCRYPTION_KEY`. Token mentah tidak dikembalikan ke browser atau ditulis ke log. Gunakan HTTPS dan token yang dikelola khusus untuk aplikasi ini; jangan gunakan token sementara pada produksi.
+
+Webhook callback Meta: `https://<domain-anda>/api/webhooks/meta`. Konfigurasikan `META_WEBHOOK_VERIFY_TOKEN`, `META_APP_SECRET`, dan subscription untuk `messages`. URL tersebut belum bisa diverifikasi secara publik sampai runtime HTTPS tersedia.
+
 ### Endpoint balasan WhatsApp WACRM
 
 `POST /api/organizations/{tenantId}/conversations/{conversationId}/messages`
