@@ -32,6 +32,8 @@ Never use `neondb_owner` for application traffic. Production Neon migrations rem
 
 Run a second container from the same image with command `node scripts/webhook-worker.mjs` and provide only `WEBHOOK_WORKER_DATABASE_URL`, pointing to the dedicated `wacrm_worker` Neon role. The web service uses `DATABASE_URL` with `wacrm_runtime`; do not reuse either connection string across services. The worker polls verified Meta inbox events, uses row locks to claim jobs, applies bounded retries/dead-lettering, and processes WhatsApp inbound messages and delivery statuses idempotently. Configure both services on a continuously running HTTPS-capable container runtime.
 
+Before applying migration `0005_whatsapp_webhook_worker.sql`, create the worker role on that branch with least privilege, for example `CREATE ROLE wacrm_worker LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;` then set its password through the Neon console/approved secret workflow. Verify `rolsuper=false`, `rolbypassrls=false`, `rolcreatedb=false`, `rolcreaterole=false`, `rolinherit=false`, and confirm it has no membership in `neon_superuser`. Never use the Neon role-creation shortcut that automatically grants elevated Neon membership for this worker. The development role is currently `NOLOGIN` until its connection secret is provisioned.
+
 ## Release procedure
 
 1. Require passing GitHub Actions checks on the exact commit.
