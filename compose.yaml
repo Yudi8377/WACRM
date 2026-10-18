@@ -2,10 +2,7 @@ name: wacrm
 
 services:
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ghcr.io/yudi8377/wacrm:main
+    image: ${WACRM_IMAGE:-ghcr.io/yudi8377/wacrm:main}
     restart: unless-stopped
     init: true
     environment:
@@ -31,10 +28,7 @@ services:
       - app
 
   webhook-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ghcr.io/yudi8377/wacrm:main
+    image: ${WACRM_IMAGE:-ghcr.io/yudi8377/wacrm:main}
     command: ["node", "scripts/webhook-worker.mjs"]
     restart: unless-stopped
     init: true
