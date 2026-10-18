@@ -8,11 +8,10 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATABASE_URL=postgresql://build:build@127.0.0.1:5432/wacrm
-ENV AUTH_SECRET=ci-only-not-a-production-secret
 ENV APP_URL=http://localhost:3000
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN AUTH_SECRET=wacrm-build-only-placeholder-secret-not-for-runtime npm run build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
