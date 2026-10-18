@@ -6,7 +6,7 @@
 3. Token disimpan terenkripsi di server. Token tidak pernah dikirim kembali ke browser atau dicatat dalam log.
 4. Webhook diverifikasi sebelum payload diproses; event disimpan dengan unique key untuk idempotensi.
 5. Event dinormalisasi ke model kontak/percakapan/pesan internal.
-6. Pengiriman keluar melewati antrean persisten, batas rate per tenant/kanal, retry dengan exponential backoff dan dead-letter queue.
+6. Pengiriman keluar harus melalui otorisasi tenant, idempotensi, kebijakan jendela layanan, batas rate, serta penanganan kegagalan yang aman. Pengiriman bervolume tinggi memerlukan outbox/worker khusus.
 
 ## WhatsApp Business Cloud API (P0)
 Dokumentasi: https://developers.facebook.com/docs/whatsapp/cloud-api/
@@ -14,6 +14,19 @@ Dokumentasi: https://developers.facebook.com/docs/whatsapp/cloud-api/
 - Kebutuhan konfigurasi: Meta App ID/Secret, verify token webhook, WABA ID, Phone Number ID, access token, izin yang sesuai.
 - Webhook: verifikasi challenge GET dan tanda tangan `X-Hub-Signature-256` pada POST menggunakan raw body dan HMAC-SHA256.
 - Pesan bisnis tunduk pada aturan jendela layanan, template, kualitas, kebijakan, dan biaya Meta yang berlaku.
+
+### Endpoint balasan WhatsApp WACRM
+
+`POST /api/organizations/{tenantId}/conversations/{conversationId}/messages`
+
+- Memerlukan sesi login Better Auth dan keanggotaan tenant aktif.
+- Header `Idempotency-Key` wajib berupa UUID baru untuk setiap niat mengirim pesan.
+- Body JSON: `{ "text": "..." }`; teks dibatasi 1–4096 karakter.
+- Hanya peran owner/admin/supervisor/agent, percakapan WhatsApp terbuka/menunggu, dan koneksi `connected` yang dapat mengirim.
+- Balasan teks bebas ditolak setelah jendela layanan 24 jam; alur template yang disetujui belum tersedia.
+- Status `sent` berarti API menerima permintaan, bukan bukti pesan sudah delivered. Status delivered/read diperbarui dari webhook.
+- Pengiriman sinkron dengan catatan idempotensi persisten; jika respons 502/503 atau status `queued`, jangan melakukan retry otomatis dengan kunci baru karena provider mungkin telah menerima pesan. Periksa status terlebih dahulu.
+- Rate limiting per tenant dan outbox retry otomatis tetap menjadi gerbang sebelum volume komersial tinggi.
 
 ## Facebook Messenger (P1)
 Dokumentasi: https://developers.facebook.com/docs/messenger-platform/
