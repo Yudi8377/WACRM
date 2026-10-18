@@ -8,12 +8,17 @@ services:
     image: ghcr.io/yudi8377/wacrm:main
     restart: unless-stopped
     init: true
-    env_file:
-      - .env
     environment:
       NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL to the least-privilege wacrm_runtime Neon URL}
       APP_URL: ${APP_URL:?Set APP_URL to the public HTTPS origin}
       AUTH_URL: ${AUTH_URL:?Set AUTH_URL to the public HTTPS origin}
+      AUTH_SECRET: ${AUTH_SECRET:?Set a strong AUTH_SECRET}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?Set APP_ENCRYPTION_KEY to a 32-byte base64 key}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
+      META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v26.0}
     expose:
       - "3000"
     healthcheck:
@@ -33,16 +38,15 @@ services:
     command: ["node", "scripts/webhook-worker.mjs"]
     restart: unless-stopped
     init: true
-    env_file:
-      - .env
     environment:
       NODE_ENV: production
+      WEBHOOK_WORKER_DATABASE_URL: ${WEBHOOK_WORKER_DATABASE_URL:?Set WEBHOOK_WORKER_DATABASE_URL to the least-privilege wacrm_worker Neon URL}
     depends_on:
       web:
         condition: service_healthy
     networks:
       - app
-    # No published ports: the worker only polls the private Neon database.
+    # No published ports and no access to web/app secrets.
 
   caddy:
     image: caddy:2-alpine
