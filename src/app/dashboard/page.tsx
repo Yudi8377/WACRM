@@ -16,7 +16,7 @@ export default async function DashboardPage() {
   if (!session) redirect("/sign-in");
 
   const client = await db.connect();
-  let workspaces: Membership[] = [];
+  const workspaces: Membership[] = [];
   try {
     await client.query("BEGIN");
     await client.query("SELECT set_config('app.user_id', $1, true)", [session.user.id]);
