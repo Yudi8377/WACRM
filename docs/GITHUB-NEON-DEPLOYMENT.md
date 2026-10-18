@@ -45,6 +45,41 @@ The Compose service runs `node scripts/webhook-worker.mjs` in a separate contain
 
 Before applying migration `0005_whatsapp_webhook_worker.sql`, create and verify the worker role on that branch. Example role attributes are `LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE`; set the password through Neon Console/approved secret workflow. Verify it has no membership in `neon_superuser`. Never use a Neon role-creation shortcut that automatically grants elevated membership.
 
+
+## Self-hosted VPS quick start (no Vercel)
+
+GitHub + Neon do not run the Next.js server by themselves. The repository now includes `compose.yaml` and `Caddyfile` for a Docker-capable VPS. Caddy obtains and renews HTTPS certificates automatically when the domain DNS points to the VPS and inbound ports 80/443 are open.
+
+1. Provision a Linux VPS with Docker Engine and the Docker Compose plugin. Point an A/AAAA record for your chosen domain at that VPS.
+2. Clone this repository on the VPS and check out the reviewed `main` commit.
+3. Copy `.env.example` to `.env`. Set `APP_DOMAIN`, production `DATABASE_URL`, `AUTH_SECRET`, `APP_ENCRYPTION_KEY`, `META_APP_ID`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, and `WEBHOOK_WORKER_DATABASE_URL`. Use secret values only in the VPS environment / Neon credential manager; never commit `.env`.
+4. Generate secrets on the VPS, for example `openssl rand -base64 48` for `AUTH_SECRET`, `openssl rand -base64 32` for `APP_ENCRYPTION_KEY`, and `openssl rand -hex 32` for the webhook verify token.
+5. On the Neon production branch, create separate least-privilege roles before applying migrations. Run as the Neon database owner (only if these roles do not already exist):
+
+   ```sql
+   CREATE ROLE wacrm_runtime LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+   CREATE ROLE wacrm_worker NOLOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+   ```
+
+   Set the runtime password through the approved Neon role credential flow. Set the worker password the same way, then enable its login with `ALTER ROLE wacrm_worker LOGIN;`.
+   - `wacrm_runtime`: LOGIN, NOINHERIT, NOSUPERUSER, NOBYPASSRLS, NOCREATEDB, NOCREATEROLE.
+   - `wacrm_worker`: LOGIN only after its password is configured; otherwise keep NOLOGIN.
+   - Confirm neither role is a member of `neon_superuser`. Do not use the Neon role-creation shortcut if it adds elevated membership.
+6. Take a backup/confirm recovery first, then apply migrations `0001` through `0006` in order on production only after the development validation is accepted. Migration `0005` requires the `wacrm_worker` role to exist first. Migrations are not run automatically by the app or CI.
+7. After the migrations, grant the runtime role schema/table/sequence privileges required by the application, then verify RLS is enabled/forced and the role flags are safe. As a starting grant set matching the development runtime role:
+
+   ```sql
+   GRANT USAGE ON SCHEMA public TO wacrm_runtime;
+   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO wacrm_runtime;
+   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO wacrm_runtime;
+   ```
+
+   The RLS policies remain the tenant boundary; never grant `BYPASSRLS`. Migration `0005` grants the worker only selected inbox/channel lookup columns and tenant-scoped business-table permissions. Use the dedicated worker connection string only for the worker service.
+8. Start the stack with `docker compose up -d --build`. Confirm `docker compose ps` shows `web`, `webhook-worker`, and `caddy` healthy/running, then test `https://<APP_DOMAIN>/api/health`.
+9. In Meta developer settings, set the callback URL to `https://<APP_DOMAIN>/api/webhooks/meta`, use the exact `META_WEBHOOK_VERIFY_TOKEN`, subscribe to `messages`, and perform a test with an opted-in test number.
+
+The worker service intentionally uses a separate `WEBHOOK_WORKER_DATABASE_URL`; do not pass that secret into the web service. The connection wizard stores provider tokens encrypted, but the first live send and webhook still need to be verified against a real Meta test number. Until that test and production role/migration checks pass, do not onboard paying customers.
+
 ## Release procedure
 
 - Require passing GitHub Actions checks on the exact commit.
