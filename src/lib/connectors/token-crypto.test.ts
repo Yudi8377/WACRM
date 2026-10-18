@@ -22,12 +22,9 @@ describe('connector token encryption', () => {
 
   it('rejects tampering and decryption with the wrong key', () => {
     const encrypted = encryptConnectorToken('provider-secret-token', key);
-    const tampered = {
-      ...encrypted,
-      ciphertext: Buffer.from(encrypted.ciphertext, 'base64').map((byte, index) =>
-        index === 0 ? byte ^ 1 : byte
-      ).toString('base64')
-    };
+    const tamperedBytes = Buffer.from(encrypted.ciphertext, 'base64');
+    tamperedBytes[0] ^= 1;
+    const tampered = { ...encrypted, ciphertext: tamperedBytes.toString('base64') };
     expect(() => decryptConnectorToken(tampered, key)).toThrow();
     expect(() => decryptConnectorToken(encrypted, randomBytes(32).toString('base64'))).toThrow();
   });
