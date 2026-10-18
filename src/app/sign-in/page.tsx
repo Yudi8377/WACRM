@@ -2,12 +2,11 @@
 
 import { FormEvent, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 
 export default function SignInPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -23,7 +22,7 @@ export default function SignInPage() {
       setError("Email atau kata sandi tidak cocok. Periksa kembali lalu coba lagi.");
       return;
     }
-    const callback = searchParams.get("callbackURL");
+    const callback = new URLSearchParams(window.location.search).get("callbackURL");
     router.replace(callback?.startsWith("/") && !callback.startsWith("//") ? callback : "/dashboard");
     router.refresh();
   }
