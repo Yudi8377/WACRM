@@ -28,6 +28,10 @@ Supply these values only through the chosen runtime's secret manager:
 
 Never use `neondb_owner` for application traffic. Production Neon migrations remain a separate controlled release gate; CI and image publication must not run migrations automatically.
 
+## Separate webhook worker
+
+Run a second container from the same image with command `node scripts/webhook-worker.mjs` and provide only `WEBHOOK_WORKER_DATABASE_URL`, pointing to the dedicated `wacrm_worker` Neon role. The web service uses `DATABASE_URL` with `wacrm_runtime`; do not reuse either connection string across services. The worker polls verified Meta inbox events, uses row locks to claim jobs, applies bounded retries/dead-lettering, and processes WhatsApp inbound messages and delivery statuses idempotently. Configure both services on a continuously running HTTPS-capable container runtime.
+
 ## Release procedure
 
 1. Require passing GitHub Actions checks on the exact commit.
