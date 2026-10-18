@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { CreateWorkspaceForm } from "./create-workspace-form";
+import { SignOutButton } from "./sign-out-button";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,7 +44,7 @@ export default async function DashboardPage() {
     <div style={{ maxWidth: 1040, margin: "0 auto" }}>
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <Link href="/" style={{ color: "#1d4ed8", fontWeight: 800, textDecoration: "none" }}>WACRM</Link>
-        <form action="/api/auth/sign-out" method="post"><button type="submit" style={{ border: "1px solid #cbd5e1", borderRadius: 9, padding: "9px 13px", background: "white", cursor: "pointer" }}>Keluar</button></form>
+        <SignOutButton />
       </header>
       <p style={{ color: "#2563eb", fontWeight: 700, letterSpacing: 1.5, marginTop: 40 }}>RUANG KERJA</p>
       <h1 style={{ fontSize: "clamp(2rem, 5vw, 3rem)", margin: "8px 0" }}>Halo, {session.user.name}</h1>
