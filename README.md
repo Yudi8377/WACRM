@@ -27,6 +27,12 @@ Status 'fondasi' tidak berarti akun platform sudah tersambung atau App Review su
 - Setelah daftar/masuk, pengguna dapat membuat workspace organisasi. RLS dan membership tetap membatasi akses data tenant.
 - Migrasi `0004_better_auth_and_membership_listing.sql` harus diuji pada branch `development` sebelum produksi. Berikan hak tabel autentikasi kepada role runtime secara eksplisit.
 
+## Pemrosesan webhook
+- Webhook Meta yang lolos validasi signature disimpan dahulu ke `webhook_inbox` agar provider dapat menerima acknowledgment dengan cepat.
+- Worker terpisah (`node scripts/webhook-worker.mjs`) memproses pesan/status WhatsApp dengan claim berbasis row-lock, idempotensi, retry terbatas, dan dead-letter.
+- Worker memakai `WEBHOOK_WORKER_DATABASE_URL` dan role terpisah; jangan gunakan kredensial `neondb_owner` atau `wacrm_runtime` untuk worker.
+- Status `connected` pada koneksi kanal diperlukan sebelum pesan dapat dipetakan ke tenant.
+
 ## Database
 Gunakan Neon branch `development` untuk migrasi dan pengujian. Branch `production` tidak boleh dimigrasikan sebelum hasil pengujian development ditinjau.
 
