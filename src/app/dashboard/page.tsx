@@ -58,7 +58,8 @@ export default async function DashboardPage() {
           <h2 style={{ fontSize: 19, marginTop: 0 }}>{workspace.name}</h2>
           <p style={{ color: "#64748b", fontSize: 13 }}>Peran Anda: {workspace.role}</p>
           <p style={{ color: "#64748b", fontSize: 13 }}>ID workspace: {workspace.tenant_id}</p>
-          <p style={{ color: "#64748b", lineHeight: 1.6 }}>Koneksi WhatsApp akan diaktifkan setelah konfigurasi Meta, izin, dan webhook selesai.</p>
+          <p style={{ color: "#64748b", lineHeight: 1.6 }}>Kelola koneksi WhatsApp dan kredensial resmi Meta untuk workspace ini.</p>
+          <Link href={`/dashboard/workspaces/${workspace.tenant_id}/channels/whatsapp`} style={{ color: "#1d4ed8", fontWeight: 700, textDecoration: "none" }}>Kelola kanal WhatsApp →</Link>
         </article>)}
         <section style={panelStyle}>
           <h2 style={{ marginTop: 0, fontSize: 19 }}>Tambah workspace</h2>
