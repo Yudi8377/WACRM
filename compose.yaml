@@ -1,0 +1,66 @@
+services:
+  web:
+    build: .
+    image: wacrm:local
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env}
+      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in .env}
+      AUTH_URL: https://${APP_DOMAIN:?Set APP_DOMAIN in .env}
+      APP_URL: https://${APP_DOMAIN:?Set APP_DOMAIN in .env}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?Set APP_ENCRYPTION_KEY in .env}
+      META_APP_ID: ${META_APP_ID:?Set META_APP_ID in .env}
+      META_APP_SECRET: ${META_APP_SECRET:?Set META_APP_SECRET in .env}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:?Set META_WEBHOOK_VERIFY_TOKEN in .env}
+      META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v26.0}
+    expose:
+      - "3000"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+
+  webhook-worker:
+    build: .
+    image: wacrm:local
+    command: ["node", "scripts/webhook-worker.mjs"]
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      WEBHOOK_WORKER_DATABASE_URL: ${WEBHOOK_WORKER_DATABASE_URL:?Set WEBHOOK_WORKER_DATABASE_URL in .env}
+    security_opt:
+      - no-new-privileges:true
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:
