@@ -1,0 +1,15 @@
+{
+  email {$ACME_EMAIL:admin@example.com}
+}
+
+{$APP_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy web:3000
+  header {
+    -Server
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+    X-Frame-Options DENY
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  }
+}
