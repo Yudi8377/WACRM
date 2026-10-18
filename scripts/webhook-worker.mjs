@@ -73,9 +73,13 @@ async function findConnection(phoneNumberId) {
       WHERE channel = 'whatsapp'
         AND status = 'connected'
         AND external_account_id = $1
-      LIMIT 1`,
+      ORDER BY tenant_id
+      LIMIT 2`,
     [phoneNumberId],
   );
+  // Fail closed: a provider number mapped to multiple workspaces must never route
+  // an inbound customer message to an arbitrary tenant.
+  if (result.rows.length > 1) throw new Error("connection_mapping_ambiguous");
   return result.rows[0] ?? null;
 }
 
@@ -257,10 +261,13 @@ async function markFailed(id, attempts) {
     `UPDATE webhook_inbox
         SET processing_status = $2,
             processing_started_at = NULL,
-            next_attempt_at = CASE WHEN $2 = 'retry' THEN now() + interval '1 minute' ELSE NULL END,
+            next_attempt_at = CASE
+              WHEN $2 = 'retry' THEN now() + (LEAST(60, POWER(2, LEAST($4::int, 6))::double precision) * interval '1 minute')
+              ELSE NULL
+            END,
             last_error_code = $3
       WHERE id = $1::uuid AND signature_verified = true`,
-    [id, deadLetter ? "dead_letter" : "retry", "processing_failed"],
+    [id, deadLetter ? "dead_letter" : "retry", "processing_failed", attempts],
   );
   return deadLetter;
 }
