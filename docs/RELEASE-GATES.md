@@ -41,3 +41,11 @@ Messenger, Instagram, TikTok Business Messaging, dan YouTube tetap berstatus fon
 ## Gerbang produksi
 
 Rilis hanya setelah semua kotak A–D relevan selesai, hasil tes dapat diperiksa, dan koneksi akun provider nyata telah berhasil. Migrasi Neon production dan pergantian trafik produksi tidak termasuk dalam perubahan dokumentasi atau CI ini; keduanya memerlukan rencana rilis, backup, serta verifikasi eksplisit.
+
+
+## Gerbang tambahan setelah fondasi autentikasi dan worker
+- [ ] Sediakan secret manager untuk `AUTH_SECRET`, `APP_ENCRYPTION_KEY`, `DATABASE_URL`, dan `WEBHOOK_WORKER_DATABASE_URL` tanpa memasukkan secret ke GitHub.
+- [ ] Provision role `wacrm_runtime` dan `wacrm_worker` secara terpisah pada production; verifikasi role worker tidak memiliki `BYPASSRLS`, superuser, hak create-role/create-db, atau membership `neon_superuser`.
+- [ ] Jalankan migrasi 0004–0006 pada development dan uji pendaftaran, login, pembuatan workspace, balasan WhatsApp dalam jendela 24 jam, idempotensi, webhook inbound/status, dan isolasi tenant.
+- [ ] Konfigurasikan Meta App, token yang dienkripsi, webhook HTTPS, nomor uji dan persetujuan/izin yang diperlukan.
+- [ ] Siapkan rate limiting, pemulihan password/verifikasi email, retensi data, pemantauan, backup/restore, serta prosedur penanganan pesan yang statusnya tidak pasti.
