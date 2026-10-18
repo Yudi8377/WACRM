@@ -55,7 +55,15 @@ GitHub + Neon do not run the Next.js server by themselves. The repository now in
    - `wacrm_worker`: LOGIN only after its password is configured; otherwise keep NOLOGIN.
    - Confirm neither role is a member of `neon_superuser`. Do not use the Neon role-creation shortcut if it adds elevated membership.
 6. Take a backup/confirm recovery first, then apply migrations `0001` through `0006` in order on production only after the development validation is accepted. Migration `0005` requires the `wacrm_worker` role to exist first. Migrations are not run automatically by the app or CI.
-7. After the migrations, grant the runtime role schema/table/sequence privileges required by the application, then verify RLS is enabled/forced and the role flags are safe. Use the dedicated worker connection string only for the worker service.
+7. After the migrations, grant the runtime role schema/table/sequence privileges required by the application, then verify RLS is enabled/forced and the role flags are safe. As a starting grant set matching the development runtime role:
+
+   ```sql
+   GRANT USAGE ON SCHEMA public TO wacrm_runtime;
+   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO wacrm_runtime;
+   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO wacrm_runtime;
+   ```
+
+   The RLS policies remain the tenant boundary; never grant `BYPASSRLS`. Migration `0005` grants the worker only selected inbox/channel lookup columns and tenant-scoped business-table permissions. Use the dedicated worker connection string only for the worker service.
 8. Start the stack with `docker compose up -d --build`. Confirm `docker compose ps` shows `web`, `webhook-worker`, and `caddy` healthy/running, then test `https://<APP_DOMAIN>/api/health`.
 9. In Meta developer settings, set the callback URL to `https://<APP_DOMAIN>/api/webhooks/meta`, use the exact `META_WEBHOOK_VERIFY_TOKEN`, subscribe to `messages`, and perform a test with an opted-in test number.
 
