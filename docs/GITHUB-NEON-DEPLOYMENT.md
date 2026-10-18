@@ -20,7 +20,9 @@ Supply these values only through the chosen runtime's secret manager:
 
 - `DATABASE_URL`: Neon connection string for a dedicated least-privilege runtime role.
 - `APP_URL` and `AUTH_URL`: the final HTTPS origin.
-- `AUTH_SECRET`: a strong, unique production secret.
+- `AUTH_SECRET`: a strong, unique production secret of at least 32 characters.
+- `AUTH_URL`: the canonical HTTPS origin used by Better Auth.
+- Better Auth tables from migration `0004_better_auth_and_membership_listing.sql` and explicit CRUD grants for the runtime role on `user`, `session`, `account`, and `verification`.
 - `APP_ENCRYPTION_KEY`: 32-byte base64 key for connector-token encryption.
 - Meta app ID, app secret, webhook verify token, and Graph API version.
 
