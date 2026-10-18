@@ -17,6 +17,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate self-hosted Compose configuration
+        run: docker compose -f compose.yaml config --quiet
+        env:
+          APP_DOMAIN: crm.example.com
+          WACRM_IMAGE: ghcr.io/yudi8377/wacrm:ci
+          APP_URL: https://crm.example.com
+          AUTH_URL: https://crm.example.com
+          DATABASE_URL: postgresql://build:build@127.0.0.1:5432/wacrm
+          AUTH_SECRET: wacrm-ci-build-only-placeholder-secret-not-for-runtime
+          APP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          WEBHOOK_WORKER_DATABASE_URL: postgresql://worker:worker@127.0.0.1:5432/wacrm
       - uses: actions/setup-node@v4
         with:
           node-version: 22
