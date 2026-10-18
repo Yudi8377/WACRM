@@ -3,10 +3,14 @@ name: WACRM CI
 on:
   pull_request:
   push:
-    branches: [main, 'feat/**']
+    branches: [main]
 
 permissions:
   contents: read
+
+concurrency:
+  group: wacrm-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   quality:
@@ -24,5 +28,5 @@ jobs:
         env:
           # Build must not need real provider or production secrets.
           DATABASE_URL: postgresql://build:build@127.0.0.1:5432/wacrm
-          AUTH_SECRET: ci-only-not-a-production-secret
+          AUTH_SECRET: wacrm-ci-build-only-placeholder-secret-not-for-runtime
           APP_URL: http://localhost:3000
