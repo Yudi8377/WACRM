@@ -75,7 +75,7 @@ GitHub + Neon do not run the Next.js server by themselves. The repository now in
    ```
 
    The RLS policies remain the tenant boundary; never grant `BYPASSRLS`. Migration `0005` grants the worker only selected inbox/channel lookup columns and tenant-scoped business-table permissions. Use the dedicated worker connection string only for the worker service.
-8. Start the stack with `docker compose up -d --build`. Confirm `docker compose ps` shows `web`, `webhook-worker`, and `caddy` healthy/running, then test `https://<APP_DOMAIN>/api/health`.
+8. Start the published image stack with `docker compose -f compose.yaml pull && docker compose -f compose.yaml up -d` (this Compose file uses `image:` and does not define a local `build:` target). Confirm `docker compose -f compose.yaml ps` shows `web`, `webhook-worker`, and `caddy` running/healthy, then test `https://<APP_DOMAIN>/api/health`.
 9. In Meta developer settings, set the callback URL to `https://<APP_DOMAIN>/api/webhooks/meta`, use the exact `META_WEBHOOK_VERIFY_TOKEN`, subscribe to `messages`, and perform a test with an opted-in test number.
 
 The worker service intentionally uses a separate `WEBHOOK_WORKER_DATABASE_URL`; do not pass that secret into the web service. The connection wizard stores provider tokens encrypted, but the first live send and webhook still need to be verified against a real Meta test number. Until that test and production role/migration checks pass, do not onboard paying customers.
