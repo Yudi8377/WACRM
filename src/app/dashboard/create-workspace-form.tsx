@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Plus } from "lucide-react";
 
 export function CreateWorkspaceForm() {
   const router = useRouter();
@@ -19,11 +20,13 @@ export function CreateWorkspaceForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
-      const data = await response.json() as { error?: string; id?: string };
+      const data = (await response.json()) as { error?: string; id?: string };
       if (!response.ok || !data.id) {
         setError(data.error || "Workspace belum dapat dibuat.");
         return;
       }
+      setName("");
+      router.push(`/dashboard/workspaces/${data.id}`);
       router.refresh();
     } catch {
       setError("Koneksi terputus. Periksa jaringan lalu coba kembali.");
@@ -32,14 +35,31 @@ export function CreateWorkspaceForm() {
     }
   }
 
-  return <form onSubmit={submit} style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 18 }}>
-    <input required minLength={2} maxLength={160} value={name} onChange={event => setName(event.target.value)}
-      placeholder="Contoh: Tim Layanan Pelanggan" aria-label="Nama workspace"
-      style={{ flex: "1 1 240px", minWidth: 0, border: "1px solid #cbd5e1", borderRadius: 10, padding: "12px 14px", fontSize: 15 }} />
-    <button disabled={busy} type="submit"
-      style={{ border: 0, borderRadius: 10, background: "#1d4ed8", color: "white", padding: "12px 18px", fontWeight: 700, cursor: "pointer" }}>
-      {busy ? "Membuat..." : "Buat workspace"}
-    </button>
-    {error && <p role="alert" style={{ flexBasis: "100%", color: "#b91c1c", margin: 0 }}>{error}</p>}
-  </form>;
+  return (
+    <form onSubmit={submit} className="mt-4 flex flex-col gap-2.5 sm:flex-row">
+      <input
+        required
+        minLength={2}
+        maxLength={160}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        placeholder="Contoh: Tim Layanan Pelanggan"
+        aria-label="Nama workspace"
+        className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm outline-none focus:border-emerald-500 focus:bg-white"
+      />
+      <button
+        disabled={busy}
+        type="submit"
+        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+      >
+        <Plus className="h-4 w-4" />
+        {busy ? "Membuat..." : "Buat Workspace"}
+      </button>
+      {error && (
+        <p role="alert" className="basis-full text-xs font-medium text-red-600">
+          {error}
+        </p>
+      )}
+    </form>
+  );
 }

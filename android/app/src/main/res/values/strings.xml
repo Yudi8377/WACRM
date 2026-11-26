@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WACRM</string>
+    <string name="offline_title">Koneksi Terputus</string>
+    <string name="offline_description">Pastikan perangkat Android Anda terhubung ke internet untuk menyinkronkan inbox WhatsApp CRM dan database Neon.</string>
+    <string name="btn_retry">Coba Muat Ulang</string>
+    <string name="btn_server_settings">Pengaturan Server WACRM</string>
+</resources>

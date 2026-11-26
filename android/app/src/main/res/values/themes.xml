@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.WACRM" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/wacrm_emerald</item>
+        <item name="colorPrimaryDark">@color/wacrm_emerald_dark</item>
+        <item name="android:statusBarColor">@color/wacrm_emerald</item>
+        <item name="android:navigationBarColor">@color/wacrm_surface</item>
+    </style>
+
+    <style name="Theme.WACRM.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/wacrm_emerald</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.WACRM</item>
+    </style>
+</resources>

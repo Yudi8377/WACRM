@@ -33,8 +33,20 @@ Status 'fondasi' tidak berarti akun platform sudah tersambung atau App Review su
 - Worker memakai `WEBHOOK_WORKER_DATABASE_URL` dan role terpisah; jangan gunakan kredensial `neondb_owner` atau `wacrm_runtime` untuk worker.
 - Status `connected` pada koneksi kanal diperlukan sebelum pesan dapat dipetakan ke tenant.
 
-## Database
-Gunakan Neon branch `development` untuk migrasi dan pengujian. Branch `production` tidak boleh dimigrasikan sebelum hasil pengujian development ditinjau.
+## Aplikasi Web, PWA & Android
+- **Live Web App (Vercel)**: https://wacrm-seven-dusky.vercel.app
+- **Demo Interaktif (tanpa setup database)**: `/demo` — seluruh fitur Inbox, Kontak CRUD, Kanal Omnichannel, Quick Replies, Template WA, Analitik, dan Pengaturan berjalan penuh secara lokal di browser.
+- **Pusat Koneksi Neon PostgreSQL**: `/setup` — diagnostik koneksi real-time dan skrip SQL idempoten (`db/neon-production-setup.sql`) siap salin untuk project Neon `small-tree-35716017` branch `br-patient-mud-a1xi2iun`.
+- **Aplikasi Android (`android/`, package `com.wacrm.android`)**: Aplikasi native Kotlin + Material 3 + WebView + JavaScript Native Bridge (`window.WACRMAndroid`) dan dukungan PWA installable (`/android`). APK otomatis dibuild oleh workflow `.github/workflows/android-release.yml`.
+
+## Database Neon
+- Target Neon project: `small-tree-35716017` (AWS Singapore `ap-southeast-1`), branch production: `br-patient-mud-a1xi2iun`.
+- Skema lengkap tersedia di `db/migrations/0001_initial.sql` hingga `0007_crm_workspace_features.sql` serta skrip produksi idempoten `db/neon-production-setup.sql`.
+- Jalankan migrasi secara otomatis via CLI:
+  ```bash
+  NEON_OWNER_DATABASE_URL="postgresql://..." npm run db:migrate
+  ```
+- Atau jalankan isi `db/neon-production-setup.sql` langsung di Neon SQL Editor dan sambungkan `DATABASE_URL` / `POSTGRES_URL` pada environment variables Vercel.
 
 ## Konfigurasi
 Salin `.env.example` menjadi `.env.local` di lingkungan lokal dan isi kredensial melalui secret manager/host. Jangan commit `.env.local`.

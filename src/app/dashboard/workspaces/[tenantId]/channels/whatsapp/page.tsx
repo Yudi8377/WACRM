@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { getSafeSession, isAuthConfigured } from "@/lib/auth";
 import { withTenantContext, TenantAccessError } from "@/lib/tenant-context";
 import { isUuid } from "@/lib/connectors/whatsapp-policy";
 import { WhatsAppConnectionForm } from "./connection-form";
@@ -10,7 +10,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function WhatsAppChannelPage({ params }: { params: Promise<{ tenantId: string }> }) {
-  const session = await auth.api.getSession({ headers: await headers() });
+  if (!isAuthConfigured()) redirect("/setup");
+  const session = await getSafeSession(await headers());
   if (!session) redirect("/sign-in");
   const { tenantId } = await params;
   if (!isUuid(tenantId)) redirect("/dashboard");
@@ -63,7 +64,10 @@ export default async function WhatsAppChannelPage({ params }: { params: Promise<
   }
 
   return <main style={{ maxWidth: 860, margin: "0 auto", padding: "36px 24px" }}>
-    <Link href="/dashboard" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>← Kembali ke workspace</Link>
+    <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+      <Link href={`/dashboard/workspaces/${tenantId}`} style={{ color: "#059669", textDecoration: "none", fontWeight: 700 }}>← Buka Ruang Kerja CRM</Link>
+      <Link href="/dashboard" style={{ color: "#64748b", textDecoration: "none", fontWeight: 600 }}>Semua Workspace</Link>
+    </div>
     <p style={{ color: "#2563eb", fontWeight: 700, letterSpacing: 1.5, marginTop: 36 }}>KONEKSI KANAL</p>
     <h1 style={{ fontSize: "clamp(2rem, 5vw, 2.6rem)", margin: "8px 0" }}>WhatsApp Business</h1>
     <p style={{ color: "#64748b", lineHeight: 1.7 }}>Workspace: <strong>{workspace.name}</strong> · Peran: {workspace.role}</p>

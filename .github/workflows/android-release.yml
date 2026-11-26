@@ -1,0 +1,94 @@
+name: Android APK Build
+
+on:
+  push:
+    branches: [main, "arena/**"]
+    paths:
+      - "android/**"
+      - ".github/workflows/android-release.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android-release.yml"
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "WACRM production HTTPS base URL"
+        required: false
+        default: "https://wacrm-seven-dusky.vercel.app"
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Verify preinstalled Android SDK and accept licenses
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Run Android Kotlin unit tests
+        run: gradle testDebugUnitTest --no-daemon
+
+      - name: Build Debug & Release APKs
+        env:
+          WACRM_BASE_URL: ${{ inputs.base_url || vars.WACRM_BASE_URL || 'https://wacrm-seven-dusky.vercel.app' }}
+        run: |
+          gradle assembleDebug assembleRelease --no-daemon -PWACRM_BASE_URL="${WACRM_BASE_URL}"
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/wacrm-android.apk
+          cp app/build/outputs/apk/release/app-release-unsigned.apk dist/wacrm-android-release-unsigned.apk
+          ls -lh dist/
+
+      - name: Upload WACRM Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wacrm-android-debug-apk
+          path: android/dist/wacrm-android.apk
+          retention-days: 30
+
+      - name: Upload WACRM Release Unsigned APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wacrm-android-release-unsigned-apk
+          path: android/dist/wacrm-android-release-unsigned.apk
+          retention-days: 30
+
+      - name: Publish Direct Download APK to GitHub Release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="android-v1.1.0"
+          TITLE="WACRM Android v1.1.0"
+          NOTES="Aplikasi Android native Kotlin WACRM (package \`com.wacrm.android\`) terhubung ke https://wacrm-seven-dusky.vercel.app.\n\n- **wacrm-android.apk**: APK siap pasang langsung di ponsel Android.\n- **wacrm-android-release-unsigned.apk**: APK release R8-minified untuk penandatanganan keystore Play Store."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/wacrm-android.apk dist/wacrm-android-release-unsigned.apk --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --latest
+          else
+            gh release create "$TAG" dist/wacrm-android.apk dist/wacrm-android-release-unsigned.apk \
+              --title "$TITLE" \
+              --notes "$NOTES" \
+              --latest \
+              --target "${{ github.sha }}"
+          fi
