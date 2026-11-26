@@ -32,6 +32,34 @@ class WacrmJsBridge(
     }
 
     @JavascriptInterface
+    fun printWifiDocument(jobName: String?) {
+        val safeTitle = jobName?.trim()?.take(80)?.ifEmpty { "WACRM Document" } ?: "WACRM Document"
+        activity.runOnUiThread {
+            activity.printCurrentWebView(safeTitle)
+        }
+    }
+
+    @JavascriptInterface
+    fun printHtml(title: String?, html: String?) {
+        val safeHtml = html?.trim() ?: return
+        if (safeHtml.isEmpty()) return
+        val safeTitle = title?.trim()?.take(80)?.ifEmpty { "WACRM Document" } ?: "WACRM Document"
+        activity.runOnUiThread {
+            activity.printHtmlDocument(safeTitle, safeHtml)
+        }
+    }
+
+    @JavascriptInterface
+    fun printBluetoothEscPos(base64EscPos: String?, jobName: String?) {
+        val payload = base64EscPos?.trim() ?: return
+        if (payload.isEmpty()) return
+        val safeJob = jobName?.trim()?.take(80)?.ifEmpty { "WACRM Thermal Receipt" } ?: "WACRM Thermal Receipt"
+        activity.runOnUiThread {
+            activity.printBluetoothEscPos(payload, safeJob)
+        }
+    }
+
+    @JavascriptInterface
     fun hapticFeedback() {
         activity.runOnUiThread {
             activity.window.decorView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)

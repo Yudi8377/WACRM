@@ -57,6 +57,7 @@ export async function GET() {
         metaConfigured,
         schemaTablesCount,
         rlsEnabledTablesCount,
+        enterpriseSuiteReady: schemaTablesCount >= 28 && rlsEnabledTablesCount >= 24,
       },
       readyForLiveAuth: databaseConfigured && databaseConnected && authSecretConfigured && schemaTablesCount >= 16,
     },

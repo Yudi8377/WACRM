@@ -10,7 +10,6 @@ import {
   Smartphone,
   Sparkles,
   Users,
-  Zap,
 } from "lucide-react";
 import { isDatabaseConfigured, NEON_BRANCH_ID, NEON_PROJECT_ID } from "@/lib/db";
 
@@ -45,34 +44,34 @@ const channels = [
 
 const features = [
   {
+    icon: Sparkles,
+    title: "Multi-Agent AI Auto-Reply 24/7",
+    desc: "Tanpa balas manual — 5 agen AI membalas chat omnichannel, mempelajari katalog ERP otomatis, dan memperbarui pengetahuannya sendiri.",
+  },
+  {
     icon: MessageSquare,
-    title: "Inbox Omnichannel Real-Time",
-    desc: "Balas pelanggan, gunakan pintasan /balasan-cepat, simpan catatan internal tim, dan atur prioritas dalam satu tampilan.",
-  },
-  {
-    icon: Users,
-    title: "CRM Kontak & Lifecycle Lengkap",
-    desc: "Insert, update, delete kontak, kelompokkan Prospek hingga VIP, tambahkan label khusus, dan mulai chat 1 klik.",
-  },
-  {
-    icon: Database,
-    title: "Neon PostgreSQL Multi-Tenant RLS",
-    desc: `Dirancang untuk Neon project ${NEON_PROJECT_ID} (${NEON_BRANCH_ID}) dengan Row-Level Security aktif di seluruh tabel.`,
-  },
-  {
-    icon: Smartphone,
-    title: "Web App PWA + Native Android APK",
-    desc: "Responsif dengan navigasi bawah bergaya aplikasi native, dapat dipasang sebagai PWA maupun di-build menjadi APK Kotlin.",
+    title: "POS Auto-Invoice & Scannable QR",
+    desc: "AI otomatis mengekstrak nama, alamat & pesanan dari chat menjadi transaksi POS, invoice resmi, dan kode QR pembayaran/verifikasi.",
   },
   {
     icon: ShieldCheck,
-    title: "Enkripsi Token & Audit Trail",
-    desc: "Token kanal dienkripsi AES-256-GCM di server. Setiap perubahan tercatat di audit_logs dengan kontrol peran RBAC.",
+    title: "Fraud Sentinel & Self-Healing AI",
+    desc: "Mendeteksi order fiktif, diskon manipulatif, ketidaksinkronan stok & ketidakseimbangan neraca, lalu memulihkannya secara otonom.",
   },
   {
-    icon: Zap,
-    title: "Template & Balasan Cepat",
-    desc: "Kelola template pesan resmi WhatsApp dan jawaban instan agar waktu respons tim tetap di bawah 1 menit.",
+    icon: Database,
+    title: "ERP, Akuntansi & Sinkron Desktop ↔ HP",
+    desc: `Terpadu 28 tabel Neon PostgreSQL (${NEON_PROJECT_ID}) dengan 24 tabel Row-Level Security (RLS) yang sinkron real-time antara web & Android.`,
+  },
+  {
+    icon: Smartphone,
+    title: "Cetak Struk Bluetooth & Laporan WiFi",
+    desc: "Cetak struk kasir thermal 58mm/80mm via Bluetooth ESC/POS dan cetak invoice/laporan keuangan via printer WiFi dari Web & APK Android.",
+  },
+  {
+    icon: Users,
+    title: "CRM Omnichannel & Audit Lengkap",
+    desc: "Kelola WhatsApp, Instagram, Messenger & TikTok, kontak VIP, catatan tim, kontrol peran RBAC, serta ekspor CSV/laporan.",
   },
 ];
 

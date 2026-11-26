@@ -54,12 +54,12 @@ export default function AndroidPage() {
             <div>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300">
                 <Smartphone className="h-3.5 w-3.5" />
-                Android App · com.wacrm.android
+                Android App v2.0.0 · com.wacrm.android
               </span>
-              <h1 className="mt-2.5 text-2xl font-extrabold sm:text-3xl">Aplikasi Android WACRM</h1>
+              <h1 className="mt-2.5 text-2xl font-extrabold sm:text-3xl">Aplikasi Android WACRM v2.0 AI</h1>
               <p className="mt-1.5 text-sm text-slate-300">
-                Tersedia dalam dua mode siap produksi: <strong>PWA WebAPK Instan</strong> langsung dari Chrome Android &amp;{" "}
-                <strong>Proyek Native Kotlin APK</strong> (<code className="font-mono text-emerald-300">android/</code>) dengan auto-build GitHub Actions.
+                Terhubung penuh dengan database Neon Desktop ↔ HP, dilengkapi <strong>Multi-Agent AI Auto-Reply</strong>,{" "}
+                <strong>POS + QR Invoice</strong>, <strong>ERP &amp; Akuntansi</strong>, serta <strong>Cetak Printer Thermal Bluetooth ESC/POS &amp; WiFi Native</strong>.
               </p>
             </div>
           </div>
@@ -70,7 +70,7 @@ export default function AndroidPage() {
               className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400"
             >
               <Download className="h-4 w-4" />
-              Unduh APK Android (v1.1.0)
+              Unduh APK Android (v2.0.0)
             </a>
             {deferredPrompt ? (
               <button
@@ -144,7 +144,11 @@ export default function AndroidPage() {
               </li>
               <li className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-                Auto-build APK otomatis pada GitHub Actions (<code className="font-mono">android-release.yml</code>)
+                Native Bluetooth Thermal ESC/POS (58mm/80mm) &amp; Android WiFi PrintManager
+              </li>
+              <li className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                Sinkronisasi Real-Time Desktop ↔ HP via Neon PostgreSQL + Auto-Build APK GitHub Actions
               </li>
             </ul>
           </article>
