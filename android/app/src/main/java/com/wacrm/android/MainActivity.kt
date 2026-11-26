@@ -2,6 +2,7 @@ package com.wacrm.android
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -9,8 +10,10 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.view.View
 import android.webkit.CookieManager
+import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -109,6 +112,27 @@ class MainActivity : AppCompatActivity() {
         }
 
         webView.addJavascriptInterface(WacrmJsBridge(this), "WACRMAndroid")
+
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
+            if (!url.startsWith("https://")) return@setDownloadListener
+            try {
+                val request = DownloadManager.Request(Uri.parse(url)).apply {
+                    setMimeType(mimetype)
+                    addRequestHeader("cookie", CookieManager.getInstance().getCookie(url))
+                    addRequestHeader("User-Agent", userAgent)
+                    setDescription("Mengunduh file dari WACRM")
+                    val filename = URLUtil.guessFileName(url, contentDisposition, mimetype)
+                    setTitle(filename)
+                    setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename)
+                }
+                val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                dm.enqueue(request)
+                Toast.makeText(this, "Mengunduh file ke folder Downloads...", Toast.LENGTH_SHORT).show()
+            } catch (_: Exception) {
+                Toast.makeText(this, "Tidak dapat memulai unduhan file.", Toast.LENGTH_SHORT).show()
+            }
+        }
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -213,8 +237,17 @@ class MainActivity : AppCompatActivity() {
         }
         offlineContainer.visibility = View.GONE
         webView.visibility = View.VISIBLE
-        val deepPath = intent?.data?.path?.takeIf { it.startsWith("/") } ?: ""
+        val deepPath = UrlValidator.safeDeepLinkPath(intent?.data?.path)
         webView.loadUrl("${getBaseUrl()}$deepPath")
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val deepPath = UrlValidator.safeDeepLinkPath(intent.data?.path)
+        if (deepPath.isNotEmpty() && isOnline()) {
+            webView.loadUrl("${getBaseUrl()}$deepPath")
+        }
     }
 
     private fun isOnline(): Boolean {

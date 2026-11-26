@@ -196,26 +196,31 @@ export default function SetupPage() {
 
         {/* Step-by-step */}
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs">
-          <h2 className="text-lg font-bold text-slate-900">Langkah Aktivasi Neon (2 Menit)</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-bold text-slate-900">Langkah Aktivasi Neon (Otomatis saat Redeploy)</h2>
+            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+              Auto-Migrate Aktif
+            </span>
+          </div>
           <ol className="mt-4 space-y-3 text-sm text-slate-700 list-decimal pl-5">
             <li>
-              Buka{" "}
+              Buka Vercel Dashboard proyek <strong>wacrm → Storage / Integrations → Neon</strong> (atau <strong>Settings → Environment Variables</strong>) lalu hubungkan branch{" "}
+              <code className="font-mono">br-patient-mud-a1xi2iun</code> (<code className="font-mono">DATABASE_URL</code> / <code className="font-mono">POSTGRES_URL</code>).
+            </li>
+            <li>
+              Klik <strong>Redeploy</strong> di Vercel — skrip <code className="font-mono">scripts/vercel-migrate.mjs</code> otomatis menerapkan seluruh 19 tabel + RLS multi-tenant secara idempoten.
+            </li>
+            <li>
+              <em>Opsional (role least-privilege <code className="font-mono">wacrm_runtime</code>):</em> jika menggunakan role non-owner, jalankan skrip SQL di bawah sekali saja di{" "}
               <a
                 href="https://console.neon.tech/app/projects/small-tree-35716017/branches/br-patient-mud-a1xi2iun"
                 target="_blank"
                 rel="noreferrer"
                 className="font-semibold text-emerald-700 underline"
               >
-                Neon Console (br-patient-mud-a1xi2iun)
-              </a>{" "}
-              → klik <strong>SQL Editor</strong> → tempel dan jalankan skrip SQL idempoten di bawah ini.
-            </li>
-            <li>
-              Klik <strong>Connect</strong> di Neon Console, salin <strong>Connection String</strong> (disarankan role least-privilege{" "}
-              <code className="font-mono">wacrm_runtime</code> tanpa <code className="font-mono">BYPASSRLS</code>).
-            </li>
-            <li>
-              Tempel Connection String tersebut ke Vercel Project <strong>wacrm → Settings → Environment Variables → DATABASE_URL</strong>, lalu klik <strong>Redeploy</strong>.
+                Neon SQL Editor
+              </a>
+              .
             </li>
           </ol>
         </section>

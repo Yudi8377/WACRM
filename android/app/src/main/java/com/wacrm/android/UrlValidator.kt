@@ -30,4 +30,12 @@ object UrlValidator {
             false
         }
     }
+
+    fun safeDeepLinkPath(rawPath: String?): String {
+        val path = rawPath?.trim() ?: return ""
+        if (!path.startsWith("/") || path.startsWith("//") || path.contains("..")) {
+            return ""
+        }
+        return path
+    }
 }

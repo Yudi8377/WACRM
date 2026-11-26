@@ -35,4 +35,12 @@ class UrlValidatorTest {
         assertTrue(UrlValidator.isSameOriginHost("https://wacrm-seven-dusky.vercel.app/demo", "https://wacrm-seven-dusky.vercel.app"))
         assertFalse(UrlValidator.isSameOriginHost("https://evil.example.com/demo", "https://wacrm-seven-dusky.vercel.app"))
     }
+
+    @Test
+    fun sanitizesDeepLinkPaths() {
+        assertEquals("/demo", UrlValidator.safeDeepLinkPath("/demo"))
+        assertEquals("", UrlValidator.safeDeepLinkPath("//evil.com/phish"))
+        assertEquals("", UrlValidator.safeDeepLinkPath("/../etc/passwd"))
+        assertEquals("", UrlValidator.safeDeepLinkPath(null))
+    }
 }

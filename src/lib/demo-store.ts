@@ -559,23 +559,30 @@ function buildInitialDemoState(): DemoState {
   };
 }
 
+let memoryFallbackState: DemoState | null = null;
+
 function loadDemoState(): DemoState {
-  if (typeof window === "undefined") return buildInitialDemoState();
+  if (typeof window === "undefined") {
+    if (!memoryFallbackState) memoryFallbackState = buildInitialDemoState();
+    return memoryFallbackState;
+  }
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return buildInitialDemoState();
+    if (!raw) return memoryFallbackState ?? buildInitialDemoState();
     return JSON.parse(raw) as DemoState;
   } catch {
-    return buildInitialDemoState();
+    if (!memoryFallbackState) memoryFallbackState = buildInitialDemoState();
+    return memoryFallbackState;
   }
 }
 
 function saveDemoState(state: DemoState) {
+  memoryFallbackState = state;
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
-    // ignore quota errors
+    // fallback already preserved in memoryFallbackState
   }
 }
 

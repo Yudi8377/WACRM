@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Building2, Mail, MessageCircle, Pencil, Phone, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
+import { Building2, Download, Mail, MessageCircle, Pencil, Phone, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
 import { LIFECYCLE_LABELS, type ContactRecord, type LifecycleStage } from "@/lib/crm-types";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
@@ -112,6 +112,35 @@ export function ContactsView({ adapter, contacts, onRefresh, onStartChat, onToas
     }
   }
 
+  function exportCsv() {
+    const safeCell = (val: string) => {
+      const cleaned = val.replace(/\r?\n/g, " ");
+      const neutralized = /^[=+\-@]/.test(cleaned) ? `'${cleaned}` : cleaned;
+      return `"${neutralized.replace(/"/g, '""')}"`;
+    };
+    const header = ["Nama", "Telepon", "Email", "Perusahaan", "Tahap", "Tag", "Catatan"];
+    const rows = filtered.map((c) => [
+      safeCell(c.displayName),
+      safeCell(c.phoneE164 ?? ""),
+      safeCell(c.email ?? ""),
+      safeCell(c.company ?? ""),
+      safeCell(c.lifecycleStage),
+      safeCell(c.tags.join("; ")),
+      safeCell(c.notes ?? ""),
+    ]);
+    const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `wacrm-kontak-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    onToast(`${filtered.length} kontak diekspor ke CSV.`);
+  }
+
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6">
       <div className="mx-auto max-w-6xl space-y-5">
@@ -120,14 +149,25 @@ export function ContactsView({ adapter, contacts, onRefresh, onStartChat, onToas
             <h2 className="text-xl font-bold text-slate-900">Direktori Kontak Pelanggan</h2>
             <p className="text-sm text-slate-500">Tambah, ubah, kelompokkan tahap pelanggan, dan mulai percakapan langsung.</p>
           </div>
-          <button
-            type="button"
-            onClick={openCreate}
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
-          >
-            <UserPlus className="h-4 w-4" />
-            Tambah Kontak
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={exportCsv}
+              disabled={filtered.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" />
+              Ekspor CSV
+            </button>
+            <button
+              type="button"
+              onClick={openCreate}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
+            >
+              <UserPlus className="h-4 w-4" />
+              Tambah Kontak
+            </button>
+          </div>
         </div>
 
         {/* Filters */}

@@ -65,14 +65,21 @@ export default function AndroidPage() {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
+            <a
+              href="https://github.com/Yudi8377/WACRM/releases/latest/download/wacrm-android.apk"
+              className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400"
+            >
+              <Download className="h-4 w-4" />
+              Unduh APK Android (v1.1.0)
+            </a>
             {deferredPrompt ? (
               <button
                 type="button"
                 onClick={() => void triggerInstall()}
-                className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-400"
+                className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/40 bg-emerald-500/15 px-5 py-3 text-sm font-bold text-emerald-200 hover:bg-emerald-500/25"
               >
-                <Download className="h-4 w-4" />
-                Pasang Sekarang di Android
+                <Smartphone className="h-4 w-4" />
+                Pasang PWA di Chrome
               </button>
             ) : installed ? (
               <span className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500/20 px-5 py-3 text-sm font-bold text-emerald-300">
@@ -82,19 +89,19 @@ export default function AndroidPage() {
             ) : (
               <Link
                 href="/demo"
-                className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-400"
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-800 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700"
               >
                 <Smartphone className="h-4 w-4" />
                 Buka Tampilan Mobile WACRM
               </Link>
             )}
             <a
-              href="https://github.com/Yudi8377/WACRM/actions"
+              href="https://github.com/Yudi8377/WACRM/releases/latest"
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-800 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-700"
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-800/60 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-slate-700"
             >
-              Unduh APK dari GitHub Actions
+              Catatan Rilis GitHub
               <ExternalLink className="h-4 w-4" />
             </a>
           </div>
