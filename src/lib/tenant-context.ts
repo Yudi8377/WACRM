@@ -19,8 +19,16 @@ export type TenantContext = { userId: string; tenantId: string; role: TenantRole
  * tenantId is accepted only after active membership is verified in this transaction.
  * The database runtime role must be non-superuser and NOBYPASSRLS.
  */
+const ROLE_RANK: Record<TenantRole, number> = {
+  viewer: 1,
+  agent: 2,
+  supervisor: 3,
+  admin: 4,
+  owner: 5,
+};
+
 export async function withTenantContext<T>(
-  identity: { userId: string; tenantId: string },
+  identity: { userId: string; tenantId: string; minRole?: TenantRole },
   work: (client: PoolClient, context: TenantContext) => Promise<T>
 ): Promise<T> {
   if (!identity.userId || !identity.tenantId) throw new TenantAccessError();
@@ -36,7 +44,11 @@ export async function withTenantContext<T>(
       [identity.tenantId, identity.userId]
     );
     if (!membership.rows[0]) throw new TenantAccessError();
-    const result = await work(client, { userId: identity.userId, tenantId: identity.tenantId, role: membership.rows[0].role });
+    const role = membership.rows[0].role;
+    if (identity.minRole && ROLE_RANK[role] < ROLE_RANK[identity.minRole]) {
+      throw new TenantAccessError();
+    }
+    const result = await work(client, { userId: identity.userId, tenantId: identity.tenantId, role });
     await client.query('COMMIT');
     transactionOpen = false;
     return result;

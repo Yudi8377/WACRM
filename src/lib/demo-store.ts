@@ -1,22 +1,40 @@
 "use client";
 
-import type {
-  AuditLogRecord,
-  ChannelRecord,
-  ChannelType,
-  ContactRecord,
-  ConversationNoteRecord,
-  ConversationRecord,
-  LifecycleStage,
-  MessageRecord,
-  MessageTemplateRecord,
-  QuickReplyRecord,
-  TeamMemberRecord,
-  WorkspaceAnalytics,
+import {
+  buildDefaultAiAgents,
+  buildDoubleEntryForOrder,
+  buildOrderRecord,
+  computeFinancialReport,
+  evaluateFraudRisk,
+  orchestrateMultiAgentReply,
+  runSystemGuardianAudit,
+} from "@/lib/ai-agents";
+import {
+  formatIdr,
+  type AccountingEntryRecord,
+  type AiAgentRecord,
+  type AiKnowledgeItemRecord,
+  type AiSecurityIncidentRecord,
+  type AuditLogRecord,
+  type ChannelRecord,
+  type ChannelType,
+  type ContactRecord,
+  type ConversationNoteRecord,
+  type ConversationRecord,
+  type ErpProductRecord,
+  type ErpStockMovementRecord,
+  type ErpSupplierRecord,
+  type LifecycleStage,
+  type MessageRecord,
+  type MessageTemplateRecord,
+  type PosOrderRecord,
+  type QuickReplyRecord,
+  type TeamMemberRecord,
+  type WorkspaceAnalytics,
 } from "@/lib/crm-types";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
-const STORAGE_KEY = "wacrm_demo_workspace_v1";
+const STORAGE_KEY = "wacrm_demo_workspace_v2";
 
 interface DemoState {
   workspaceName: string;
@@ -30,6 +48,14 @@ interface DemoState {
   templates: MessageTemplateRecord[];
   members: TeamMemberRecord[];
   auditLogs: AuditLogRecord[];
+  aiAgents: AiAgentRecord[];
+  aiKnowledge: AiKnowledgeItemRecord[];
+  aiIncidents: AiSecurityIncidentRecord[];
+  products: ErpProductRecord[];
+  suppliers: ErpSupplierRecord[];
+  stockMovements: ErpStockMovementRecord[];
+  orders: PosOrderRecord[];
+  accountingEntries: AccountingEntryRecord[];
 }
 
 function makeUuid(): string {
@@ -544,9 +570,419 @@ function buildInitialDemoState(): DemoState {
     },
   ];
 
+  const p1 = "60000000-0000-4000-8000-000000000001";
+  const p2 = "60000000-0000-4000-8000-000000000002";
+  const p3 = "60000000-0000-4000-8000-000000000003";
+  const p4 = "60000000-0000-4000-8000-000000000004";
+  const p5 = "60000000-0000-4000-8000-000000000005";
+  const p6 = "60000000-0000-4000-8000-000000000006";
+
+  const products: ErpProductRecord[] = [
+    {
+      id: p1,
+      sku: "GROSIR-50",
+      name: "Paket Grosir Sembako Premium",
+      category: "Grosir",
+      description: "Paket grosir lengkap untuk toko & reseller (beras, minyak, gula, kopi). Gratis ongkir area Jawa Timur minimal 10 karton.",
+      unit: "karton",
+      unitPrice: 425000,
+      costPrice: 310000,
+      stockQty: 84,
+      minStock: 15,
+      isActive: true,
+      createdAt: minutesAgo(4800),
+      updatedAt: minutesAgo(20),
+    },
+    {
+      id: p2,
+      sku: "KOPI-GAYO",
+      name: "Kopi Arabika Gayo Roasted 1Kg",
+      category: "Minuman",
+      description: "Biji kopi Arabika Gayo grade specialty medium roast, aroma cokelat & floral. Cocok untuk kafe & kedai.",
+      unit: "kg",
+      unitPrice: 185000,
+      costPrice: 112000,
+      stockQty: 42,
+      minStock: 10,
+      isActive: true,
+      createdAt: minutesAgo(4200),
+      updatedAt: minutesAgo(45),
+    },
+    {
+      id: p3,
+      sku: "TUMBLER-PRO",
+      name: "Tumbler Stainless Vacuum 750ml",
+      category: "Merchandise",
+      description: "Botol minum stainless steel tahan panas/dingin 18 jam, bisa custom grafir logo perusahaan.",
+      unit: "pcs",
+      unitPrice: 145000,
+      costPrice: 78000,
+      stockQty: 65,
+      minStock: 12,
+      isActive: true,
+      createdAt: minutesAgo(3600),
+      updatedAt: minutesAgo(90),
+    },
+    {
+      id: p4,
+      sku: "MATCHA-PREM",
+      name: "Bubuk Matcha Ceremonial 500gr",
+      category: "Minuman",
+      description: "Matcha impor Uji Jepang warna hijau cerah untuk latte & dessert kafe.",
+      unit: "pack",
+      unitPrice: 260000,
+      costPrice: 165000,
+      stockQty: 6,
+      minStock: 10,
+      isActive: true,
+      createdAt: minutesAgo(3200),
+      updatedAt: minutesAgo(30),
+    },
+    {
+      id: p5,
+      sku: "PRINTER-BT58",
+      name: "Printer Thermal Bluetooth 58mm Portable",
+      category: "Perangkat POS",
+      description: "Printer struk kasir Bluetooth & USB kompatibel penuh dengan aplikasi Android WACRM & ESC/POS.",
+      unit: "unit",
+      unitPrice: 365000,
+      costPrice: 230000,
+      stockQty: 19,
+      minStock: 5,
+      isActive: true,
+      createdAt: minutesAgo(2400),
+      updatedAt: minutesAgo(60),
+    },
+    {
+      id: p6,
+      sku: "BUNDLE-UMKM",
+      name: "Paket Bundling Kasir & CRM UMKM",
+      category: "Perangkat POS",
+      description: "Paket siap jualan berisi Printer Bluetooth 58mm, 10 roll kertas thermal, dan setup katalog ERP + AI Auto-Reply.",
+      unit: "paket",
+      unitPrice: 890000,
+      costPrice: 520000,
+      stockQty: 11,
+      minStock: 4,
+      isActive: true,
+      createdAt: minutesAgo(1800),
+      updatedAt: minutesAgo(15),
+    },
+  ];
+
+  const suppliers: ErpSupplierRecord[] = [
+    {
+      id: "70000000-0000-4000-8000-000000000001",
+      name: "PT Agro Nusantara Sentosa",
+      contactPerson: "Pak Hendra Wijaya",
+      phone: "+628113456001",
+      email: "supply@agronusantara.co.id",
+      address: "Kawasan Industri Rungkut Blok D-14, Surabaya",
+      paymentTerms: "NET 14",
+      status: "active",
+      createdAt: minutesAgo(9000),
+    },
+    {
+      id: "70000000-0000-4000-8000-000000000002",
+      name: "CV Kopi Gayo Mandiri",
+      contactPerson: "Ibu Ratna Dewi",
+      phone: "+6281277889900",
+      email: "order@kopigayomandiri.id",
+      address: "Jl. Takengon Raya No. 22, Aceh Tengah",
+      paymentTerms: "NET 7",
+      status: "active",
+      createdAt: minutesAgo(7200),
+    },
+    {
+      id: "70000000-0000-4000-8000-000000000003",
+      name: "PT TechPOS Indonesia",
+      contactPerson: "Bapak Dimas Pratama",
+      phone: "+6281599001122",
+      email: "b2b@techpos.id",
+      address: "Harco Mangga Dua Blok B2 No. 8, Jakarta",
+      paymentTerms: "NET 30",
+      status: "active",
+      createdAt: minutesAgo(6000),
+    },
+  ];
+
+  const workspaceName = "WACRM AI Enterprise";
+  const ord1 = buildOrderRecord({
+    id: "80000000-0000-4000-8000-000000000001",
+    workspaceName,
+    customerName: "Siti Rahmawati",
+    customerPhone: "+6281234567801",
+    shippingAddress: "Jl. Dhoho No. 88, Kota Kediri, Jawa Timur",
+    channel: "whatsapp",
+    paymentMethod: "qris",
+    paymentStatus: "paid",
+    discountAmount: 250000,
+    items: [
+      { id: "81000000-0000-4000-8000-000000000001", productId: p1, sku: "GROSIR-50", productName: "Paket Grosir Sembako Premium", quantity: 10, unitPrice: 425000, costPrice: 310000 },
+      { id: "81000000-0000-4000-8000-000000000002", productId: p2, sku: "KOPI-GAYO", productName: "Kopi Arabika Gayo Roasted 1Kg", quantity: 4, unitPrice: 185000, costPrice: 112000 },
+    ],
+    aiGenerated: true,
+    fraudRiskScore: 6,
+    conversationId: conv1,
+    contactId: c1,
+    notes: "Diekstrak otomatis dari chat WhatsApp oleh AI Order & POS Agent",
+  });
+  ord1.invoiceNumber = "INV-20261126-1001";
+
+  const ord2 = buildOrderRecord({
+    id: "80000000-0000-4000-8000-000000000002",
+    workspaceName,
+    customerName: "Andi Pratama",
+    customerPhone: "+6281398765402",
+    shippingAddress: "Jl. Diponegoro No. 19, Surabaya",
+    channel: "instagram",
+    paymentMethod: "bank_transfer",
+    paymentStatus: "paid",
+    items: [
+      { id: "81000000-0000-4000-8000-000000000003", productId: p6, sku: "BUNDLE-UMKM", productName: "Paket Bundling Kasir & CRM UMKM", quantity: 2, unitPrice: 890000, costPrice: 520000 },
+      { id: "81000000-0000-4000-8000-000000000004", productId: p3, sku: "TUMBLER-PRO", productName: "Tumbler Stainless Vacuum 750ml", quantity: 5, unitPrice: 145000, costPrice: 78000 },
+    ],
+    aiGenerated: true,
+    fraudRiskScore: 9,
+    conversationId: conv2,
+    contactId: c2,
+    notes: "Order otomatis dari DM Instagram + QR Invoice terkirim",
+  });
+  ord2.invoiceNumber = "INV-20261126-1002";
+
+  const ord3 = buildOrderRecord({
+    id: "80000000-0000-4000-8000-000000000003",
+    workspaceName,
+    customerName: "Rizky Fadillah",
+    customerPhone: "+6285711223303",
+    shippingAddress: "Jl. Brawijaya No. 41, Pare, Kediri",
+    channel: "whatsapp",
+    paymentMethod: "qris",
+    paymentStatus: "unpaid",
+    items: [
+      { id: "81000000-0000-4000-8000-000000000005", productId: p2, sku: "KOPI-GAYO", productName: "Kopi Arabika Gayo Roasted 1Kg", quantity: 6, unitPrice: 185000, costPrice: 112000 },
+      { id: "81000000-0000-4000-8000-000000000006", productId: p5, sku: "PRINTER-BT58", productName: "Printer Thermal Bluetooth 58mm Portable", quantity: 1, unitPrice: 365000, costPrice: 230000 },
+    ],
+    aiGenerated: false,
+    fraudRiskScore: 8,
+    conversationId: conv3,
+    contactId: c3,
+    notes: "Menunggu scan pembayaran QRIS",
+  });
+  ord3.invoiceNumber = "INV-20261126-1003";
+
+  const orders = [ord1, ord2, ord3];
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const accountingEntries: AccountingEntryRecord[] = [
+    {
+      id: "90000000-0000-4000-8000-000000000001",
+      entryNumber: "JE-INIT-001",
+      entryDate: todayStr,
+      accountCode: "1100",
+      accountName: "Kas & Bank / QRIS",
+      accountType: "asset",
+      debit: 35000000,
+      credit: 0,
+      referenceType: "capital",
+      referenceId: null,
+      description: "Setoran Modal Kerja Awal Kas & Rekening Operasional",
+      aiVerified: true,
+      createdAt: minutesAgo(4800),
+    },
+    {
+      id: "90000000-0000-4000-8000-000000000002",
+      entryNumber: "JE-INIT-001",
+      entryDate: todayStr,
+      accountCode: "1300",
+      accountName: "Persediaan Barang Dagang",
+      accountType: "asset",
+      debit: 45000000,
+      credit: 0,
+      referenceType: "capital",
+      referenceId: null,
+      description: "Nilai Persediaan Awal Gudang ERP",
+      aiVerified: true,
+      createdAt: minutesAgo(4800),
+    },
+    {
+      id: "90000000-0000-4000-8000-000000000003",
+      entryNumber: "JE-INIT-001",
+      entryDate: todayStr,
+      accountCode: "3100",
+      accountName: "Modal Pemilik",
+      accountType: "equity",
+      debit: 0,
+      credit: 80000000,
+      referenceType: "capital",
+      referenceId: null,
+      description: "Ekuitas Awal Perusahaan WACRM",
+      aiVerified: true,
+      createdAt: minutesAgo(4800),
+    },
+    ...orders.flatMap((o, idx) =>
+      buildDoubleEntryForOrder(o).map((line, lIdx) => ({
+        ...line,
+        id: `90000000-0000-4000-8000-000000001${idx}${lIdx}`,
+        createdAt: minutesAgo(120 - idx * 30),
+      })),
+    ),
+    {
+      id: "90000000-0000-4000-8000-000000000090",
+      entryNumber: "JE-EXP-001",
+      entryDate: todayStr,
+      accountCode: "6100",
+      accountName: "Beban Operasional & Pengiriman",
+      accountType: "expense",
+      debit: 650000,
+      credit: 0,
+      referenceType: "manual",
+      referenceId: null,
+      description: "Biaya pengiriman logistik & listrik kantor minggu ini",
+      aiVerified: true,
+      createdAt: minutesAgo(60),
+    },
+    {
+      id: "90000000-0000-4000-8000-000000000091",
+      entryNumber: "JE-EXP-001",
+      entryDate: todayStr,
+      accountCode: "1100",
+      accountName: "Kas & Bank / QRIS",
+      accountType: "asset",
+      debit: 0,
+      credit: 650000,
+      referenceType: "manual",
+      referenceId: null,
+      description: "Pembayaran biaya logistik & listrik",
+      aiVerified: true,
+      createdAt: minutesAgo(60),
+    },
+  ];
+
+  const stockMovements: ErpStockMovementRecord[] = [
+    {
+      id: "75000000-0000-4000-8000-000000000001",
+      productId: p1,
+      productName: "Paket Grosir Sembako Premium",
+      sku: "GROSIR-50",
+      movementType: "out",
+      quantity: -10,
+      referenceType: "pos_order",
+      referenceId: ord1.id,
+      notes: "Penjualan otomatis AI INV-20261126-1001",
+      createdAt: minutesAgo(95),
+    },
+    {
+      id: "75000000-0000-4000-8000-000000000002",
+      productId: p6,
+      productName: "Paket Bundling Kasir & CRM UMKM",
+      sku: "BUNDLE-UMKM",
+      movementType: "out",
+      quantity: -2,
+      referenceType: "pos_order",
+      referenceId: ord2.id,
+      notes: "Penjualan DM Instagram INV-20261126-1002",
+      createdAt: minutesAgo(62),
+    },
+    {
+      id: "75000000-0000-4000-8000-000000000003",
+      productId: p2,
+      productName: "Kopi Arabika Gayo Roasted 1Kg",
+      sku: "KOPI-GAYO",
+      movementType: "in",
+      quantity: 30,
+      referenceType: "purchase_order",
+      referenceId: "PO-2026-018",
+      notes: "Restok dari CV Kopi Gayo Mandiri",
+      createdAt: minutesAgo(400),
+    },
+  ];
+
+  const aiAgents: AiAgentRecord[] = buildDefaultAiAgents().map((a, i) => ({
+    ...a,
+    id: `50000000-0000-4000-8000-00000000000${i + 1}`,
+  }));
+
+  const aiKnowledge: AiKnowledgeItemRecord[] = [
+    ...products.map((p, idx) => ({
+      id: `51000000-0000-4000-8000-00000000000${idx + 1}`,
+      sourceType: "product" as const,
+      sourceId: p.id,
+      title: `Produk ${p.name} (${p.sku})`,
+      content: `${p.name} [${p.sku}] kategori ${p.category}. Harga ${formatIdr(p.unitPrice)}/${p.unit}. Stok gudang ERP: ${p.stockQty} ${p.unit}. ${p.description}`,
+      tags: ["produk", p.sku.toLowerCase(), p.category.toLowerCase()],
+      confidence: 0.97,
+      usageCount: 18 - idx * 2,
+      autoGenerated: true,
+      createdAt: minutesAgo(1440),
+      updatedAt: minutesAgo(15),
+    })),
+    {
+      id: "51000000-0000-4000-8000-000000000090",
+      sourceType: "sop",
+      sourceId: null,
+      title: "Kebijakan Diskon, PPN & Pengiriman Resmi",
+      content: "Diskon VIP maksimal 10% untuk pembelian >= 10 unit. Semua invoice otomatis dikenakan PPN 11% dan dilengkapi QRIS resmi. Pengiriman same-day untuk order sebelum pukul 15.00 WIB area Jawa Timur.",
+      tags: ["sop", "diskon", "ongkir", "qris"],
+      confidence: 0.99,
+      usageCount: 34,
+      autoGenerated: false,
+      createdAt: minutesAgo(3000),
+      updatedAt: minutesAgo(120),
+    },
+    {
+      id: "51000000-0000-4000-8000-000000000091",
+      sourceType: "autonomous_learning",
+      sourceId: null,
+      title: "Sintesis AI: Pola Pertanyaan Printer Bluetooth & Aplikasi Android",
+      content: "Pelanggan UMKM sering menanyakan printer thermal 58mm yang kompatibel dengan Android WACRM. Rekomendasikan PRINTER-BT58 (Rp 365.000) atau BUNDLE-UMKM (Rp 890.000) yang mendukung cetak Bluetooth ESC/POS & WiFi.",
+      tags: ["autonomous_learning", "android", "bluetooth", "printer"],
+      confidence: 0.93,
+      usageCount: 11,
+      autoGenerated: true,
+      createdAt: minutesAgo(240),
+      updatedAt: minutesAgo(35),
+    },
+  ];
+
+  const aiIncidents: AiSecurityIncidentRecord[] = [
+    {
+      id: "52000000-0000-4000-8000-000000000001",
+      agentKey: "fraud_sentinel",
+      category: "fraud_order",
+      severity: "high",
+      riskScore: 84,
+      title: "Percobaan Order COD Fiktif & Permintaan Diskon 90% Diblokir",
+      description: "Fraud Sentinel mendeteksi chat dengan indikasi manipulasi harga & permintaan kirim tanpa pembayaran resmi.",
+      selfHealed: true,
+      healingAction: "Order otomatis ditahan, balasan verifikasi pembayaran QRIS resmi dikirim, dan sesi tercatat di audit keamanan.",
+      status: "mitigated",
+      relatedEntityType: "conversation",
+      relatedEntityId: conv4,
+      createdAt: minutesAgo(90),
+      resolvedAt: null,
+    },
+    {
+      id: "52000000-0000-4000-8000-000000000002",
+      agentKey: "system_guardian",
+      category: "stock_mismatch",
+      severity: "medium",
+      riskScore: 44,
+      title: "Stok Bubuk Matcha Ceremonial 500gr Menipis (Sisa 6 pack)",
+      description: "Stok berada di bawah batas minimum ERP (10 pack).",
+      selfHealed: true,
+      healingAction: "Basis pengetahuan CS diperbarui otomatis & draf rekomendasi restok disiapkan untuk supplier.",
+      status: "resolved",
+      relatedEntityType: "erp_products",
+      relatedEntityId: p4,
+      createdAt: minutesAgo(40),
+      resolvedAt: minutesAgo(38),
+    },
+  ];
+
   return {
-    workspaceName: "WACRM Demo Enterprise",
-    workspaceSlug: "wacrm-demo-enterprise",
+    workspaceName,
+    workspaceSlug: "wacrm-ai-enterprise",
     contacts,
     channels,
     conversations,
@@ -556,6 +992,14 @@ function buildInitialDemoState(): DemoState {
     templates,
     members,
     auditLogs,
+    aiAgents,
+    aiKnowledge,
+    aiIncidents,
+    products,
+    suppliers,
+    stockMovements,
+    orders,
+    accountingEntries,
   };
 }
 
@@ -650,6 +1094,16 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
         templates: [...state.templates],
         members: [...state.members],
         analytics: computeAnalytics(state),
+        aiAgents: [...state.aiAgents],
+        aiKnowledge: [...state.aiKnowledge],
+        aiIncidents: [...state.aiIncidents],
+        products: [...state.products],
+        suppliers: [...state.suppliers],
+        stockMovements: [...state.stockMovements],
+        orders: [...state.orders],
+        accountingEntries: [...state.accountingEntries],
+        financialReport: computeFinancialReport(state.accountingEntries, state.products),
+        syncedAt: new Date().toISOString(),
       };
     },
     async loadConversationDetail(conversationId) {
@@ -978,6 +1432,649 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
     },
     async resetDemo() {
       state = buildInitialDemoState();
+      commit();
+    },
+
+    // =========================================================================
+    // Multi-Agent AI Swarm, POS + Invoice + QR, ERP & Double-Entry Accounting
+    // =========================================================================
+    async runAiAutoReply(conversationId, simulatedInboundText) {
+      state = loadDemoState();
+      const conv = state.conversations.find((c) => c.id === conversationId);
+      if (!conv) throw new Error("Percakapan tidak ditemukan.");
+      const now = new Date().toISOString();
+
+      let incoming = simulatedInboundText?.trim() ?? "";
+      if (incoming) {
+        const inboundMsg: MessageRecord = {
+          id: makeUuid(),
+          conversationId,
+          channel: conv.channel,
+          externalMessageId: null,
+          direction: "inbound",
+          messageType: "text",
+          bodyText: incoming,
+          deliveryStatus: "received",
+          providerTimestamp: now,
+          createdAt: now,
+        };
+        state.messages[conversationId] = [...(state.messages[conversationId] ?? []), inboundMsg];
+      } else {
+        const msgs = state.messages[conversationId] ?? [];
+        const lastInbound = [...msgs].reverse().find((m) => m.direction === "inbound");
+        incoming = lastInbound?.bodyText ?? "Halo, minta info katalog produk & stok terbaru.";
+      }
+
+      const plan = orchestrateMultiAgentReply({
+        incomingMessage: incoming,
+        customerName: conv.contactName,
+        customerPhone: conv.contactPhone,
+        workspaceName: state.workspaceName,
+        products: state.products,
+        knowledgeItems: state.aiKnowledge,
+        agents: state.aiAgents,
+      });
+
+      let createdOrder: PosOrderRecord | null = null;
+      if (plan.extractedOrder && !plan.fraud.blocked) {
+        const draft = plan.extractedOrder;
+        createdOrder = buildOrderRecord({
+          id: makeUuid(),
+          workspaceName: state.workspaceName,
+          customerName: draft.customerName,
+          customerPhone: draft.customerPhone,
+          shippingAddress: draft.shippingAddress,
+          channel: conv.channel,
+          paymentMethod: draft.paymentMethod,
+          paymentStatus: "unpaid",
+          items: draft.items.map((i) => ({
+            id: makeUuid(),
+            productId: i.product.id,
+            sku: i.product.sku,
+            productName: i.product.name,
+            quantity: i.quantity,
+            unitPrice: i.product.unitPrice,
+            costPrice: i.product.costPrice,
+          })),
+          aiGenerated: true,
+          fraudRiskScore: plan.fraud.riskScore,
+          conversationId,
+          contactId: conv.contactId,
+          notes: "Dibuat otomatis oleh Multi-Agent AI dari chat pelanggan",
+        });
+
+        state.orders = [createdOrder, ...state.orders];
+
+        // Deduct ERP stock & log movements
+        for (const item of draft.items) {
+          state.products = state.products.map((p) =>
+            p.id === item.product.id
+              ? { ...p, stockQty: Math.max(0, p.stockQty - item.quantity), updatedAt: now }
+              : p,
+          );
+          state.stockMovements.unshift({
+            id: makeUuid(),
+            productId: item.product.id,
+            productName: item.product.name,
+            sku: item.product.sku,
+            movementType: "out",
+            quantity: -item.quantity,
+            referenceType: "pos_order",
+            referenceId: createdOrder.id,
+            notes: `Order AI ${createdOrder.invoiceNumber}`,
+            createdAt: now,
+          });
+        }
+
+        // Post balanced double-entry journal lines
+        const journal = buildDoubleEntryForOrder(createdOrder).map((l) => ({
+          ...l,
+          id: makeUuid(),
+          createdAt: now,
+        }));
+        state.accountingEntries = [...journal, ...state.accountingEntries];
+      }
+
+      const replyBody = createdOrder
+        ? `${plan.replyText}\n\nNo. Invoice: ${createdOrder.invoiceNumber}\nKode Verifikasi QR: ${createdOrder.qrPayload.slice(-12)}`
+        : plan.replyText;
+
+      const replyMessage: MessageRecord = {
+        id: makeUuid(),
+        conversationId,
+        channel: conv.channel,
+        externalMessageId: null,
+        direction: "outbound",
+        messageType: "text",
+        bodyText: replyBody,
+        deliveryStatus: "delivered",
+        providerTimestamp: now,
+        createdAt: now,
+      };
+      state.messages[conversationId] = [...(state.messages[conversationId] ?? []), replyMessage];
+      state.conversations = state.conversations.map((c) =>
+        c.id === conversationId
+          ? { ...c, lastMessageAt: now, lastMessageText: replyBody.slice(0, 140), unreadCount: 0, updatedAt: now }
+          : c,
+      );
+
+      let learnedKnowledge: AiKnowledgeItemRecord | null = null;
+      if (plan.learnedKnowledgeCandidate) {
+        learnedKnowledge = {
+          id: makeUuid(),
+          sourceType: "autonomous_learning",
+          sourceId: conversationId,
+          title: plan.learnedKnowledgeCandidate.title,
+          content: plan.learnedKnowledgeCandidate.content,
+          tags: plan.learnedKnowledgeCandidate.tags,
+          confidence: 0.91,
+          usageCount: 1,
+          autoGenerated: true,
+          createdAt: now,
+          updatedAt: now,
+        };
+        state.aiKnowledge = [learnedKnowledge, ...state.aiKnowledge];
+      }
+
+      let securityIncident: AiSecurityIncidentRecord | null = null;
+      if (plan.fraud.riskScore >= 45) {
+        securityIncident = {
+          id: makeUuid(),
+          agentKey: "fraud_sentinel",
+          category: "fraud_order",
+          severity: plan.fraud.severity,
+          riskScore: plan.fraud.riskScore,
+          title: plan.fraud.blocked
+            ? "Transaksi Mencurigakan Diblokir Otomatis oleh AI"
+            : "Peringatan Risiko Fraud pada Chat",
+          description: plan.fraud.reasons.join(" "),
+          selfHealed: true,
+          healingAction: plan.fraud.blocked
+            ? "Order ditahan otomatis & respons proteksi dikirim ke pelanggan."
+            : "Ditandai untuk pemantauan supervisor.",
+          status: plan.fraud.blocked ? "mitigated" : "open",
+          relatedEntityType: "conversation",
+          relatedEntityId: conversationId,
+          createdAt: now,
+          resolvedAt: null,
+        };
+        state.aiIncidents = [securityIncident, ...state.aiIncidents];
+      }
+
+      state.aiAgents = state.aiAgents.map((a) =>
+        a.agentKey === "cs_sales" ||
+        a.agentKey === "fraud_sentinel" ||
+        a.agentKey === "knowledge_learner" ||
+        (createdOrder && a.agentKey === "order_pos")
+          ? { ...a, actionsExecuted: a.actionsExecuted + 1, lastRunAt: now }
+          : a,
+      );
+      pushAudit("ai.auto_reply.executed", "conversation", conversationId, {
+        createdInvoice: createdOrder?.invoiceNumber ?? null,
+        fraudRiskScore: plan.fraud.riskScore,
+      });
+      commit();
+
+      return {
+        replyMessage,
+        agentTrace: plan.agentTrace,
+        confidence: plan.confidence,
+        fraudRiskScore: plan.fraud.riskScore,
+        createdOrder,
+        learnedKnowledge,
+        securityIncident,
+      };
+    },
+
+    async updateAiAgent(agentKey, patch) {
+      state = loadDemoState();
+      const idx = state.aiAgents.findIndex((a) => a.agentKey === agentKey);
+      if (idx === -1) throw new Error("Agen AI tidak ditemukan.");
+      const updated = { ...state.aiAgents[idx], ...patch };
+      state.aiAgents[idx] = updated;
+      pushAudit("ai.agent.updated", "ai_agent", agentKey, patch);
+      commit();
+      return updated;
+    },
+
+    async runAiKnowledgeSync() {
+      state = loadDemoState();
+      const now = new Date().toISOString();
+      const nonProduct = state.aiKnowledge.filter((k) => k.sourceType !== "product");
+      const productItems: AiKnowledgeItemRecord[] = state.products
+        .filter((p) => p.isActive)
+        .map((p) => ({
+          id: makeUuid(),
+          sourceType: "product",
+          sourceId: p.id,
+          title: `Produk ${p.name} (${p.sku})`,
+          content: `${p.name} [${p.sku}] kategori ${p.category}. Harga ${formatIdr(p.unitPrice)}/${p.unit}. Stok gudang ERP: ${p.stockQty} ${p.unit}. ${p.description}`,
+          tags: ["produk", p.sku.toLowerCase(), p.category.toLowerCase()],
+          confidence: 0.97,
+          usageCount: 1,
+          autoGenerated: true,
+          createdAt: now,
+          updatedAt: now,
+        }));
+      const totalRev = state.orders.reduce((s, o) => s + o.totalAmount, 0);
+      const synthesis: AiKnowledgeItemRecord = {
+        id: makeUuid(),
+        sourceType: "autonomous_learning",
+        sourceId: null,
+        title: `Sintesis Otonom Bisnis (${new Date().toLocaleTimeString("id-ID")})`,
+        content: `AI berhasil mengonsolidasi ${state.products.length} produk ERP, ${state.conversations.length} percakapan aktif, dan ${state.orders.length} transaksi POS dengan omzet ${formatIdr(totalRev)}.`,
+        tags: ["autonomous_learning", "sinkronisasi", "erp"],
+        confidence: 0.95,
+        usageCount: 1,
+        autoGenerated: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+      state.aiKnowledge = [synthesis, ...productItems, ...nonProduct];
+      state.aiAgents = state.aiAgents.map((a) =>
+        a.agentKey === "knowledge_learner" ? { ...a, actionsExecuted: a.actionsExecuted + 1, lastRunAt: now } : a,
+      );
+      pushAudit("ai.knowledge.synced", "ai_knowledge", null, { count: productItems.length + 1 });
+      commit();
+      return { syncedCount: productItems.length + 1 };
+    },
+
+    async addAiKnowledge(input) {
+      state = loadDemoState();
+      const now = new Date().toISOString();
+      const item: AiKnowledgeItemRecord = {
+        id: makeUuid(),
+        sourceType: input.sourceType ?? "sop",
+        sourceId: null,
+        title: input.title.trim(),
+        content: input.content.trim(),
+        tags: input.tags ?? [],
+        confidence: 0.95,
+        usageCount: 0,
+        autoGenerated: false,
+        createdAt: now,
+        updatedAt: now,
+      };
+      state.aiKnowledge = [item, ...state.aiKnowledge];
+      commit();
+      return item;
+    },
+
+    async deleteAiKnowledge(knowledgeId) {
+      state = loadDemoState();
+      state.aiKnowledge = state.aiKnowledge.filter((k) => k.id !== knowledgeId);
+      commit();
+    },
+
+    async runAiGuardianScan() {
+      state = loadDemoState();
+      const now = new Date().toISOString();
+      const audit = runSystemGuardianAudit({
+        products: state.products,
+        orders: state.orders,
+        entries: state.accountingEntries,
+      });
+      if (audit.autoBalancedEntry) {
+        state.accountingEntries = [
+          { ...audit.autoBalancedEntry, id: makeUuid(), createdAt: now },
+          ...state.accountingEntries,
+        ];
+      }
+      const created: AiSecurityIncidentRecord[] = audit.incidents.map((inc) => ({
+        ...inc,
+        id: makeUuid(),
+        createdAt: now,
+      }));
+      state.aiIncidents = [...created, ...state.aiIncidents].slice(0, 60);
+      state.aiAgents = state.aiAgents.map((a) =>
+        a.agentKey === "fraud_sentinel" || a.agentKey === "system_guardian"
+          ? { ...a, actionsExecuted: a.actionsExecuted + 1, lastRunAt: now }
+          : a,
+      );
+      pushAudit("ai.guardian.scanned", "system", null, { healthScore: audit.healthScore, count: created.length });
+      commit();
+      return { healthScore: audit.healthScore, incidents: created };
+    },
+
+    async resolveIncident(incidentId) {
+      state = loadDemoState();
+      const now = new Date().toISOString();
+      state.aiIncidents = state.aiIncidents.map((i) =>
+        i.id === incidentId ? { ...i, status: "resolved", resolvedAt: now } : i,
+      );
+      commit();
+    },
+
+    async createProduct(input) {
+      state = loadDemoState();
+      const now = new Date().toISOString();
+      const prod: ErpProductRecord = {
+        id: makeUuid(),
+        sku: input.sku.trim().toUpperCase(),
+        name: input.name.trim(),
+        category: input.category.trim() || "Umum",
+        description: input.description?.trim() ?? "",
+        unit: input.unit?.trim() || "pcs",
+        unitPrice: input.unitPrice,
+        costPrice: input.costPrice ?? 0,
+        stockQty: input.stockQty,
+        minStock: input.minStock ?? 5,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+      state.products = [prod, ...state.products];
+      if (prod.stockQty > 0) {
+        state.stockMovements.unshift({
+          id: makeUuid(),
+          productId: prod.id,
+          productName: prod.name,
+          sku: prod.sku,
+          movementType: "in",
+          quantity: prod.stockQty,
+          referenceType: "initial_stock",
+          referenceId: null,
+          notes: "Stok awal produk baru",
+          createdAt: now,
+        });
+      }
+      // Auto-sync into AI Knowledge Base
+      state.aiKnowledge.unshift({
+        id: makeUuid(),
+        sourceType: "product",
+        sourceId: prod.id,
+        title: `Produk ${prod.name} (${prod.sku})`,
+        content: `${prod.name} [${prod.sku}] kategori ${prod.category}. Harga ${formatIdr(prod.unitPrice)}/${prod.unit}. Stok gudang ERP: ${prod.stockQty} ${prod.unit}. ${prod.description}`,
+        tags: ["produk", prod.sku.toLowerCase(), prod.category.toLowerCase()],
+        confidence: 0.97,
+        usageCount: 0,
+        autoGenerated: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      pushAudit("erp.product.created", "erp_product", prod.id, { sku: prod.sku });
+      commit();
+      return prod;
+    },
+
+    async updateProduct(productId, input) {
+      state = loadDemoState();
+      const idx = state.products.findIndex((p) => p.id === productId);
+      if (idx === -1) throw new Error("Produk tidak ditemukan.");
+      const curr = state.products[idx];
+      const now = new Date().toISOString();
+      const nextStock =
+        typeof input.stockDelta === "number"
+          ? Math.max(0, curr.stockQty + input.stockDelta)
+          : (input.stockQty ?? curr.stockQty);
+      const updated: ErpProductRecord = {
+        ...curr,
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.category !== undefined ? { category: input.category } : {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(input.unit !== undefined ? { unit: input.unit } : {}),
+        ...(input.unitPrice !== undefined ? { unitPrice: input.unitPrice } : {}),
+        ...(input.costPrice !== undefined ? { costPrice: input.costPrice } : {}),
+        ...(input.minStock !== undefined ? { minStock: input.minStock } : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        stockQty: nextStock,
+        updatedAt: now,
+      };
+      state.products[idx] = updated;
+      const delta = nextStock - curr.stockQty;
+      if (delta !== 0) {
+        state.stockMovements.unshift({
+          id: makeUuid(),
+          productId: updated.id,
+          productName: updated.name,
+          sku: updated.sku,
+          movementType: delta > 0 ? "in" : "adjustment",
+          quantity: delta,
+          referenceType: "manual_update",
+          referenceId: null,
+          notes: input.stockReason ?? "Pembaruan stok ERP",
+          createdAt: now,
+        });
+      }
+      // Keep AI Knowledge Base updated
+      state.aiKnowledge = [
+        {
+          id: makeUuid(),
+          sourceType: "product",
+          sourceId: updated.id,
+          title: `Produk ${updated.name} (${updated.sku})`,
+          content: `${updated.name} [${updated.sku}] kategori ${updated.category}. Harga ${formatIdr(updated.unitPrice)}/${updated.unit}. Stok gudang ERP: ${updated.stockQty} ${updated.unit}. ${updated.description}`,
+          tags: ["produk", updated.sku.toLowerCase(), updated.category.toLowerCase()],
+          confidence: 0.97,
+          usageCount: 0,
+          autoGenerated: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+        ...state.aiKnowledge.filter((k) => !(k.sourceType === "product" && k.sourceId === updated.id)),
+      ];
+      commit();
+      return updated;
+    },
+
+    async deleteProduct(productId) {
+      state = loadDemoState();
+      state.products = state.products.filter((p) => p.id !== productId);
+      state.aiKnowledge = state.aiKnowledge.filter((k) => !(k.sourceType === "product" && k.sourceId === productId));
+      commit();
+    },
+
+    async createSupplier(input) {
+      state = loadDemoState();
+      const sup: ErpSupplierRecord = {
+        id: makeUuid(),
+        name: input.name.trim(),
+        contactPerson: input.contactPerson?.trim() || null,
+        phone: input.phone?.trim() || null,
+        email: input.email?.trim() || null,
+        address: input.address?.trim() || null,
+        paymentTerms: input.paymentTerms?.trim() || "NET 14",
+        status: "active",
+        createdAt: new Date().toISOString(),
+      };
+      state.suppliers = [sup, ...state.suppliers];
+      commit();
+      return sup;
+    },
+
+    async createPosOrder(input) {
+      state = loadDemoState();
+      const now = new Date().toISOString();
+      const fraud = evaluateFraudRisk({
+        message: `${input.customerName} ${input.notes ?? ""}`,
+        extractedOrder: null,
+        discountAmount: input.discountAmount,
+      });
+
+      const order = buildOrderRecord({
+        id: makeUuid(),
+        workspaceName: state.workspaceName,
+        customerName: input.customerName.trim(),
+        customerPhone: input.customerPhone ?? null,
+        shippingAddress: input.shippingAddress.trim(),
+        channel: input.channel ?? "whatsapp",
+        paymentMethod: input.paymentMethod,
+        paymentStatus: fraud.blocked ? "flagged" : input.paymentStatus,
+        discountAmount: input.discountAmount ?? 0,
+        taxRate: input.taxRate ?? 0.11,
+        items: input.items.map((i) => ({
+          id: makeUuid(),
+          productId: i.productId ?? null,
+          sku: i.sku,
+          productName: i.productName,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          costPrice: i.costPrice ?? 0,
+        })),
+        aiGenerated: Boolean(input.aiGenerated),
+        fraudRiskScore: fraud.riskScore,
+        conversationId: input.conversationId ?? null,
+        contactId: input.contactId ?? null,
+        notes: input.notes ?? null,
+      });
+
+      state.orders = [order, ...state.orders];
+      for (const item of order.items) {
+        if (item.productId) {
+          state.products = state.products.map((p) =>
+            p.id === item.productId
+              ? { ...p, stockQty: Math.max(0, p.stockQty - item.quantity), updatedAt: now }
+              : p,
+          );
+          state.stockMovements.unshift({
+            id: makeUuid(),
+            productId: item.productId,
+            productName: item.productName,
+            sku: item.sku,
+            movementType: "out",
+            quantity: -item.quantity,
+            referenceType: "pos_order",
+            referenceId: order.id,
+            notes: `Penjualan ${order.invoiceNumber}`,
+            createdAt: now,
+          });
+        }
+      }
+
+      const journal = buildDoubleEntryForOrder(order).map((l) => ({
+        ...l,
+        id: makeUuid(),
+        createdAt: now,
+      }));
+      state.accountingEntries = [...journal, ...state.accountingEntries];
+      pushAudit("pos.order.created", "pos_order", order.id, {
+        invoiceNumber: order.invoiceNumber,
+        totalAmount: order.totalAmount,
+      });
+      commit();
+      return order;
+    },
+
+    async updatePosOrder(orderId, input) {
+      state = loadDemoState();
+      const now = new Date().toISOString();
+      state.orders = state.orders.map((o) =>
+        o.id === orderId ? { ...o, ...input, updatedAt: now } : o,
+      );
+      commit();
+    },
+
+    async deletePosOrder(orderId) {
+      state = loadDemoState();
+      state.orders = state.orders.filter((o) => o.id !== orderId);
+      commit();
+    },
+
+    async createAccountingEntry(input) {
+      state = loadDemoState();
+      const now = new Date().toISOString();
+      const entryDate = input.entryDate ?? now.slice(0, 10);
+      const entryNumber = `JE-MAN-${Date.now().toString().slice(-6)}`;
+      const pairs: Array<Omit<AccountingEntryRecord, "id" | "createdAt">> =
+        input.kind === "expense"
+          ? [
+              {
+                entryNumber,
+                entryDate,
+                accountCode: "6100",
+                accountName: `Beban ${input.categoryName}`,
+                accountType: "expense",
+                debit: input.amount,
+                credit: 0,
+                referenceType: "manual",
+                referenceId: null,
+                description: input.description,
+                aiVerified: true,
+              },
+              {
+                entryNumber,
+                entryDate,
+                accountCode: "1100",
+                accountName: "Kas & Bank / QRIS",
+                accountType: "asset",
+                debit: 0,
+                credit: input.amount,
+                referenceType: "manual",
+                referenceId: null,
+                description: input.description,
+                aiVerified: true,
+              },
+            ]
+          : input.kind === "income"
+            ? [
+                {
+                  entryNumber,
+                  entryDate,
+                  accountCode: "1100",
+                  accountName: "Kas & Bank / QRIS",
+                  accountType: "asset",
+                  debit: input.amount,
+                  credit: 0,
+                  referenceType: "manual",
+                  referenceId: null,
+                  description: input.description,
+                  aiVerified: true,
+                },
+                {
+                  entryNumber,
+                  entryDate,
+                  accountCode: "4200",
+                  accountName: `Pendapatan ${input.categoryName}`,
+                  accountType: "revenue",
+                  debit: 0,
+                  credit: input.amount,
+                  referenceType: "manual",
+                  referenceId: null,
+                  description: input.description,
+                  aiVerified: true,
+                },
+              ]
+            : [
+                {
+                  entryNumber,
+                  entryDate,
+                  accountCode: "1100",
+                  accountName: "Kas & Bank / QRIS",
+                  accountType: "asset",
+                  debit: input.amount,
+                  credit: 0,
+                  referenceType: "manual",
+                  referenceId: null,
+                  description: input.description,
+                  aiVerified: true,
+                },
+                {
+                  entryNumber,
+                  entryDate,
+                  accountCode: "3100",
+                  accountName: `Modal ${input.categoryName}`,
+                  accountType: "equity",
+                  debit: 0,
+                  credit: input.amount,
+                  referenceType: "manual",
+                  referenceId: null,
+                  description: input.description,
+                  aiVerified: true,
+                },
+              ];
+
+      state.accountingEntries = [
+        ...pairs.map((p) => ({ ...p, id: makeUuid(), createdAt: now })),
+        ...state.accountingEntries,
+      ];
+      pushAudit("accounting.entry.created", "accounting_entry", entryNumber, { kind: input.kind, amount: input.amount });
+      commit();
+      return { entryNumber };
+    },
+
+    async deleteAccountingEntry(entryNumber) {
+      state = loadDemoState();
+      state.accountingEntries = state.accountingEntries.filter((e) => e.entryNumber !== entryNumber);
       commit();
     },
   };

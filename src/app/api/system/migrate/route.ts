@@ -69,7 +69,10 @@ export async function POST(request: Request) {
           'organizations','user_profiles','organization_members','channel_connections',
           'contacts','contact_channel_identities','conversations','messages',
           'webhook_events','webhook_inbox','audit_logs','user','session','account',
-          'verification','conversation_notes','quick_replies','whatsapp_templates','broadcast_campaigns'
+          'verification','conversation_notes','quick_replies','whatsapp_templates','broadcast_campaigns',
+          'ai_agents','ai_knowledge_items','ai_security_incidents',
+          'erp_products','erp_suppliers','erp_stock_movements',
+          'pos_orders','pos_order_items','accounting_entries'
         ))::int AS tables_count,
         count(*) FILTER (WHERE rowsecurity = true)::int AS rls_count
       FROM pg_tables

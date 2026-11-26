@@ -26,6 +26,7 @@ describe("Neon PostgreSQL migrations and RLS integrity", () => {
       "db/migrations/0005_whatsapp_webhook_worker.sql",
       "db/migrations/0006_whatsapp_send_idempotency.sql",
       "db/migrations/0007_crm_workspace_features.sql",
+      "db/migrations/0008_ai_pos_erp_accounting.sql",
     ];
 
     for (const file of files) {
@@ -57,6 +58,15 @@ describe("Neon PostgreSQL migrations and RLS integrity", () => {
         "conversation_notes",
         "quick_replies",
         "message_templates",
+        "ai_agents",
+        "ai_knowledge_items",
+        "ai_security_incidents",
+        "erp_products",
+        "erp_suppliers",
+        "erp_stock_movements",
+        "pos_orders",
+        "pos_order_items",
+        "accounting_entries",
         "webhook_events",
         "webhook_inbox",
         "audit_logs",
@@ -80,6 +90,15 @@ describe("Neon PostgreSQL migrations and RLS integrity", () => {
       "conversation_notes",
       "quick_replies",
       "message_templates",
+      "ai_agents",
+      "ai_knowledge_items",
+      "ai_security_incidents",
+      "erp_products",
+      "erp_suppliers",
+      "erp_stock_movements",
+      "pos_orders",
+      "pos_order_items",
+      "accounting_entries",
       "webhook_events",
       "webhook_inbox",
       "audit_logs",
@@ -109,20 +128,36 @@ describe("Neon PostgreSQL migrations and RLS integrity", () => {
         VALUES ('${tenantA}'::uuid, 'salam', 'Salam Pembuka', 'Halo Kak, ada yang bisa kami bantu?', 'pembuka', '${userA}'::uuid);
       INSERT INTO message_templates (tenant_id, channel, name, category, language, body_text, status)
         VALUES ('${tenantA}'::uuid, 'whatsapp', 'konfirmasi_pesanan', 'utility', 'id', 'Pesanan Anda sedang diproses.', 'approved');
+      INSERT INTO ai_agents (tenant_id, agent_key, name, role_description)
+        VALUES ('${tenantA}'::uuid, 'cs_sales', 'CS & Sales Autonomous Agent', 'Balas otomatis dan konversi pesanan');
+      INSERT INTO erp_products (tenant_id, sku, name, category, unit_price, cost_price, stock_qty)
+        VALUES ('${tenantA}'::uuid, 'KOPI-01', 'Kopi Arabika Gayo 1Kg', 'Minuman', 185000, 110000, 50);
+      INSERT INTO pos_orders (tenant_id, invoice_number, customer_name, shipping_address, subtotal, total_amount, qr_payload, ai_generated)
+        VALUES ('${tenantA}'::uuid, 'INV-20261126-0001', 'Budi Santoso', 'Jl. Sudirman 45 Kediri', 185000, 185000, 'WACRM-PAY|INV-20261126-0001|185000', true);
+      INSERT INTO accounting_entries (tenant_id, entry_number, account_code, account_name, account_type, debit, credit, description)
+        VALUES ('${tenantA}'::uuid, 'JE-0001', '1100', 'Kas & Bank', 'asset', 185000, 0, 'Penjualan INV-20261126-0001');
       COMMIT;
     `);
 
-    // Tenant B must see ZERO contacts/quick_replies/templates from Tenant A!
+    // Tenant B must see ZERO rows from Tenant A across ALL tables!
     await pg.exec("BEGIN; SET LOCAL ROLE wacrm_runtime;");
     await pg.query("SELECT set_config('app.user_id', $1, true), set_config('app.tenant_id', $2, true)", [userB, tenantB]);
     const crossContacts = await pg.query<{ count: string }>("SELECT count(*)::text AS count FROM contacts");
     const crossReplies = await pg.query<{ count: string }>("SELECT count(*)::text AS count FROM quick_replies");
     const crossTemplates = await pg.query<{ count: string }>("SELECT count(*)::text AS count FROM message_templates");
+    const crossProducts = await pg.query<{ count: string }>("SELECT count(*)::text AS count FROM erp_products");
+    const crossOrders = await pg.query<{ count: string }>("SELECT count(*)::text AS count FROM pos_orders");
+    const crossLedger = await pg.query<{ count: string }>("SELECT count(*)::text AS count FROM accounting_entries");
+    const crossAgents = await pg.query<{ count: string }>("SELECT count(*)::text AS count FROM ai_agents");
     await pg.exec("COMMIT;");
 
     expect(crossContacts.rows[0].count).toBe("0");
     expect(crossReplies.rows[0].count).toBe("0");
     expect(crossTemplates.rows[0].count).toBe("0");
+    expect(crossProducts.rows[0].count).toBe("0");
+    expect(crossOrders.rows[0].count).toBe("0");
+    expect(crossLedger.rows[0].count).toBe("0");
+    expect(crossAgents.rows[0].count).toBe("0");
 
     // Tenant A can UPDATE and DELETE its own contact
     await pg.exec("BEGIN; SET LOCAL ROLE wacrm_runtime;");

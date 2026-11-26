@@ -1,16 +1,24 @@
 package com.wacrm.android
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.DownloadManager
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.print.PrintAttributes
+import android.print.PrintManager
+import android.util.Base64
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.URLUtil
@@ -30,8 +38,10 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
 
@@ -41,6 +51,23 @@ class MainActivity : AppCompatActivity() {
     private lateinit var offlineContainer: LinearLayout
 
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var printWebView: WebView? = null
+    private var pendingBluetoothPrint: Pair<String, String>? = null
+
+    private val bluetoothPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val job = pendingBluetoothPrint
+            pendingBluetoothPrint = null
+            if (granted && job != null) {
+                printBluetoothEscPos(job.first, job.second)
+            } else if (!granted) {
+                Toast.makeText(
+                    this,
+                    "Izin Bluetooth diperlukan untuk mencetak ke printer thermal.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
 
     private val prefs by lazy {
         getSharedPreferences("wacrm_android_prefs", Context.MODE_PRIVATE)
@@ -255,6 +282,138 @@ class MainActivity : AppCompatActivity() {
         val network = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(network) ?: return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    fun printCurrentWebView(title: String) {
+        try {
+            val printManager = getSystemService(Context.PRINT_SERVICE) as PrintManager
+            val adapter = webView.createPrintDocumentAdapter(title)
+            printManager.print(title, adapter, PrintAttributes.Builder().build())
+        } catch (_: Exception) {
+            Toast.makeText(this, "Gagal membuka layanan cetak WiFi Android.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun printHtmlDocument(title: String, html: String) {
+        try {
+            val helper = WebView(this)
+            helper.webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView, url: String) {
+                    val printManager = getSystemService(Context.PRINT_SERVICE) as PrintManager
+                    val adapter = view.createPrintDocumentAdapter(title)
+                    printManager.print(title, adapter, PrintAttributes.Builder().build())
+                    printWebView = null
+                }
+            }
+            printWebView = helper
+            helper.loadDataWithBaseURL(getBaseUrl(), html, "text/html", "UTF-8", null)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Gagal membuka layanan cetak WiFi Android.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun printBluetoothEscPos(base64Payload: String, jobName: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val hasPermission = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_CONNECT
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!hasPermission) {
+                pendingBluetoothPrint = Pair(base64Payload, jobName)
+                bluetoothPermissionLauncher.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                return
+            }
+        }
+
+        val btManager = getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+        val adapter = btManager?.adapter
+        if (adapter == null || !adapter.isEnabled) {
+            Toast.makeText(
+                this,
+                "Aktifkan Bluetooth dan pasangkan printer thermal terlebih dahulu di Pengaturan Android.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        val bonded: List<BluetoothDevice> = try {
+            adapter.bondedDevices?.toList() ?: emptyList()
+        } catch (_: SecurityException) {
+            emptyList()
+        }
+
+        if (bonded.isEmpty()) {
+            Toast.makeText(
+                this,
+                "Belum ada printer Bluetooth yang terpasang (paired) pada ponsel ini.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        val bytes = try {
+            Base64.decode(base64Payload, Base64.DEFAULT)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Payload ESC/POS tidak valid.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (bonded.size == 1) {
+            sendBytesToBluetoothDevice(bonded[0], bytes, jobName)
+            return
+        }
+
+        val labels = bonded.map { dev ->
+            val devName = try {
+                dev.name ?: dev.address
+            } catch (_: SecurityException) {
+                dev.address
+            }
+            "$devName (${dev.address})"
+        }.toTypedArray()
+
+        AlertDialog.Builder(this)
+            .setTitle("Pilih Printer Thermal Bluetooth")
+            .setItems(labels) { _, which ->
+                sendBytesToBluetoothDevice(bonded[which], bytes, jobName)
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendBytesToBluetoothDevice(device: BluetoothDevice, bytes: ByteArray, jobName: String) {
+        Toast.makeText(this, "Mencetak $jobName ke printer Bluetooth...", Toast.LENGTH_SHORT).show()
+        Thread {
+            val sppUuid = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+            var socket: android.bluetooth.BluetoothSocket? = null
+            try {
+                socket = device.createRfcommSocketToServiceRecord(sppUuid)
+                socket.connect()
+                socket.outputStream.use { os ->
+                    os.write(bytes)
+                    os.flush()
+                }
+                runOnUiThread {
+                    Toast.makeText(this, "Cetak thermal Bluetooth berhasil ($jobName).", Toast.LENGTH_LONG).show()
+                }
+            } catch (err: Exception) {
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Gagal mencetak via Bluetooth: ${err.localizedMessage ?: "Pastikan printer menyala"}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } finally {
+                try {
+                    socket?.close()
+                } catch (_: Exception) {
+                    // ignore close error
+                }
+            }
+        }.start()
     }
 
     fun showServerSettingsDialog() {

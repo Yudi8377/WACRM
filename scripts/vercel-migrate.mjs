@@ -67,7 +67,10 @@ async function main() {
           'organizations','user_profiles','organization_members','channel_connections',
           'contacts','contact_channel_identities','conversations','messages',
           'webhook_events','webhook_inbox','audit_logs','user','session','account',
-          'verification','conversation_notes','quick_replies','whatsapp_templates','broadcast_campaigns'
+          'verification','conversation_notes','quick_replies','message_templates','api_keys',
+          'ai_agents','ai_knowledge_items','ai_security_incidents',
+          'erp_products','erp_suppliers','erp_stock_movements',
+          'pos_orders','pos_order_items','accounting_entries'
         ))::int AS tables_count,
         count(*) FILTER (WHERE rowsecurity = true)::int AS rls_count
       FROM pg_tables
@@ -77,12 +80,12 @@ async function main() {
     const tablesCount = check.rows[0]?.tables_count ?? 0;
     const rlsCount = check.rows[0]?.rls_count ?? 0;
 
-    if (tablesCount >= 19 && rlsCount >= 15 && process.env.FORCE_MIGRATE !== "true") {
+    if (tablesCount >= 28 && rlsCount >= 24 && process.env.FORCE_MIGRATE !== "true") {
       console.log(`[wacrm-migrate] Neon schema already up-to-date (${tablesCount} tables, ${rlsCount} RLS tables).`);
       return;
     }
 
-    console.log(`[wacrm-migrate] Applying idempotent Neon schema (found ${tablesCount}/19 tables)...`);
+    console.log(`[wacrm-migrate] Applying idempotent Neon schema (found ${tablesCount}/28 tables)...`);
     const sql = fs.readFileSync(sqlPath, "utf8");
     await client.query(sql);
 

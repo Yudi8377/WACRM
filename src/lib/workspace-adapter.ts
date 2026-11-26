@@ -1,4 +1,10 @@
 import type {
+  AccountingEntryRecord,
+  AiAgentKey,
+  AiAgentRecord,
+  AiAutoReplyExecutionResult,
+  AiKnowledgeItemRecord,
+  AiSecurityIncidentRecord,
   ChannelRecord,
   ChannelStatus,
   ChannelType,
@@ -7,10 +13,19 @@ import type {
   ConversationPriority,
   ConversationRecord,
   ConversationStatus,
+  ErpProductRecord,
+  ErpStockMovementRecord,
+  ErpSupplierRecord,
+  FinancialReportSummary,
+  KnowledgeSourceType,
   LifecycleStage,
   MemberRole,
   MessageRecord,
   MessageTemplateRecord,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+  PosOrderRecord,
   QuickReplyRecord,
   TeamMemberRecord,
   TemplateCategory,
@@ -29,6 +44,16 @@ export interface WorkspaceSnapshot {
   templates: MessageTemplateRecord[];
   members: TeamMemberRecord[];
   analytics: WorkspaceAnalytics;
+  aiAgents: AiAgentRecord[];
+  aiKnowledge: AiKnowledgeItemRecord[];
+  aiIncidents: AiSecurityIncidentRecord[];
+  products: ErpProductRecord[];
+  suppliers: ErpSupplierRecord[];
+  stockMovements: ErpStockMovementRecord[];
+  orders: PosOrderRecord[];
+  accountingEntries: AccountingEntryRecord[];
+  financialReport: FinancialReportSummary;
+  syncedAt: string;
 }
 
 export interface ConversationDetailPayload {
@@ -93,6 +118,108 @@ export interface WorkspaceAdapter {
   addNote(conversationId: string, bodyText: string): Promise<ConversationNoteRecord>;
   deleteNote(conversationId: string, noteId: string): Promise<void>;
 
+  // Multi-Agent AI Swarm
+  runAiAutoReply(conversationId: string, simulatedInboundText?: string): Promise<AiAutoReplyExecutionResult>;
+  updateAiAgent(
+    agentKey: AiAgentKey,
+    patch: Partial<{
+      enabled: boolean;
+      autoReplyEnabled: boolean;
+      autonomousLearning: boolean;
+      autonomousHealing: boolean;
+      confidenceThreshold: number;
+      systemPrompt: string;
+    }>,
+  ): Promise<AiAgentRecord>;
+  runAiKnowledgeSync(): Promise<{ syncedCount: number }>;
+  addAiKnowledge(input: {
+    sourceType?: KnowledgeSourceType;
+    title: string;
+    content: string;
+    tags?: string[];
+  }): Promise<AiKnowledgeItemRecord>;
+  deleteAiKnowledge(knowledgeId: string): Promise<void>;
+  runAiGuardianScan(): Promise<{ healthScore: number; incidents: AiSecurityIncidentRecord[] }>;
+  resolveIncident(incidentId: string): Promise<void>;
+
+  // ERP Inventory & Suppliers
+  createProduct(input: {
+    sku: string;
+    name: string;
+    category: string;
+    description?: string;
+    unit?: string;
+    unitPrice: number;
+    costPrice?: number;
+    stockQty: number;
+    minStock?: number;
+  }): Promise<ErpProductRecord>;
+  updateProduct(
+    productId: string,
+    input: Partial<{
+      name: string;
+      category: string;
+      description: string;
+      unit: string;
+      unitPrice: number;
+      costPrice: number;
+      stockQty: number;
+      stockDelta: number;
+      stockReason: string;
+      minStock: number;
+      isActive: boolean;
+    }>,
+  ): Promise<ErpProductRecord>;
+  deleteProduct(productId: string): Promise<void>;
+  createSupplier(input: {
+    name: string;
+    contactPerson?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    paymentTerms?: string;
+  }): Promise<ErpSupplierRecord>;
+
+  // POS Orders & Invoice / QR Generator
+  createPosOrder(input: {
+    customerName: string;
+    customerPhone?: string | null;
+    shippingAddress: string;
+    channel?: ChannelType;
+    paymentMethod: PaymentMethod;
+    paymentStatus?: PaymentStatus;
+    discountAmount?: number;
+    taxRate?: number;
+    aiGenerated?: boolean;
+    conversationId?: string | null;
+    contactId?: string | null;
+    notes?: string | null;
+    items: Array<{
+      productId?: string | null;
+      sku: string;
+      productName: string;
+      quantity: number;
+      unitPrice: number;
+      costPrice?: number;
+    }>;
+  }): Promise<PosOrderRecord>;
+  updatePosOrder(
+    orderId: string,
+    input: Partial<{ paymentStatus: PaymentStatus; orderStatus: OrderStatus }>,
+  ): Promise<void>;
+  deletePosOrder(orderId: string): Promise<void>;
+
+  // Double-Entry Accounting
+  createAccountingEntry(input: {
+    entryDate?: string;
+    kind: "expense" | "income" | "capital";
+    categoryName: string;
+    amount: number;
+    description: string;
+  }): Promise<{ entryNumber: string }>;
+  deleteAccountingEntry(entryNumber: string): Promise<void>;
+
+  // Channels, Quick Replies, Templates, Team, Workspace
   createChannel(input: {
     channel: ChannelType;
     displayName: string;
@@ -165,7 +292,21 @@ export function createApiWorkspaceAdapter(
     mode: "neon",
     tenantId,
     async loadAll() {
-      const [wsRes, convRes, contactRes, chanRes, qrRes, tplRes, memRes, anaRes] = await Promise.all([
+      const [
+        wsRes,
+        convRes,
+        contactRes,
+        chanRes,
+        qrRes,
+        tplRes,
+        memRes,
+        anaRes,
+        aiRes,
+        erpRes,
+        supRes,
+        posRes,
+        accRes,
+      ] = await Promise.all([
         apiJson<{ workspace: { name: string; slug: string; role: MemberRole } }>(base),
         apiJson<{ conversations: ConversationRecord[] }>(`${base}/conversations`),
         apiJson<{ contacts: ContactRecord[] }>(`${base}/contacts`),
@@ -174,6 +315,15 @@ export function createApiWorkspaceAdapter(
         apiJson<{ templates: MessageTemplateRecord[] }>(`${base}/templates`),
         apiJson<{ members: TeamMemberRecord[] }>(`${base}/members`),
         apiJson<{ analytics: WorkspaceAnalytics }>(`${base}/analytics`),
+        apiJson<{
+          agents: AiAgentRecord[];
+          knowledge: AiKnowledgeItemRecord[];
+          incidents: AiSecurityIncidentRecord[];
+        }>(`${base}/ai`),
+        apiJson<{ products: ErpProductRecord[]; movements: ErpStockMovementRecord[] }>(`${base}/erp/products`),
+        apiJson<{ suppliers: ErpSupplierRecord[] }>(`${base}/erp/suppliers`),
+        apiJson<{ orders: PosOrderRecord[] }>(`${base}/pos/orders`),
+        apiJson<{ entries: AccountingEntryRecord[]; summary: FinancialReportSummary }>(`${base}/accounting`),
       ]);
       workspaceName = wsRes.workspace.name;
       workspaceSlug = wsRes.workspace.slug;
@@ -188,6 +338,16 @@ export function createApiWorkspaceAdapter(
         templates: tplRes.templates,
         members: memRes.members,
         analytics: anaRes.analytics,
+        aiAgents: aiRes.agents,
+        aiKnowledge: aiRes.knowledge,
+        aiIncidents: aiRes.incidents,
+        products: erpRes.products,
+        suppliers: supRes.suppliers,
+        stockMovements: erpRes.movements,
+        orders: posRes.orders,
+        accountingEntries: accRes.entries,
+        financialReport: accRes.summary,
+        syncedAt: new Date().toISOString(),
       };
     },
     async loadConversationDetail(conversationId) {
@@ -247,6 +407,99 @@ export function createApiWorkspaceAdapter(
       await apiJson(`${base}/conversations/${conversationId}/notes?noteId=${encodeURIComponent(noteId)}`, {
         method: "DELETE",
       });
+    },
+    async runAiAutoReply(conversationId, simulatedInboundText) {
+      return apiJson<AiAutoReplyExecutionResult>(`${base}/ai`, {
+        method: "POST",
+        body: JSON.stringify({ action: "auto_reply", conversationId, simulatedInboundText }),
+      });
+    },
+    async updateAiAgent(agentKey, patch) {
+      const res = await apiJson<{ agent: AiAgentRecord }>(`${base}/ai`, {
+        method: "PATCH",
+        body: JSON.stringify({ agentKey, ...patch }),
+      });
+      return res.agent;
+    },
+    async runAiKnowledgeSync() {
+      return apiJson<{ syncedCount: number }>(`${base}/ai`, {
+        method: "POST",
+        body: JSON.stringify({ action: "learn_sync" }),
+      });
+    },
+    async addAiKnowledge(input) {
+      const res = await apiJson<{ knowledgeItem: AiKnowledgeItemRecord }>(`${base}/ai`, {
+        method: "POST",
+        body: JSON.stringify({ action: "add_knowledge", ...input }),
+      });
+      return res.knowledgeItem;
+    },
+    async deleteAiKnowledge(knowledgeId) {
+      await apiJson(`${base}/ai`, {
+        method: "POST",
+        body: JSON.stringify({ action: "delete_knowledge", knowledgeId }),
+      });
+    },
+    async runAiGuardianScan() {
+      return apiJson<{ healthScore: number; incidents: AiSecurityIncidentRecord[] }>(`${base}/ai`, {
+        method: "POST",
+        body: JSON.stringify({ action: "guardian_scan" }),
+      });
+    },
+    async resolveIncident(incidentId) {
+      await apiJson(`${base}/ai`, {
+        method: "POST",
+        body: JSON.stringify({ action: "resolve_incident", incidentId }),
+      });
+    },
+    async createProduct(input) {
+      const res = await apiJson<{ product: ErpProductRecord }>(`${base}/erp/products`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+      return res.product;
+    },
+    async updateProduct(productId, input) {
+      const res = await apiJson<{ product: ErpProductRecord }>(`${base}/erp/products/${productId}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      });
+      return res.product;
+    },
+    async deleteProduct(productId) {
+      await apiJson(`${base}/erp/products/${productId}`, { method: "DELETE" });
+    },
+    async createSupplier(input) {
+      const res = await apiJson<{ supplier: ErpSupplierRecord }>(`${base}/erp/suppliers`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+      return res.supplier;
+    },
+    async createPosOrder(input) {
+      const res = await apiJson<{ order: PosOrderRecord }>(`${base}/pos/orders`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+      return res.order;
+    },
+    async updatePosOrder(orderId, input) {
+      await apiJson(`${base}/pos/orders/${orderId}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      });
+    },
+    async deletePosOrder(orderId) {
+      await apiJson(`${base}/pos/orders/${orderId}`, { method: "DELETE" });
+    },
+    async createAccountingEntry(input) {
+      return apiJson<{ entryNumber: string }>(`${base}/accounting`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
+    async deleteAccountingEntry(entryNumber) {
+      await apiJson(`${base}/accounting?entryNumber=${encodeURIComponent(entryNumber)}`, { method: "DELETE" });
     },
     async createChannel(input) {
       const res = await apiJson<{ channel: ChannelRecord }>(`${base}/channels`, {

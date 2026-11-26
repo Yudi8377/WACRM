@@ -79,9 +79,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="android-v1.1.0"
-          TITLE="WACRM Android v1.1.0"
-          NOTES="Aplikasi Android native Kotlin WACRM (package \`com.wacrm.android\`) terhubung ke https://wacrm-seven-dusky.vercel.app.\n\n- **wacrm-android.apk**: APK siap pasang langsung di ponsel Android.\n- **wacrm-android-release-unsigned.apk**: APK release R8-minified untuk penandatanganan keystore Play Store."
+          TAG="android-v2.0.0"
+          TITLE="WACRM Android v2.0.0 — Enterprise Autonomous AI, POS QR, ERP & Akuntansi"
+          NOTES="Aplikasi Android native Kotlin WACRM v2.0.0 (package \`com.wacrm.android\`) terhubung ke https://wacrm-seven-dusky.vercel.app.\n\nFitur baru v2.0.0:\n- Multi-Agent AI Auto-Reply 24/7 + Autonomous Knowledge Base\n- POS Kasir + Auto-Invoice + Scannable QR Code\n- ERP Gudang & Akuntansi Double-Entry tersinkron Desktop ↔ HP via Neon PostgreSQL\n- Fraud Sentinel & Self-Healing AI\n- Native Bluetooth Thermal ESC/POS (58mm/80mm) & Android WiFi PrintManager\n\n- **wacrm-android.apk**: APK siap pasang langsung di ponsel Android.\n- **wacrm-android-release-unsigned.apk**: APK release R8-minified untuk penandatanganan keystore Play Store."
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/wacrm-android.apk dist/wacrm-android-release-unsigned.apk --clobber
             gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --latest
