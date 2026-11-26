@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { z } from "zod";
-import { auth } from "@/lib/auth";
+import { auth, isAuthConfigured } from "@/lib/auth";
 import { withTenantContext, TenantAccessError } from "@/lib/tenant-context";
 import { encryptConnectorToken } from "@/lib/connectors/token-crypto";
 import { MetaWhatsAppValidationError, validateMetaWhatsAppConnection, type ValidatedMetaWhatsAppConnection } from "@/lib/connectors/meta-whatsapp-validation";
@@ -16,6 +16,9 @@ const inputSchema = z.object({
 });
 
 export async function POST(request: Request, context: { params: Promise<{ tenantId: string }> }) {
+  if (!isAuthConfigured()) {
+    return Response.json({ error: "Database Neon belum aktif." }, { status: 503 });
+  }
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return Response.json({ error: "Silakan masuk terlebih dahulu." }, { status: 401 });
 

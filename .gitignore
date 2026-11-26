@@ -9,3 +9,11 @@ coverage/
 *.log
 .DS_Store
 .vercel
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.iml
+tsconfig.tsbuildinfo
+
+

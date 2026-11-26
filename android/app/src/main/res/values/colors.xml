@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="wacrm_emerald">#059669</color>
+    <color name="wacrm_emerald_dark">#047857</color>
+    <color name="wacrm_surface">#F8FAFC</color>
+    <color name="wacrm_ink">#0F172A</color>
+    <color name="wacrm_muted">#64748B</color>
+</resources>

@@ -9,23 +9,29 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "db:migrate": "node scripts/migrate-neon.mjs",
+    "db:verify": "node scripts/migrate-neon.mjs --verify",
     "worker:webhooks": "node scripts/webhook-worker.mjs"
   },
   "dependencies": {
+    "better-auth": "^1.7.0",
+    "lucide-react": "^1.81.0",
     "next": "^16.3.5",
+    "pg": "^8.16.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "pg": "^8.16.3",
-    "zod": "^4.1.12",
-    "better-auth": "^1.7.0"
+    "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.6.0",
+    "@tailwindcss/postcss": "^4.3.5",
     "@types/node": "^22.18.0",
     "@types/pg": "^8.15.5",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "eslint": "^9.37.0",
     "eslint-config-next": "^16.3.5",
+    "tailwindcss": "^4.3.5",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   }
