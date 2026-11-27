@@ -89,7 +89,7 @@ export function answerAppFaqWithMultiAgent(params: {
 
   // 1. Starter UMKM Gratis Selamanya
   if (/(starter|umkm|gratis|free|selamanya|tanpa\s*bayar|wajib\s*daftar)/i.test(lower)) {
-    const answer = `Benar sekali! Edisi **Starter UMKM** di WACRM adalah **GRATIS SELAMANYA tanpa batas waktu trial** — Anda cukup mendaftar akun email agar data usaha ${store} tersimpan rapi.\n\n**Fitur aktif Starter UMKM:**\n• Hingga 2 agen CS bersamaan (Web & Android APK)\n• Maksimal 300 kontak CRM & 2 kanal (WhatsApp + 1 medsos)\n• Master Data lengkap (Produk, Supplier, Pelanggan, Kurir, Rekening)\n• POS Kasir + Label Pengiriman QR & Cetak Universal (USB OTG, Bluetooth, WiFi, Inkjet/LaserJet, EDC)\n• 2 Agen AI Dasar (CS & Order Extractor) + Pusat FAQ AI & Komunitas.\n\nUntuk edisi lebih tinggi tersedia **Trial Gratis 14 hari Growth Pro** dan **Trial Gratis 7 hari Enterprise AI Suite** (otomatis kembali aman ke Starter UMKM Gratis jika tidak aktivasi License Key). Saat ini workspace Anda berjalan di edisi **${edition.name}**.`;
+    const answer = `Benar sekali! Edisi **Starter UMKM** di WACRM adalah **GRATIS SELAMANYA tanpa batas waktu trial** — Anda cukup mendaftar akun email agar data usaha ${store} tersimpan rapi.\n\n**Fitur aktif Starter UMKM:**\n• Hingga 2 agen CS bersamaan (Web & Android APK + Login Biometrik Sidik Jari/Face ID)\n• Maksimal 300 kontak CRM & 2 kanal (WhatsApp + 1 medsos)\n• **ERP & Gudang aktif penuh** (pantau stok real-time, mutasi barang keluar-masuk, peringatan stok menipis & Supplier)\n• Master Data lengkap (Produk, Supplier, Pelanggan, Kurir, Rekening)\n• POS Kasir, COD Marketplace + Lacak Pengiriman, Label QR & Cetak Universal (USB OTG, Bluetooth, WiFi, Inkjet/LaserJet, EDC)\n• 2 Agen AI Dasar (CS & Order Extractor) + Pusat FAQ AI & Komunitas.\n\nUntuk edisi lebih tinggi tersedia **Trial Gratis 14 hari Growth Pro** (QR Scanner Kamera Belakang FIFO + SEO AI) dan **Trial Gratis 7 hari Enterprise AI Suite** (Saran Produk Terlaris AI + Akuntansi Double-Entry + Suara 24/7). Saat ini workspace Anda berjalan di edisi **${edition.name}**.`;
     return {
       agentKey: "license_specialist",
       agentName: "Agen Lisensi & Edisi WACRM",
@@ -97,7 +97,7 @@ export function answerAppFaqWithMultiAgent(params: {
       category: "Edisi & Harga",
       questionMatched: q,
       answer,
-      speechAnswer: `Benar sekali Kak! Edisi Starter UMKM di WACRM gratis selamanya tanpa batas trial setelah mendaftar. Anda langsung mendapatkan dua agen CS, tiga ratus kontak, dua kanal, Master Data, POS label QR, cetak universal, dan dua agen AI dasar.`,
+      speechAnswer: `Benar sekali Kak! Edisi Starter UMKM di WACRM gratis selamanya tanpa batas trial setelah mendaftar. Anda langsung mendapatkan dua agen CS, tiga ratus kontak, dua kanal, ERP dan Gudang, Master Data, POS COD dan label QR, cetak universal, dan dua agen AI dasar.`,
       relatedTab: "editions",
       relatedTabLabel: "Buka Edisi & Lisensi",
       followUpQuestions: [
@@ -109,7 +109,7 @@ export function answerAppFaqWithMultiAgent(params: {
 
   // 2. Trial Rules (Growth Pro 14 hari, Enterprise 7 hari, Sovereign Key)
   if (/(trial|coba\s*gratis|14\s*hari|7\s*hari|growth\s*pro|enterprise|sovereign|license\s*key|lisensi|harga|biaya|upgrade)/i.test(lower)) {
-    const answer = `Berikut aturan resmi Edisi & Masa Trial WACRM terbaru:\n\n1. **Starter UMKM (Rp 0):** Gratis selamanya tanpa batas trial setelah mendaftar akun.\n2. **Growth Pro (Rp 249.000/bln):** Tersedia **Trial Gratis 14 Hari**! Membuka 10 agen, 5.000 kontak, 5 kanal, 6 Agen AI, Auto-Reply 24/7 Zero-Click, ERP & Gudang, SEO Growth AI, Template AI, dan 100% White-Label.\n3. **Enterprise AI Suite (Rp 699.000/bln):** Tersedia **Trial Gratis 7 Hari**! Membuka seluruh 9 Agen AI, Pemandu Suara AI 24/7, Akuntansi Double-Entry, Fraud Sentinel & Self-Healing, serta Analitik SWOT.\n4. **Sovereign Corporate (Rp 1.950.000/bln):** Khusus License Key resmi (\`WACRM-SOV-...\`) untuk Custom Domain, Branded Android APK, dan Dedicated DB SLA.\n\nJika masa trial Growth Pro atau Enterprise selesai tanpa License Key, akun **tidak akan hilang** — otomatis kembali aman ke **Starter UMKM (Gratis Selamanya)**!`;
+    const answer = `Berikut aturan resmi Edisi & Masa Trial WACRM v5.0 terbaru:\n\n1. **Starter UMKM (Rp 0):** Gratis selamanya tanpa batas trial setelah mendaftar akun — sudah termasuk **POS COD, Label QR, ERP & Gudang, Master Data, serta Cetak Universal**.\n2. **Growth Pro (Rp 249.000/bln):** Tersedia **Trial Gratis 14 Hari**! Membuka 10 agen, 5.000 kontak, 5 kanal, 6 Agen AI, Auto-Reply 24/7 Zero-Click, **QR Scanner Kamera Belakang FIFO Anti-Basi**, SEO Growth AI, Template AI, dan 100% White-Label.\n3. **Enterprise AI Suite (Rp 699.000/bln):** Tersedia **Trial Gratis 7 Hari**! Membuka seluruh 9 Agen AI, **Multi-Agent AI Saran Produk Paling Laku**, Pemandu Suara AI 24/7, Akuntansi Double-Entry, Fraud Sentinel & Self-Healing, serta Analitik SWOT.\n4. **Sovereign Corporate (Rp 1.950.000/bln):** Khusus License Key resmi (\`WACRM-SOV-...\`) untuk **Menu Eksklusif Tren Minat Pembeli & Forecasting 90 Hari**, Custom Domain, Branded Android APK, dan Dedicated DB SLA.\n\nJika masa trial Growth Pro atau Enterprise selesai tanpa License Key, akun **tidak akan hilang** — otomatis kembali aman ke **Starter UMKM (Gratis Selamanya)**!`;
     return {
       agentKey: "license_specialist",
       agentName: "Agen Lisensi & Edisi WACRM",
@@ -272,7 +272,7 @@ export function answerAppFaqWithMultiAgent(params: {
 
   // 6. ERP Warehouse & Double-Entry Accounting
   if (/(erp|gudang|stok|supplier|akuntansi|jurnal|neraca|laba\s*rugi|hpp|double\s*entry|keuangan|kas)/i.test(lower)) {
-    const answer = `Integrasi **ERP Gudang & Akuntansi Double-Entry** WACRM bekerja otomatis dari setiap pesanan:\n\n• **ERP & Gudang (mulai Growth Pro / Trial 14 Hari):** Memantau stok real-time, kartu mutasi keluar-masuk, peringatan stok menipis, data Supplier, serta prediksi restok AI.\n• **Akuntansi Double-Entry (mulai Enterprise AI Suite / Trial 7 Hari):** Setiap invoice lunas langsung membukukan Jurnal Kas/Bank, Pendapatan, HPP, dan Persediaan secara otomatis sehingga Laporan **Laba Rugi & Neraca selalu 100% Seimbang (Balanced)**.`;
+    const answer = `Integrasi **ERP Gudang & Akuntansi Double-Entry** WACRM bekerja otomatis dari setiap pesanan:\n\n• **ERP & Gudang (AKTIF GRATIS SELAMANYA mulai Starter UMKM!):** Memantau stok real-time, kartu mutasi keluar-masuk, peringatan stok menipis, data Supplier, serta cetak laporan stok universal.\n• **QR Scanner Kamera Belakang + Gudang FIFO Anti-Basi (mulai Growth Pro / Trial 14 Hari):** Scan barang masuk/keluar langsung lewat kamera HP dan cegah barang basi dengan FIFO/FEFO otomatis.\n• **Akuntansi Double-Entry (mulai Enterprise AI Suite / Trial 7 Hari):** Setiap invoice lunas langsung membukukan Jurnal Kas/Bank, Pendapatan, HPP, dan Persediaan secara otomatis sehingga Laporan **Laba Rugi & Neraca selalu 100% Seimbang (Balanced)**.`;
     return {
       agentKey: "finance_auditor",
       agentName: "Agen ERP & Akuntansi PSAK",
@@ -280,9 +280,9 @@ export function answerAppFaqWithMultiAgent(params: {
       category: "ERP & Akuntansi",
       questionMatched: q,
       answer,
-      speechAnswer: `Modul ERP Gudang tersedia mulai Growth Pro dengan trial empat belas hari untuk pantau stok dan supplier. Sedangkan Akuntansi Double Entry otomatis yang menjamin neraca selalu seimbang tersedia mulai Enterprise AI Suite dengan trial tujuh hari.`,
-      relatedTab: params.editionId === "starter" ? "editions" : "erp",
-      relatedTabLabel: params.editionId === "starter" ? "Coba Trial Growth Pro / Enterprise" : "Buka ERP & Gudang",
+      speechAnswer: `Modul ERP dan Gudang sudah aktif gratis selamanya sejak edisi Starter UMKM untuk pantau stok, mutasi barang, dan supplier. Untuk QR Scanner kamera belakang FIFO tersedia mulai Growth Pro, dan Akuntansi Double Entry otomatis tersedia mulai Enterprise AI Suite.`,
+      relatedTab: "erp",
+      relatedTabLabel: "Buka ERP & Gudang",
       followUpQuestions: [
         "Bagaimana aturan Trial 14 hari Growth Pro dan Trial 7 hari Enterprise AI Suite?",
         "Bagaimana cara cek laporan laba rugi lewat suara?",

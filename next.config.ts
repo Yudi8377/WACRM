@@ -13,7 +13,11 @@ const nextConfig: NextConfig = {
     const baseHeaders = [
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-      { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" },
+      {
+        key: "Permissions-Policy",
+        value:
+          "camera=(self), microphone=(self), usb=(self), serial=(self), publickey-credentials-get=(self), publickey-credentials-create=(self), geolocation=()",
+      },
       { key: "X-DNS-Prefetch-Control", value: "off" },
     ];
 

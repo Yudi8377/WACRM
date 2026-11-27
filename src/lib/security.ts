@@ -42,7 +42,10 @@ export function sanitizePhoneDigits(phone: string | null | undefined): string {
 
 export function sanitizeTrackingUrl(template: string | null | undefined, trackingCode: string): string | null {
   if (!template) return null;
-  const candidate = template.replace(/\{resi\}/gi, encodeURIComponent(trackingCode.trim()));
+  const candidate = template.replace(
+    /\{(resi|awb|tracking)\}/gi,
+    encodeURIComponent(trackingCode.trim()),
+  );
   try {
     const parsed = new URL(candidate);
     if (parsed.protocol === "https:" || parsed.protocol === "http:") {

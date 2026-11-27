@@ -7,7 +7,7 @@ import {
   computeTaxSummary,
   computeTrialBalance,
 } from "./accounting-engine";
-import { issueSignedLicenseKey, verifySignedLicenseKey } from "./license-engine";
+import { issueSignedLicenseKey, PUBLISHER_EDITIONS, verifySignedLicenseKey } from "./license-engine";
 import {
   buildInitialPublisherState,
   computePublisherOverview,
@@ -151,5 +151,16 @@ describe("WACRM Publisher HQ — Standalone Super Admin Enterprise Management Sy
         ],
       }),
     ).toThrow(/tidak seimbang/i);
+  });
+
+  it("aligns v5.0 edition entitlements with Client App (UMKM ERP active, Pro QR FIFO, Ent AI Product, Sov Forecasting)", () => {
+    expect(PUBLISHER_EDITIONS.starter.entitlements).toContain("erp_warehouse");
+    expect(PUBLISHER_EDITIONS.starter.entitlements).not.toContain("qr_camera_fifo_scanner");
+    expect(PUBLISHER_EDITIONS.pro.entitlements).toContain("erp_warehouse");
+    expect(PUBLISHER_EDITIONS.pro.entitlements).toContain("qr_camera_fifo_scanner");
+    expect(PUBLISHER_EDITIONS.pro.entitlements).not.toContain("ai_product_recommender");
+    expect(PUBLISHER_EDITIONS.enterprise.entitlements).toContain("ai_product_recommender");
+    expect(PUBLISHER_EDITIONS.enterprise.entitlements).not.toContain("buyer_interest_forecast");
+    expect(PUBLISHER_EDITIONS.sovereign.entitlements).toContain("buyer_interest_forecast");
   });
 });

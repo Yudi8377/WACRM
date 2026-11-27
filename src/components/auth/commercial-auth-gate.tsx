@@ -1113,7 +1113,7 @@ export function CommercialAuthGate({
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
                 Enkripsi SSL &amp; Proteksi Rate-Limit
               </span>
-              <span className="font-mono text-slate-500">WACRM v4.2</span>
+              <span className="font-mono text-slate-500">WACRM v5.0</span>
             </div>
           </div>
         </section>

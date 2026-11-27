@@ -397,19 +397,21 @@ describe("High-Standard QA 2 — Real-Time Signup Sync (Web & Android) + 14-Day 
     expect(licensed.isTrial).toBe(false);
     expect(licensed.isExpired).toBe(false);
 
-    // Starter UMKM allows core UMKM tabs + Community FAQ tab and strictly locks higher-tier tabs
+    // Starter UMKM allows core UMKM tabs (including ERP & Gudang!) + Community FAQ tab and strictly locks higher-tier tabs
     expect(evaluateTabAccess("starter", "owner", "inbox").allowed).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "pos").allowed).toBe(true);
+    expect(evaluateTabAccess("starter", "owner", "erp").allowed).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "master").allowed).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "contacts").allowed).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "channels").allowed).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "ai").allowed).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "community").allowed).toBe(true);
 
-    expect(evaluateTabAccess("starter", "owner", "erp").lockedByEdition).toBe(true);
+    expect(evaluateTabAccess("starter", "owner", "qr_scanner").lockedByEdition).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "seo_growth").lockedByEdition).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "templates").lockedByEdition).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "accounting").lockedByEdition).toBe(true);
+    expect(evaluateTabAccess("starter", "owner", "forecast").lockedByEdition).toBe(true);
   });
 
   it("enforces every single row of Matriks Perbandingan Fitur Antar Edisi WACRM via real signed License Keys (STR / PRO / ENT / SOV)", () => {
@@ -432,7 +434,8 @@ describe("High-Standard QA 2 — Real-Time Signup Sync (Web & Android) + 14-Day 
     expect(strCaps.posQrShippingLabel).toBe(true);
     expect(strCaps.universalPrinting).toBe(true);
     expect(strCaps.zeroClickAiAutoReply).toBe(false);
-    expect(strCaps.erpWarehouse).toBe(false);
+    expect(strCaps.erpWarehouse).toBe(true);
+    expect(strCaps.qrCameraFifoScanner).toBe(false);
     expect(strCaps.seoGrowthAi).toBe(false);
     expect(strCaps.whiteLabelStore).toBe(false);
     expect(strCaps.doubleEntryAccounting).toBe(false);

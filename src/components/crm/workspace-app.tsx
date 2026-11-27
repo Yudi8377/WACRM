@@ -607,7 +607,7 @@ export function WorkspaceApp({
               <div className="space-y-1">
                 {NAV_ITEMS.filter((n) =>
                   compactMode
-                    ? ["inbox", "pos", "qr_scanner", "community", "settings"].includes(n.id)
+                    ? ["inbox", "pos", "erp", "qr_scanner", "community", "settings"].includes(n.id)
                     : n.group === "core",
                 ).map((item) => {
                   const Icon = item.icon;

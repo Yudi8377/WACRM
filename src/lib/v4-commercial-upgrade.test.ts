@@ -189,8 +189,8 @@ describe("v4.2 Commercial Upgrade — Edition RBAC & Quota Enforcement", () => {
     expect(starterSeo.lockedByEdition).toBe(true);
 
     const starterErp = evaluateTabAccess("starter", "owner", "erp");
-    expect(starterErp.allowed).toBe(false);
-    expect(starterErp.lockedByEdition).toBe(true);
+    expect(starterErp.allowed).toBe(true);
+    expect(starterErp.lockedByEdition).toBe(false);
 
     // Enterprise unlocks all features for owner, but viewer still blocked on admin tabs
     expect(evaluateTabAccess("enterprise", "owner", "accounting").allowed).toBe(true);

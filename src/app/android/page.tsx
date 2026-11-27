@@ -54,11 +54,11 @@ export default function AndroidPage() {
             <div>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300">
                 <Smartphone className="h-3.5 w-3.5" />
-                Android App v4.2.0 · Trial 14 Hari Versi UMKM · com.wacrm.android
+                Android App v5.0.0 · Starter UMKM Gratis Selamanya · com.wacrm.android
               </span>
-              <h1 className="mt-2.5 text-2xl font-extrabold sm:text-3xl">Aplikasi Android WACRM v4.2 AI Suite</h1>
+              <h1 className="mt-2.5 text-2xl font-extrabold sm:text-3xl">Aplikasi Android WACRM v5.0 AI Suite</h1>
               <p className="mt-1.5 text-sm text-slate-300">
-                Daftar cukup dengan email untuk <strong>Trial Gratis 14 Hari Versi Starter UMKM</strong> (berlaku identik di Web &amp; Android). Fitur <strong>Growth Pro &amp; Enterprise</strong> tampil sebagai pratinjau terbatas hingga Anda memasukkan <strong>License Key</strong> resmi. Mendukung <strong>Cetak Universal USB-C/Micro-USB OTG, Bluetooth, WiFi, POS QR &amp; AI Sales</strong>.
+                Daftar cukup dengan email untuk <strong>Starter UMKM Gratis Selamanya (termasuk POS COD &amp; ERP Gudang)</strong>, atau aktifkan <strong>Trial 14 Hari Growth Pro (QR Scanner Kamera Belakang FIFO)</strong> &amp; <strong>Trial 7 Hari Enterprise AI</strong>. Mendukung <strong>Login Biometrik Sidik Jari/Face ID, Cetak Universal USB-C/Micro-USB OTG, Bluetooth, WiFi, POS QR &amp; AI Sales</strong>.
               </p>
             </div>
           </div>
@@ -69,7 +69,7 @@ export default function AndroidPage() {
               className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400"
             >
               <Download className="h-4 w-4" />
-              Unduh APK Android (v4.0.0)
+              Unduh APK Android (v5.0.0)
             </a>
             {deferredPrompt ? (
               <button

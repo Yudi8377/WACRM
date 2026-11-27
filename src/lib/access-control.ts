@@ -29,16 +29,20 @@ export const GROWTH_PRO_TRIAL_DAYS = 14;
 export const ENTERPRISE_TRIAL_DAYS = 7;
 
 /**
- * Exact 1-to-1 mapping from the WACRM Feature Comparison Matrix:
- * - Starter UMKM: Inbox (max 2 channels, manual AI assist), Master Data, POS QR & Universal Print,
- *   Contacts (max 300), Channels (max 2), AI Agents (2 basic agents only: cs_sales & order_pos),
- *   Basic Analytics, Editions, Settings (with Starter watermark).
- * - Growth Pro unlocks: erp (erp_warehouse), seo_growth (seo_growth_ai), templates (zero_click_ai),
- *   AI Auto-Reply 24/7 Zero-Click, 6 AI Agents, 5 channels, 5.000 contacts, 10 seats, 100% White-Label.
- * - Enterprise AI Suite unlocks: accounting (double_entry_accounting), all 9 AI Agents,
+ * Exact 1-to-1 mapping from the WACRM Feature Comparison Matrix (v5.0):
+ * - Starter UMKM (Free Forever): Inbox (max 2 channels, manual AI assist), Master Data,
+ *   POS COD & QR + Universal Print, ERP & Gudang (erp_warehouse), Contacts (max 300),
+ *   Channels (max 2), AI Agents (2 basic agents only: cs_sales & order_pos), Basic Analytics,
+ *   Community FAQ, Editions, Settings (with Biometric Mobile Login + Starter watermark).
+ * - Growth Pro (14-Day Trial) unlocks: qr_scanner (qr_camera_fifo_scanner), seo_growth (seo_growth_ai),
+ *   templates (zero_click_ai), AI Auto-Reply 24/7 Zero-Click, 6 AI Agents, 5 channels, 5.000 contacts,
+ *   10 seats, 100% White-Label.
+ * - Enterprise AI Suite (7-Day Trial) unlocks: accounting (double_entry_accounting),
+ *   forecast/AI Winning Products (ai_product_recommender), all 9 AI Agents,
  *   24/7 Voice Companion (voice_companion_24_7), Fraud Sentinel & Self-Healing (fraud_sentinel_healing),
  *   Super Admin & SWOT Analytics (super_admin_analytics), Unlimited seats, 50.000 contacts, 20 channels.
- * - Sovereign Corporate unlocks: custom_branded_apk, dedicated_db_sla, Unlimited everything.
+ * - Sovereign Corporate (License Key Only) unlocks: Buyer Interest Trends & 30/60/90d Forecasting
+ *   (buyer_interest_forecast), custom_branded_apk, dedicated_db_sla, Unlimited everything.
  */
 export const TAB_REQUIRED_FEATURE: Partial<Record<WorkspaceTabId, EditionFeatureKey>> = {
   qr_scanner: "qr_camera_fifo_scanner",
