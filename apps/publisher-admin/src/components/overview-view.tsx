@@ -20,15 +20,20 @@ interface OverviewViewProps {
   state: PublisherEmsState;
   onNavigate: (tab: string) => void;
   onQuickCollectOverdue: (invoiceId: string) => void;
+  onSyncLive?: () => void;
+  syncingLive?: boolean;
 }
 
 export function OverviewView({
   state,
   onNavigate,
   onQuickCollectOverdue,
+  onSyncLive,
+  syncingLive,
 }: OverviewViewProps) {
   const m = computePublisherOverview(state);
   const overdueInvoices = state.invoices.filter((i) => i.status === "overdue" || i.status === "issued");
+  const liveSignups = state.tenants.filter((t) => t.syncedFromLive);
 
   // Compute Unit Economics per Tenant (MRR vs Cloud+AI Cost)
   const unitEcon = state.tenants.map((t) => {
@@ -67,6 +72,16 @@ export function OverviewView({
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {onSyncLive && (
+            <button
+              type="button"
+              disabled={syncingLive}
+              onClick={onSyncLive}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-3.5 py-2.5 text-xs font-bold text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-60"
+            >
+              {syncingLive ? "Menyinkronkan..." : `Tarik Pendaftar Live (${liveSignups.length})`}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onNavigate("licenses")}
@@ -82,6 +97,56 @@ export function OverviewView({
             <BookOpenCheck className="h-4 w-4 text-indigo-400" /> Laporan Keuangan PSAK
           </button>
         </div>
+      </div>
+
+      {/* Live Registered Users Panel from wacrm-seven-dusky.vercel.app */}
+      <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-xs font-bold text-cyan-300">
+              Sinkronisasi Real-Time Pendaftar Baru (wacrm-seven-dusky.vercel.app — Web &amp; Android APK)
+            </div>
+            <p className="mt-0.5 text-[11px] text-slate-300">
+              Setiap user yang mendaftar Trial 14 Hari Versi UMKM melalui email otomatis tersimpan di Neon PostgreSQL dan langsung tampil di daftar Tenant &amp; License Manager di sini.
+            </p>
+          </div>
+          <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-bold text-cyan-200">
+            {liveSignups.length} Pendaftar Live Tersinkron
+          </span>
+        </div>
+
+        {liveSignups.length > 0 && (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {liveSignups.slice(0, 6).map((t) => (
+              <div
+                key={t.id}
+                className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/90 px-3 py-2.5 text-xs"
+              >
+                <div className="min-w-0">
+                  <div className="truncate font-bold text-white">{t.companyName}</div>
+                  <div className="truncate text-[11px] text-slate-400">
+                    {t.picName} · {t.picEmail}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
+                    <span className="rounded bg-cyan-500/20 px-1.5 py-0.5 font-semibold text-cyan-300">
+                      {t.signupPlatform === "android" ? "Android APK" : "Web SaaS"}
+                    </span>
+                    <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-semibold text-amber-300">
+                      Trial 14 Hari UMKM
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate("licenses")}
+                  className="shrink-0 rounded-lg bg-emerald-500/20 px-2.5 py-1.5 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/30"
+                >
+                  Lisensi
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Top 6 SaaS & Financial KPIs */}

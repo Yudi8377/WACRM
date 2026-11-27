@@ -6,7 +6,81 @@ import {
   type MasterUnitRecord,
   type StoreBusinessProfile,
 } from "@/lib/crm-types";
-import { sanitizeImageUrl } from "@/lib/security";
+import { sanitizeImageUrl, sanitizePhoneDigits } from "@/lib/security";
+
+export type SimpleSocialPlatform = "whatsapp" | "instagram" | "facebook" | "tiktok" | "youtube";
+
+export interface NormalizedSocialAccount {
+  platform: SimpleSocialPlatform;
+  raw: string;
+  handle: string;
+  url: string | null;
+  connected: boolean;
+}
+
+/**
+ * Accepts ANY beginner-friendly input for social media accounts:
+ * - "@tokoberkah" or "tokoberkah" or "https://instagram.com/tokoberkah"
+ * - "081234567890" or "+62 812-3456-7890" for WhatsApp
+ * Strips unsafe characters / javascript: protocols and outputs a clean handle + safe HTTPS URL.
+ */
+export function normalizeSocialChannelAccount(
+  platform: SimpleSocialPlatform,
+  rawInput?: string | null,
+): NormalizedSocialAccount {
+  const raw = (rawInput ?? "").trim();
+  if (!raw) {
+    return { platform, raw: "", handle: "", url: null, connected: false };
+  }
+
+  // Block dangerous schemes immediately
+  if (/^\s*(?:javascript|data|vbscript|file):/i.test(raw)) {
+    return { platform, raw: "", handle: "", url: null, connected: false };
+  }
+
+  if (platform === "whatsapp") {
+    let digits = sanitizePhoneDigits(raw);
+    if (digits.startsWith("0")) {
+      digits = `62${digits.slice(1)}`;
+    }
+    if (digits.length < 8) {
+      return { platform, raw, handle: "", url: null, connected: false };
+    }
+    return {
+      platform,
+      raw,
+      handle: `+${digits}`,
+      url: `https://wa.me/${digits}`,
+      connected: true,
+    };
+  }
+
+  // Extract clean slug / username from URL or raw handle
+  let slug = raw
+    .replace(/^https?:\/\/(?:www\.|m\.)?/i, "")
+    .replace(/^(?:instagram\.com|instagr\.am|facebook\.com|fb\.com|tiktok\.com|youtube\.com|youtu\.be)\//i, "")
+    .replace(/^@+/, "")
+    .split(/[?#]/)[0]
+    .replace(/\/+$/, "")
+    .replace(/[^a-zA-Z0-9._-]/g, "");
+
+  if (!slug) {
+    return { platform, raw, handle: "", url: null, connected: false };
+  }
+
+  slug = slug.slice(0, 64);
+
+  if (platform === "instagram") {
+    return { platform, raw, handle: `@${slug}`, url: `https://instagram.com/${slug}`, connected: true };
+  }
+  if (platform === "facebook") {
+    return { platform, raw, handle: slug, url: `https://facebook.com/${slug}`, connected: true };
+  }
+  if (platform === "tiktok") {
+    return { platform, raw, handle: `@${slug}`, url: `https://tiktok.com/@${slug}`, connected: true };
+  }
+  return { platform, raw, handle: `@${slug}`, url: `https://youtube.com/@${slug}`, connected: true };
+}
 
 const PROFILE_STORAGE_PREFIX = "wacrm_store_profile_v3_";
 const MASTER_STORAGE_PREFIX = "wacrm_master_data_v3_";
@@ -36,6 +110,14 @@ export function getDefaultStoreProfile(workspaceName?: string): StoreBusinessPro
     invoiceFooter:
       "Terima kasih atas kepercayaan Anda. Pindai kode QR untuk verifikasi pesanan & pengiriman.",
     defaultCourier: "JNE Reguler",
+    socialHandles: {
+      whatsapp: "081234567890",
+      instagram: "@tokoberkahnusantara",
+      facebook: "tokoberkahnusantara",
+      tiktok: "@tokoberkahnusantara",
+      youtube: "@tokoberkahnusantara",
+      websiteUrl: "https://wacrm-seven-dusky.vercel.app/katalog",
+    },
   };
 }
 

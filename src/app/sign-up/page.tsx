@@ -4,7 +4,11 @@ import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ArrowRight, Eye, EyeOff, Lock, Mail, User } from "lucide-react";
-import { registerLocalCommercialAccount, saveCommercialSession } from "@/lib/access-control";
+import {
+  detectClientPlatform,
+  registerLocalCommercialAccount,
+  saveCommercialSession,
+} from "@/lib/access-control";
 import { authClient } from "@/lib/auth-client";
 import { saveTenantEdition } from "@/lib/editions";
 import { evaluatePasswordStrength } from "@/lib/security";
@@ -50,10 +54,35 @@ export default function SignUpPage() {
     }
 
     try {
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanName = name.trim();
+      const platform = detectClientPlatform();
+
+      // Always register into Neon PostgreSQL + push to Publisher HQ
+      let syncedTrialEndsAt: string | undefined;
+      try {
+        const regApiRes = await fetch("/api/auth/register-tenant", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            fullName: cleanName,
+            businessName: `Usaha ${cleanName}`,
+            email: cleanEmail,
+            platform,
+          }),
+        });
+        if (regApiRes.ok) {
+          const regData = (await regApiRes.json()) as { trialEndsAt?: string };
+          syncedTrialEndsAt = regData.trialEndsAt;
+        }
+      } catch {
+        // non-blocking
+      }
+
       if (dbReady && password.length >= 12) {
         const result = await authClient.signUp.email({
-          name: name.trim(),
-          email: email.trim().toLowerCase(),
+          name: cleanName,
+          email: cleanEmail,
           password,
         });
         if (!result.error) {
@@ -64,10 +93,11 @@ export default function SignUpPage() {
       }
 
       const localReg = registerLocalCommercialAccount({
-        displayName: name.trim(),
-        email: email.trim().toLowerCase(),
+        displayName: cleanName,
+        email: cleanEmail,
         password,
-        businessName: "Toko WACRM Saya",
+        businessName: `Usaha ${cleanName}`,
+        platform,
         editionId: "starter",
       });
       if (!localReg.ok || !localReg.account) {
@@ -84,6 +114,10 @@ export default function SignUpPage() {
         role: acc.role,
         editionId: acc.editionId,
         authProvider: "workspace_local",
+        hasPaidLicense: false,
+        trialStartedAt: acc.trialStartedAt,
+        trialEndsAt: syncedTrialEndsAt || acc.trialEndsAt,
+        platform,
         signedInAt: new Date().toISOString(),
       });
       router.replace("/");

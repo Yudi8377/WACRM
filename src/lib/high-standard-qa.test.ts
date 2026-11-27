@@ -1,0 +1,525 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import { POST as registerTenantPost } from "@/app/api/auth/register-tenant/route";
+import {
+  GET as publisherTenantsGet,
+  PATCH as publisherTenantsPatch,
+} from "@/app/api/publisher/tenants/route";
+import {
+  evaluateTabAccess,
+  evaluateTrialStatus,
+  TRIAL_DURATION_DAYS,
+  type CommercialUserSession,
+} from "@/lib/access-control";
+import {
+  buildDefaultAiAgents,
+  buildDoubleEntryForOrder,
+  buildProactiveFollowUpReply,
+  computeFinancialReport,
+  evaluateFraudRisk,
+  evaluateHumanEscalation,
+  orchestrateMultiAgentReply,
+  runSystemGuardianAudit,
+} from "@/lib/ai-agents";
+import type { AiAgentRecord, ErpProductRecord, PosOrderRecord } from "@/lib/crm-types";
+import { verifySignedLicenseKey } from "@/lib/license-crypto";
+import { renderShippingLabelPrintHtml } from "@/lib/printer";
+import {
+  getPublisherSyncSecret,
+  resetMemoryTenantRegistryForTest,
+} from "@/lib/publisher-sync";
+import { resetRateLimitBucketsForTest } from "@/lib/security";
+import { generateOmnichannelSeoPack } from "@/lib/seo-engine";
+import {
+  getDefaultMasterData,
+  getDefaultStoreProfile,
+  normalizeSocialChannelAccount,
+} from "@/lib/store-profile";
+
+const AGENTS: AiAgentRecord[] = buildDefaultAiAgents().map((a, idx) => ({
+  ...a,
+  id: `qa-agent-${idx + 1}`,
+}));
+
+const PRODUCTS: ErpProductRecord[] = [
+  {
+    id: "qa-p1",
+    sku: "KOPI-GAYO-1KG",
+    name: "Kopi Arabika Gayo Premium 1Kg",
+    category: "Minuman & Kopi",
+    description: "Biji kopi Arabika Gayo specialty grade roasted harian untuk kedai & rumah.",
+    unit: "kg",
+    unitPrice: 185000,
+    costPrice: 115000,
+    stockQty: 45,
+    minStock: 10,
+    isActive: true,
+    weightGrams: 1000,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "qa-p2",
+    sku: "TEH-MATCHA-250",
+    name: "Matcha Uji Ceremonial 250g",
+    category: "Minuman & Kopi",
+    description: "Bubuk matcha murni dari Uji Jepang untuk latte premium & bakery.",
+    unit: "pack",
+    unitPrice: 135000,
+    costPrice: 78000,
+    stockQty: 25,
+    minStock: 5,
+    isActive: true,
+    weightGrams: 250,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+  {
+    id: "qa-p3",
+    sku: "MADU-HUTAN-500",
+    name: "Madu Hutan Asli Sumbawa 500ml",
+    category: "Kesehatan",
+    description: "Madu hutan liar murni tanpa campuran gula, kaya enzim alami.",
+    unit: "botol",
+    unitPrice: 95000,
+    costPrice: 52000,
+    stockQty: 30,
+    minStock: 5,
+    isActive: true,
+    weightGrams: 600,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  },
+];
+
+describe("High-Standard QA 1 — Security, Penetration & Auth Protection", () => {
+  beforeEach(() => {
+    resetRateLimitBucketsForTest();
+    resetMemoryTenantRegistryForTest();
+  });
+
+  it("blocks unauthenticated and forged-secret access to /api/publisher/tenants (Zero PII Leak)", async () => {
+    const noAuthRes = await publisherTenantsGet(
+      new Request("http://localhost/api/publisher/tenants", { method: "GET" }),
+    );
+    expect(noAuthRes.status).toBe(401);
+
+    const badSecretRes = await publisherTenantsGet(
+      new Request("http://localhost/api/publisher/tenants", {
+        method: "GET",
+        headers: { "x-publisher-sync-secret": "forged-hacker-token" },
+      }),
+    );
+    expect(badSecretRes.status).toBe(401);
+
+    const badPatchRes = await publisherTenantsPatch(
+      new Request("http://localhost/api/publisher/tenants", {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "x-publisher-sync-secret": "wrong" },
+        body: JSON.stringify({
+          email: "victim@toko.id",
+          editionId: "enterprise",
+          licenseStatus: "active",
+        }),
+      }),
+    );
+    expect(badPatchRes.status).toBe(401);
+  });
+
+  it("rate-limits abusive registration spam on /api/auth/register-tenant", async () => {
+    let lastStatus = 201;
+    for (let i = 0; i < 13; i += 1) {
+      const res = await registerTenantPost(
+        new Request("http://localhost/api/auth/register-tenant", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-forwarded-for": "198.51.100.77",
+          },
+          body: JSON.stringify({
+            fullName: `User ${i}`,
+            businessName: `Toko ${i}`,
+            email: `spam${i}@example.com`,
+          }),
+        }),
+      );
+      lastStatus = res.status;
+    }
+    expect(lastStatus).toBe(429);
+  });
+
+  it("neutralizes XSS & dangerous protocols in social handles and shipping label print HTML", () => {
+    expect(normalizeSocialChannelAccount("instagram", "javascript:alert(1)").connected).toBe(false);
+    expect(normalizeSocialChannelAccount("facebook", "data:text/html,<script>").connected).toBe(false);
+    const cleanedIg = normalizeSocialChannelAccount("instagram", "@toko<script>alert(1)</script>");
+    expect(cleanedIg.url).not.toContain("<script>");
+    expect(cleanedIg.url?.startsWith("https://instagram.com/")).toBe(true);
+
+    const order: PosOrderRecord = {
+      id: "ord-sec-label",
+      invoiceNumber: "INV-SEC-1",
+      conversationId: null,
+      contactId: null,
+      customerName: `<svg onload=alert(1)>'Budi'`,
+      customerPhone: "+628123456",
+      shippingAddress: `Jl. "Aman" <script>steal()</script>`,
+      channel: "whatsapp",
+      subtotal: 185000,
+      discountAmount: 0,
+      taxAmount: 20350,
+      shippingCourier: "JNE",
+      shippingService: "JNE YES",
+      shippingCost: 28000,
+      totalAmount: 233350,
+      paymentMethod: "qris",
+      paymentStatus: "paid",
+      orderStatus: "packed",
+      qrPayload: "WACRM-QRIS|TEST",
+      aiGenerated: true,
+      fraudRiskScore: 0,
+      notes: null,
+      items: [
+        {
+          id: "it-1",
+          productId: "qa-p1",
+          sku: "KOPI-GAYO-1KG",
+          productName: "Kopi <img src=x onerror=alert(1)>",
+          quantity: 1,
+          unitPrice: 185000,
+          costPrice: 115000,
+          lineTotal: 185000,
+        },
+      ],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const labelHtml = renderShippingLabelPrintHtml(
+      order,
+      "Toko <script>bad</script>",
+      "data:image/png;base64,AAA",
+    );
+    expect(labelHtml).not.toContain("<script>");
+    expect(labelHtml).not.toContain("<svg onload");
+    expect(labelHtml).toContain("&#39;Budi&#39;");
+  });
+
+  it("rejects tampered, malformed, and forged License Keys cryptographically", () => {
+    expect(verifySignedLicenseKey("WACRM-ENT-2912-0050-FAKE1234").valid).toBe(false);
+    expect(verifySignedLicenseKey("INVALID-KEY").valid).toBe(false);
+    expect(verifySignedLicenseKey("WACRM-PRO-2001-0010-00000000").valid).toBe(false);
+  });
+});
+
+describe("High-Standard QA 2 — Real-Time Signup Sync (Web & Android) + 14-Day UMKM Trial", () => {
+  beforeEach(() => {
+    resetRateLimitBucketsForTest();
+    resetMemoryTenantRegistryForTest();
+  });
+
+  it("syncs Web and Android APK signups immediately into Publisher HQ feed & supports license activation PATCH", async () => {
+    // 1. Web user signs up on wacrm-seven-dusky.vercel.app
+    const webRes = await registerTenantPost(
+      new Request("http://localhost/api/auth/register-tenant", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-forwarded-for": "10.1.1.1" },
+        body: JSON.stringify({
+          fullName: "Siti Rahayu",
+          businessName: "Batik Sekar Kediri",
+          email: "siti@batiksekar.id",
+          phone: "081234567890",
+          platform: "web",
+        }),
+      }),
+    );
+    expect(webRes.status).toBe(201);
+    const webBody = (await webRes.json()) as {
+      ok: boolean;
+      trialDays: number;
+      tenant: { editionId: string; licenseStatus: string; platform: string };
+    };
+    expect(webBody.ok).toBe(true);
+    expect(webBody.trialDays).toBe(TRIAL_DURATION_DAYS);
+    expect(webBody.tenant.editionId).toBe("starter");
+    expect(webBody.tenant.licenseStatus).toBe("trial");
+    expect(webBody.tenant.platform).toBe("web");
+
+    // 2. Android APK user signs up (detected via WACRM-Android User-Agent)
+    const androidRes = await registerTenantPost(
+      new Request("http://localhost/api/auth/register-tenant", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "user-agent": "Mozilla/5.0 Android WACRM-Android/4.2.0",
+          "x-forwarded-for": "10.1.1.2",
+        },
+        body: JSON.stringify({
+          fullName: "Agus Pratama",
+          businessName: "Kopi Lereng Kelud",
+          email: "agus@kopikelud.id",
+          phone: "085611223344",
+        }),
+      }),
+    );
+    expect(androidRes.status).toBe(201);
+    const androidBody = (await androidRes.json()) as {
+      tenant: { platform: string; editionId: string };
+    };
+    expect(androidBody.tenant.platform).toBe("android");
+    expect(androidBody.tenant.editionId).toBe("starter");
+
+    // 3. Publisher HQ pulls live registrations with shared secret
+    const syncRes = await publisherTenantsGet(
+      new Request("http://localhost/api/publisher/tenants", {
+        method: "GET",
+        headers: { "x-publisher-sync-secret": getPublisherSyncSecret() },
+      }),
+    );
+    expect(syncRes.status).toBe(200);
+    const syncData = (await syncRes.json()) as {
+      ok: boolean;
+      summary: { total: number; webSignups: number; androidSignups: number; activeTrials: number };
+      tenants: Array<{ email: string; platform: string; licenseStatus: string }>;
+    };
+    expect(syncData.ok).toBe(true);
+    expect(syncData.summary.total).toBe(2);
+    expect(syncData.summary.webSignups).toBe(1);
+    expect(syncData.summary.androidSignups).toBe(1);
+    expect(syncData.summary.activeTrials).toBe(2);
+
+    // 4. Publisher HQ issues License Key & syncs upgrade back via PATCH
+    const patchRes = await publisherTenantsPatch(
+      new Request("http://localhost/api/publisher/tenants", {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          "x-publisher-sync-secret": getPublisherSyncSecret(),
+        },
+        body: JSON.stringify({
+          email: "siti@batiksekar.id",
+          editionId: "pro",
+          licenseStatus: "active",
+          licenseKey: "WACRM-PRO-2711-0010-TESTKEY1",
+        }),
+      }),
+    );
+    expect(patchRes.status).toBe(200);
+    const patchData = (await patchRes.json()) as {
+      tenant: { editionId: string; licenseStatus: string; licenseKey: string };
+    };
+    expect(patchData.tenant.editionId).toBe("pro");
+    expect(patchData.tenant.licenseStatus).toBe("active");
+    expect(patchData.tenant.licenseKey).toBe("WACRM-PRO-2711-0010-TESTKEY1");
+  });
+
+  it("enforces 14-day Trial countdown, expiration lock, and Starter UMKM preview restrictions", () => {
+    const startMs = Date.parse("2026-11-01T00:00:00.000Z");
+    const endMs = startMs + 14 * 24 * 60 * 60 * 1000;
+    const trialSession: CommercialUserSession = {
+      userId: "u-trial-1",
+      email: "umkm@tokoku.id",
+      displayName: "Pemilik UMKM",
+      businessName: "Toko UMKM",
+      role: "owner",
+      editionId: "starter",
+      authProvider: "workspace_local",
+      hasPaidLicense: false,
+      trialStartedAt: new Date(startMs).toISOString(),
+      trialEndsAt: new Date(endMs).toISOString(),
+      platform: "android",
+      signedInAt: new Date(startMs).toISOString(),
+    };
+
+    // Day 1
+    const day1 = evaluateTrialStatus(trialSession, startMs + 1000);
+    expect(day1.isTrial).toBe(true);
+    expect(day1.isExpired).toBe(false);
+    expect(day1.daysRemaining).toBe(14);
+
+    // Day 15 (expired!)
+    const day15 = evaluateTrialStatus(trialSession, endMs + 60_000);
+    expect(day15.isExpired).toBe(true);
+    expect(day15.daysRemaining).toBe(0);
+
+    // Paid License Key lifts trial expiration immediately
+    const licensed = evaluateTrialStatus({
+      ...trialSession,
+      editionId: "pro",
+      hasPaidLicense: true,
+      licenseKey: "WACRM-PRO-2711-0010-VALIDKEY",
+    }, endMs + 60_000);
+    expect(licensed.isTrial).toBe(false);
+    expect(licensed.isExpired).toBe(false);
+
+    // Starter UMKM allows core UMKM tabs and restricts premium modules to Preview-Only
+    expect(evaluateTabAccess("starter", "owner", "inbox").allowed).toBe(true);
+    expect(evaluateTabAccess("starter", "owner", "pos").allowed).toBe(true);
+    expect(evaluateTabAccess("starter", "owner", "master").allowed).toBe(true);
+    expect(evaluateTabAccess("starter", "owner", "contacts").allowed).toBe(true);
+
+    expect(evaluateTabAccess("starter", "owner", "erp").lockedByEdition).toBe(true);
+    expect(evaluateTabAccess("starter", "owner", "seo_growth").lockedByEdition).toBe(true);
+    expect(evaluateTabAccess("starter", "owner", "templates").lockedByEdition).toBe(true);
+    expect(evaluateTabAccess("starter", "owner", "accounting").lockedByEdition).toBe(true);
+    expect(evaluateTabAccess("starter", "owner", "ai").lockedByEdition).toBe(true);
+  });
+});
+
+describe("High-Standard QA 3 — Ultra-Simple Omnichannel SEO Studio", () => {
+  it("normalizes beginner social usernames (FB, IG, TikTok, YouTube, WA) and embeds them across all 6 SEO channels", () => {
+    const wa = normalizeSocialChannelAccount("whatsapp", "0812-9988-7766");
+    const ig = normalizeSocialChannelAccount("instagram", "@kedai.kopi.kediri");
+    const fb = normalizeSocialChannelAccount("facebook", "kedaikopikediri");
+    const tt = normalizeSocialChannelAccount("tiktok", "https://tiktok.com/@kedaikopikediri");
+    const yt = normalizeSocialChannelAccount("youtube", "@KedaiKopiKediriTV");
+
+    expect(wa.url).toBe("https://wa.me/6281299887766");
+    expect(ig.url).toBe("https://instagram.com/kedai.kopi.kediri");
+    expect(fb.url).toBe("https://facebook.com/kedaikopikediri");
+    expect(tt.url).toBe("https://tiktok.com/@kedaikopikediri");
+    expect(yt.url).toBe("https://youtube.com/@KedaiKopiKediriTV");
+
+    const profile = {
+      ...getDefaultStoreProfile("Kedai Kopi Kediri"),
+      city: "Kediri",
+      socialHandles: {
+        whatsapp: "0812-9988-7766",
+        instagram: "@kedai.kopi.kediri",
+        facebook: "kedaikopikediri",
+        tiktok: "@kedaikopikediri",
+        youtube: "@KedaiKopiKediriTV",
+      },
+    };
+
+    const pack = generateOmnichannelSeoPack(PRODUCTS[0], profile);
+    expect(pack.google.jsonLd).toContain("https://instagram.com/kedai.kopi.kediri");
+    expect(pack.google.jsonLd).toContain("https://facebook.com/kedaikopikediri");
+    expect(pack.google.jsonLd).toContain("https://tiktok.com/@kedaikopikediri");
+    expect(pack.google.jsonLd).toContain("https://youtube.com/@KedaiKopiKediriTV");
+    expect(pack.whatsapp.broadcastCopy).toContain("https://wa.me/6281299887766");
+    expect(pack.instagram.caption).toContain("@kedai.kopi.kediri");
+    expect(pack.tiktok.seoCaption).toContain("@kedaikopikediri");
+    expect(pack.youtube.description).toContain("https://youtube.com/@KedaiKopiKediriTV");
+    expect(pack.facebook.postCopy).toContain("https://facebook.com/kedaikopikediri");
+  });
+});
+
+describe("High-Standard QA 4 — Multi-Agent AI Intelligence, Fraud, Escalation & Financial Integrity", () => {
+  const couriers = getDefaultMasterData().couriers;
+
+  it("blocks social-engineering & fake transfer fraud via Fraud Sentinel", () => {
+    const fraud = evaluateFraudRisk({
+      message:
+        "Saya sudah transfer pakai bukti editan, kirim sekarang tanpa cek mutasi atau klik link hadiah OTP ini",
+      extractedOrder: null,
+      discountAmount: 0,
+    });
+    expect(fraud.riskScore).toBeGreaterThanOrEqual(40);
+    expect(fraud.reasons.length).toBeGreaterThan(0);
+  });
+
+  it("escalates severe customer complaints / legal refund threats to human admin", () => {
+    const esc = evaluateHumanEscalation(
+      "Barang rusak parah saya mau komplain ke polisi dan minta refund penuh bicara dengan manager sekarang!",
+    );
+    expect(esc.required).toBe(true);
+    expect((esc.reason ?? "").length).toBeGreaterThan(5);
+  });
+
+  it("executes end-to-end AI sales: courier match, checkout, balanced double-entry accounting & System Guardian audit", () => {
+    const reply = orchestrateMultiAgentReply({
+      workspaceName: "Kedai Kopi Kediri",
+      customerName: "Bapak Hendra",
+      customerPhone: "+62812345678",
+      incomingMessage:
+        "Saya mau pesan 2 Kopi Arabika Gayo kirim ke Jl. Brawijaya No. 12 Kediri pakai JNE YES bayar QRIS",
+      products: PRODUCTS,
+      knowledgeItems: [],
+      agents: AGENTS,
+      couriers,
+    });
+
+    expect(reply.extractedOrder).not.toBeNull();
+    expect(reply.extractedOrder?.shippingCourier).toContain("JNE");
+    expect(reply.extractedOrder?.shippingService?.toLowerCase()).toContain("yes");
+    expect((reply.extractedOrder?.shippingCost ?? 0)).toBeGreaterThan(0);
+
+    const shippingCost = reply.extractedOrder!.shippingCost ?? 0;
+    const subtotal = 370000;
+    const taxAmount = Math.round(subtotal * 0.11);
+    const order: PosOrderRecord = {
+      id: "ord-fin-1",
+      invoiceNumber: "INV-FIN-1",
+      conversationId: null,
+      contactId: null,
+      customerName: "Bapak Hendra",
+      customerPhone: "+62812345678",
+      shippingAddress: reply.extractedOrder!.shippingAddress,
+      channel: "whatsapp",
+      subtotal,
+      discountAmount: 0,
+      taxAmount,
+      shippingCourier: reply.extractedOrder!.shippingCourier,
+      shippingService: reply.extractedOrder!.shippingService,
+      shippingCost,
+      shippingWeightKg: 2,
+      totalAmount: subtotal + taxAmount + shippingCost,
+      paymentMethod: "qris",
+      paymentStatus: "paid",
+      orderStatus: "confirmed",
+      qrPayload: "QR",
+      aiGenerated: true,
+      fraudRiskScore: 0,
+      notes: null,
+      items: [
+        {
+          id: "it-1",
+          productId: "qa-p1",
+          sku: "KOPI-GAYO-1KG",
+          productName: "Kopi Arabika Gayo Premium 1Kg",
+          quantity: 2,
+          unitPrice: 185000,
+          costPrice: 115000,
+          lineTotal: 370000,
+        },
+      ],
+      createdAt: "2026-11-26T00:00:00.000Z",
+      updatedAt: "2026-11-26T00:00:00.000Z",
+    };
+
+    const entries = buildDoubleEntryForOrder(order).map((e, idx) => ({
+      ...e,
+      id: `je-${idx + 1}`,
+      createdAt: "2026-11-26T00:00:00.000Z",
+    }));
+
+    const report = computeFinancialReport(entries, PRODUCTS);
+    expect(report.isBalanced).toBe(true);
+    expect(report.totalDebits).toBe(report.totalCredits);
+    expect(report.totalRevenue).toBe(subtotal + shippingCost);
+    expect(report.netProfit).toBeGreaterThan(0);
+
+    const guardian = runSystemGuardianAudit({
+      products: PRODUCTS,
+      orders: [order],
+      entries,
+    });
+    expect(guardian.healthScore).toBeGreaterThanOrEqual(90);
+
+    // Also verify proactive follow-up stage 1 & stage 2 cross-sell
+    const stage1 = buildProactiveFollowUpReply({
+      workspaceName: "Kedai Kopi Kediri",
+      customerName: "Bapak Hendra",
+      attemptNumber: 1,
+      products: PRODUCTS,
+      lastTopic: "Kopi Arabika Gayo",
+    });
+    const stage2 = buildProactiveFollowUpReply({
+      workspaceName: "Kedai Kopi Kediri",
+      customerName: "Bapak Hendra",
+      attemptNumber: 2,
+      products: PRODUCTS,
+      lastTopic: "Kopi Arabika Gayo",
+    });
+    expect(stage1.stage).toBe("idle_nudge");
+    expect(stage2.suggestedProducts.length).toBeGreaterThan(0);
+  });
+});

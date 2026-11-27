@@ -369,6 +369,15 @@ export interface SuperAdminOverview {
   opportunities: PlatformSwotInsight[];
 }
 
+export interface SocialChannelHandles {
+  whatsapp: string;
+  instagram: string;
+  facebook: string;
+  tiktok: string;
+  youtube: string;
+  websiteUrl?: string;
+}
+
 export interface StoreBusinessProfile {
   businessName: string;
   businessTagline: string;
@@ -379,6 +388,7 @@ export interface StoreBusinessProfile {
   taxId: string;
   invoiceFooter: string;
   defaultCourier: string;
+  socialHandles?: SocialChannelHandles;
 }
 
 export interface MasterCategoryRecord {

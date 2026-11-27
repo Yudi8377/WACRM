@@ -11,7 +11,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
-  Zap,
 } from "lucide-react";
 import { formatIdr, type AppEditionId } from "@/lib/crm-types";
 import {
@@ -35,7 +34,7 @@ interface EditionsViewProps {
   activeAgentsCount: number;
   productsCount: number;
   channelsCount: number;
-  onSelectEdition: (editionId: AppEditionId) => void;
+  onSelectEdition: (editionId: AppEditionId, verifiedLicenseKey?: string) => void;
   onToast?: (msg: string, tone?: "success" | "error") => void;
 }
 
@@ -104,7 +103,7 @@ export function EditionsView({
 
       saveStoredClientLicense(tenantId, nextLicense);
       setStoredLicense(nextLicense);
-      onSelectEdition(data.editionId);
+      onSelectEdition(data.editionId, data.normalizedKey);
       setLicenseInput("");
       const okMsg = `Lisensi resmi ${data.editionName} aktif (${data.isUnlimitedSeats ? "Unlimited" : data.maxSeats} kursi, berlaku hingga ${data.expiresAt}).`;
       setVerifyFeedback({ ok: true, message: okMsg });
@@ -207,6 +206,7 @@ export function EditionsView({
 
         <form onSubmit={handleActivateLicense} className="mt-4 flex flex-col gap-2.5 sm:flex-row">
           <input
+            id="wacrm-license-key-input"
             type="text"
             value={licenseInput}
             onChange={(e) => setLicenseInput(e.target.value.toUpperCase())}
@@ -365,20 +365,38 @@ export function EditionsView({
               <button
                 type="button"
                 disabled={isCurrent}
-                onClick={() => onSelectEdition(ed.id)}
+                onClick={() => {
+                  if (ed.id === "starter" || storedLicense?.editionId === ed.id) {
+                    onSelectEdition(ed.id, storedLicense?.editionId === ed.id ? storedLicense.licenseKey : undefined);
+                  } else {
+                    const inputEl = document.getElementById("wacrm-license-key-input");
+                    inputEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    inputEl?.focus();
+                    onToast?.(
+                      `Edisi ${ed.name} memerlukan License Key resmi dari WACRM Publisher HQ. Masukkan kunci lisensi Anda di kolom aktivasi di atas.`,
+                      "error",
+                    );
+                  }
+                }}
                 className={`mt-5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
                   isCurrent
-                    ? "cursor-default bg-emerald-500/20 text-emerald-300"
-                    : "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
+                    ? "cursor-default border border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
+                    : ed.id === "starter" || storedLicense?.editionId === ed.id
+                      ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
+                      : "border border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
                 }`}
               >
                 {isCurrent ? (
                   <>
-                    <ShieldCheck className="h-4 w-4" /> Sedang Digunakan
+                    <Check className="h-3.5 w-3.5" /> Edisi Aktif Saat Ini
                   </>
+                ) : ed.id === "starter" ? (
+                  "Gunakan Edisi Starter UMKM"
+                ) : storedLicense?.editionId === ed.id ? (
+                  `Aktifkan Lisensi ${ed.name}`
                 ) : (
                   <>
-                    <Zap className="h-4 w-4" /> Pratinjau {ed.name}
+                    <Lock className="h-3.5 w-3.5" /> Butuh License Key {ed.name}
                   </>
                 )}
               </button>

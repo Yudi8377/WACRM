@@ -21,10 +21,14 @@ export type WorkspaceTabId =
   | "editions"
   | "settings";
 
+export const TRIAL_DURATION_DAYS = 14;
+
 export const TAB_REQUIRED_FEATURE: Partial<Record<WorkspaceTabId, EditionFeatureKey>> = {
   erp: "erp_warehouse",
   accounting: "double_entry_accounting",
   seo_growth: "seo_growth_ai",
+  ai: "fraud_sentinel_healing",
+  templates: "zero_click_ai",
 };
 
 const ROLE_RANK: Record<MemberRole, number> = {
@@ -169,7 +173,78 @@ export interface CommercialUserSession {
   editionId: AppEditionId;
   authProvider: "cloud_neon" | "workspace_local";
   licenseKey?: string | null;
+  hasPaidLicense?: boolean;
+  trialStartedAt?: string;
+  trialEndsAt?: string;
+  platform?: "web" | "android";
   signedInAt: string;
+}
+
+export interface TrialStatusEvaluation {
+  isTrial: boolean;
+  isExpired: boolean;
+  daysRemaining: number;
+  totalTrialDays: number;
+  trialEndsAt: string | null;
+  label: string;
+}
+
+export function evaluateTrialStatus(
+  session: CommercialUserSession | null | undefined,
+  nowMs: number = Date.now(),
+): TrialStatusEvaluation {
+  if (!session) {
+    return {
+      isTrial: true,
+      isExpired: false,
+      daysRemaining: TRIAL_DURATION_DAYS,
+      totalTrialDays: TRIAL_DURATION_DAYS,
+      trialEndsAt: null,
+      label: `Trial Gratis ${TRIAL_DURATION_DAYS} Hari (Starter UMKM)`,
+    };
+  }
+
+  if (session.hasPaidLicense || Boolean(session.licenseKey?.trim())) {
+    return {
+      isTrial: false,
+      isExpired: false,
+      daysRemaining: 0,
+      totalTrialDays: TRIAL_DURATION_DAYS,
+      trialEndsAt: null,
+      label: "Lisensi Resmi Aktif",
+    };
+  }
+
+  const startMs = Date.parse(session.trialStartedAt || session.signedInAt);
+  const fallbackEndMs =
+    (Number.isNaN(startMs) ? nowMs : startMs) + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000;
+  const parsedEndMs = session.trialEndsAt ? Date.parse(session.trialEndsAt) : fallbackEndMs;
+  const endMs = Number.isNaN(parsedEndMs) ? fallbackEndMs : parsedEndMs;
+  const diffMs = endMs - nowMs;
+  const isExpired = diffMs <= 0;
+  const daysRemaining = isExpired ? 0 : Math.max(1, Math.ceil(diffMs / (24 * 60 * 60 * 1000)));
+
+  return {
+    isTrial: true,
+    isExpired,
+    daysRemaining,
+    totalTrialDays: TRIAL_DURATION_DAYS,
+    trialEndsAt: new Date(endMs).toISOString(),
+    label: isExpired
+      ? "Masa Trial 14 Hari Berakhir — Aktivasi License Key Diperlukan"
+      : `Trial Gratis Versi UMKM · Sisa ${daysRemaining} dari ${TRIAL_DURATION_DAYS} Hari`,
+  };
+}
+
+export function detectClientPlatform(): "web" | "android" {
+  if (typeof window === "undefined") return "web";
+  const ua = window.navigator?.userAgent || "";
+  const hasBridge = Boolean((window as unknown as { WACRMAndroid?: unknown }).WACRMAndroid);
+  const params = new URLSearchParams(window.location.search);
+  if (hasBridge || /wacrm-android/i.test(ua) || params.get("platform") === "android") {
+    return "android";
+  }
+  return "web";
 }
 
 export interface LocalCommercialAccount {
@@ -177,9 +252,15 @@ export interface LocalCommercialAccount {
   email: string;
   displayName: string;
   businessName: string;
+  phone?: string;
   role: MemberRole;
   editionId: AppEditionId;
   passwordHash: string;
+  trialStartedAt?: string;
+  trialEndsAt?: string;
+  hasPaidLicense?: boolean;
+  licenseKey?: string | null;
+  platform?: "web" | "android";
   createdAt: string;
 }
 
@@ -298,6 +379,8 @@ export function registerLocalCommercialAccount(input: {
   password: string;
   displayName: string;
   businessName: string;
+  phone?: string;
+  platform?: "web" | "android";
   editionId?: AppEditionId;
 }): { ok: boolean; account?: LocalCommercialAccount; error?: string } {
   const normalizedEmail = input.email.trim().toLowerCase();
@@ -311,15 +394,24 @@ export function registerLocalCommercialAccount(input: {
   if (accounts.some((a) => a.email.toLowerCase() === normalizedEmail)) {
     return { ok: false, error: "Email sudah terdaftar. Silakan masuk atau gunakan Lupa Password." };
   }
+  const now = new Date();
+  const trialEnds = new Date(now.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000);
   const account: LocalCommercialAccount = {
     id: `local-${Date.now()}`,
     email: normalizedEmail,
     displayName: input.displayName.trim() || normalizedEmail.split("@")[0],
     businessName: input.businessName.trim() || "Usaha Baru WACRM",
+    phone: input.phone?.trim() || "",
     role: "owner",
+    // Always enforce Starter UMKM Trial on self-signup until official License Key is activated
     editionId: input.editionId ?? "starter",
     passwordHash: hashCommercialPassword(normalizedEmail, input.password),
-    createdAt: new Date().toISOString(),
+    trialStartedAt: now.toISOString(),
+    trialEndsAt: trialEnds.toISOString(),
+    hasPaidLicense: false,
+    licenseKey: null,
+    platform: input.platform ?? detectClientPlatform(),
+    createdAt: now.toISOString(),
   };
   saveLocalAccounts([account, ...accounts]);
   return { ok: true, account };
@@ -404,4 +496,31 @@ export function clearCommercialSession(): void {
   } catch {
     // ignore
   }
+}
+
+export function upgradeCommercialSessionWithLicense(
+  session: CommercialUserSession,
+  editionId: AppEditionId,
+  licenseKey: string,
+): CommercialUserSession {
+  const upgraded: CommercialUserSession = {
+    ...session,
+    editionId,
+    licenseKey,
+    hasPaidLicense: true,
+  };
+  saveCommercialSession(upgraded);
+
+  const accounts = loadLocalAccounts();
+  const idx = accounts.findIndex((a) => a.email.toLowerCase() === session.email.toLowerCase());
+  if (idx >= 0) {
+    accounts[idx] = {
+      ...accounts[idx],
+      editionId,
+      licenseKey,
+      hasPaidLicense: true,
+    };
+    saveLocalAccounts(accounts);
+  }
+  return upgraded;
 }

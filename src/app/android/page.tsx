@@ -54,13 +54,11 @@ export default function AndroidPage() {
             <div>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300">
                 <Smartphone className="h-3.5 w-3.5" />
-                Android App v4.0.0 · com.wacrm.android
+                Android App v4.2.0 · Trial 14 Hari Versi UMKM · com.wacrm.android
               </span>
-              <h1 className="mt-2.5 text-2xl font-extrabold sm:text-3xl">Aplikasi Android WACRM v4.0 AI Suite</h1>
+              <h1 className="mt-2.5 text-2xl font-extrabold sm:text-3xl">Aplikasi Android WACRM v4.2 AI Suite</h1>
               <p className="mt-1.5 text-sm text-slate-300">
-                Dilengkapi <strong>Cetak Universal Native USB-C / Micro-USB OTG</strong> (Thermal, Label QR, EDC),{" "}
-                <strong>Inkjet / LaserJet / Mopria / Bluetooth / WiFi</strong>, <strong>9 Agen AI Otonom termasuk SEO &amp; Growth AI</strong>,{" "}
-                <strong>Multi-Edition</strong>, serta <strong>Super Admin Command Center</strong>.
+                Daftar cukup dengan email untuk <strong>Trial Gratis 14 Hari Versi Starter UMKM</strong> (berlaku identik di Web &amp; Android). Fitur <strong>Growth Pro &amp; Enterprise</strong> tampil sebagai pratinjau terbatas hingga Anda memasukkan <strong>License Key</strong> resmi. Mendukung <strong>Cetak Universal USB-C/Micro-USB OTG, Bluetooth, WiFi, POS QR &amp; AI Sales</strong>.
               </p>
             </div>
           </div>

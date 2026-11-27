@@ -10,6 +10,7 @@ import {
   KeyRound,
   LayoutDashboard,
   Lock,
+  RefreshCw,
   Settings,
 } from "lucide-react";
 import {
@@ -66,13 +67,12 @@ export function PublisherEmsApp() {
   const [tab, setTab] = useState<PublisherTabId>("overview");
   const [state, setState] = useState<PublisherEmsState>(() => buildInitialPublisherState());
   const [hydrated, setHydrated] = useState(false);
+  const [syncingLive, setSyncingLive] = useState(false);
+  const [liveSyncInfo, setLiveSyncInfo] = useState<{ count: number; lastSyncedAt: string | null }>({
+    count: 0,
+    lastSyncedAt: null,
+  });
   const [toast, setToast] = useState<{ text: string; tone: "success" | "error" } | null>(null);
-
-  useEffect(() => {
-    const loaded = loadPublisherState();
-    setState(loaded);
-    setHydrated(true);
-  }, []);
 
   const showToast = useCallback((text: string, tone: "success" | "error" = "success") => {
     setToast({ text, tone });
@@ -86,6 +86,144 @@ export function PublisherEmsApp() {
       return next;
     });
   }, []);
+
+  const syncLiveRegistrations = useCallback(
+    async (silent = false) => {
+      setSyncingLive(true);
+      try {
+        const res = await fetch("/api/tenants", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const payload = (await res.json()) as {
+          ok?: boolean;
+          count?: number;
+          syncedAt?: string;
+          tenants?: Array<{
+            id: string;
+            fullName: string;
+            businessName: string;
+            email: string;
+            phone: string;
+            city: string;
+            platform: "web" | "android";
+            editionId: EditionId;
+            licenseStatus: "trial" | "active" | "grace_period" | "expired" | "suspended";
+            trialStartedAt: string;
+            trialEndsAt: string;
+            licenseKey: string | null;
+            createdAt: string;
+          }>;
+        };
+
+        const liveList = payload.tenants ?? [];
+        setLiveSyncInfo({
+          count: liveList.length,
+          lastSyncedAt: payload.syncedAt ?? new Date().toISOString(),
+        });
+
+        if (liveList.length > 0) {
+          updateState((prev) => {
+            const existingByEmail = new Map(
+              prev.tenants.map((t) => [t.picEmail.toLowerCase(), t]),
+            );
+            const mergedTenants = [...prev.tenants];
+            const mergedLicenses = [...prev.licenses];
+
+            for (const reg of liveList) {
+              const emailKey = reg.email.toLowerCase();
+              const existing = existingByEmail.get(emailKey);
+              const tenantId = existing?.id ?? reg.id;
+
+              const mappedTenant = {
+                id: tenantId,
+                code: existing?.code ?? `LIVE-${reg.id.slice(-4).toUpperCase()}`,
+                companyName: reg.businessName || reg.fullName,
+                npwp: existing?.npwp ?? "-",
+                industry: existing?.industry ?? (reg.platform === "android" ? "UMKM · Android APK" : "UMKM · Web SaaS"),
+                picName: reg.fullName,
+                picEmail: reg.email,
+                picWhatsapp: reg.phone || existing?.picWhatsapp || "-",
+                domain: existing?.domain ?? "wacrm-seven-dusky.vercel.app",
+                city: reg.city || "Indonesia",
+                resellerId: existing?.resellerId ?? null,
+                status:
+                  reg.licenseStatus === "active"
+                    ? ("active" as const)
+                    : ("onboarding" as const),
+                monthlyCloudCogsIdr: existing?.monthlyCloudCogsIdr ?? 35000,
+                monthlyAiTokenCostIdr: existing?.monthlyAiTokenCostIdr ?? 20000,
+                healthScore: existing?.healthScore ?? 92,
+                createdAt: reg.createdAt,
+                trialEndsAt: reg.trialEndsAt,
+                signupPlatform: reg.platform,
+                syncedFromLive: true,
+              };
+
+              if (existing) {
+                const idx = mergedTenants.findIndex((t) => t.id === existing.id);
+                if (idx >= 0) mergedTenants[idx] = mappedTenant;
+              } else {
+                mergedTenants.unshift(mappedTenant);
+              }
+
+              const hasLic = mergedLicenses.some((l) => l.tenantId === tenantId);
+              if (!hasLic) {
+                mergedLicenses.unshift({
+                  id: `lic-live-${tenantId}`,
+                  licenseKey: reg.licenseKey || `TRIAL-UMKM-14D-${tenantId.slice(-4).toUpperCase()}`,
+                  tenantId,
+                  tenantName: mappedTenant.companyName,
+                  domain: "wacrm-seven-dusky.vercel.app",
+                  editionId: reg.editionId,
+                  status: reg.licenseStatus === "active" ? "active" : "trial",
+                  billingCycle: reg.licenseStatus === "active" ? "monthly" : "trial",
+                  maxSeats: reg.editionId === "starter" ? 2 : 10,
+                  usedSeats: 1,
+                  maxAiAgents: reg.editionId === "starter" ? 2 : 11,
+                  maxBranches: reg.editionId === "starter" ? 1 : 5,
+                  monthlyValueIdr: reg.licenseStatus === "active" ? 249000 : 0,
+                  issuedAt: reg.trialStartedAt,
+                  expiresAt: reg.trialEndsAt,
+                  lastHeartbeatAt: reg.createdAt,
+                  entitlements:
+                    reg.editionId === "starter"
+                      ? ["inbox_wa", "pos_umkm", "master_data", "preview_locked_premium"]
+                      : ["inbox_omnichannel", "erp", "pos", "accounting", "ai_agents", "seo_studio"],
+                  notes: `Pendaftar otomatis via ${reg.platform === "android" ? "Aplikasi Android APK" : "Web wacrm-seven-dusky.vercel.app"} (Trial 14 Hari UMKM)`,
+                });
+              }
+            }
+
+            return {
+              ...prev,
+              tenants: mergedTenants,
+              licenses: mergedLicenses,
+            };
+          });
+        }
+        if (!silent) {
+          showToast(
+            liveList.length > 0
+              ? `Sinkronisasi berhasil: ${liveList.length} pendaftar live dari wacrm-seven-dusky.vercel.app terhubung!`
+              : "Terhubung ke server WACRM — belum ada pendaftar baru sejak terakhir sinkron.",
+          );
+        }
+      } catch {
+        if (!silent) {
+          showToast("Gagal menyinkronkan pendaftar live dari server WACRM.", "error");
+        }
+      } finally {
+        setSyncingLive(false);
+      }
+    },
+    [showToast, updateState],
+  );
+
+  useEffect(() => {
+    const loaded = loadPublisherState();
+    setState(loaded);
+    setHydrated(true);
+    void syncLiveRegistrations(true);
+  }, [syncLiveRegistrations]);
 
   function handleIssueLicense(input: {
     tenantId: string;
@@ -105,6 +243,20 @@ export function PublisherEmsApp() {
         return res.state;
       });
       showToast(`License Key resmi diterbitkan: ${issuedKey}`);
+      const targetTenant = state.tenants.find((t) => t.id === input.tenantId);
+      if (targetTenant?.syncedFromLive && issuedKey) {
+        void fetch("/api/tenants", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            email: targetTenant.picEmail,
+            tenantId: targetTenant.id,
+            editionId: input.editionId,
+            licenseStatus: "active",
+            licenseKey: issuedKey,
+          }),
+        }).catch(() => undefined);
+      }
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Gagal menerbitkan lisensi.", "error");
     }
@@ -191,13 +343,25 @@ export function PublisherEmsApp() {
           </div>
         </div>
 
-        <div className="hidden items-center gap-2 sm:flex">
-          <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-slate-300">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={syncingLive}
+            onClick={() => void syncLiveRegistrations(false)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-bold text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-60"
+            title="Tarik data pendaftar terbaru dari wacrm-seven-dusky.vercel.app secara real-time"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${syncingLive ? "animate-spin" : ""}`} />
+            {syncingLive
+              ? "Menyinkronkan..."
+              : `Sinkron Pendaftar Live (${liveSyncInfo.count})`}
+          </button>
+          <span className="hidden items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-slate-300 lg:inline-flex">
             <Lock className="h-3.5 w-3.5 text-emerald-400" />
-            Private Internal App (noindex)
+            Private Internal App
           </span>
-          <span className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 font-mono text-[11px] font-bold text-emerald-300">
-            {hydrated ? `${state.licenses.length} Lisensi · ${state.journals.length} Jurnal PSAK` : "Memuat..."}
+          <span className="hidden rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 font-mono text-[11px] font-bold text-emerald-300 sm:inline-block">
+            {hydrated ? `${state.tenants.length} Tenant · ${state.licenses.length} Lisensi` : "Memuat..."}
           </span>
         </div>
       </header>
@@ -245,6 +409,8 @@ export function PublisherEmsApp() {
                 state={state}
                 onNavigate={(next) => setTab(next as PublisherTabId)}
                 onQuickCollectOverdue={handleMarkInvoicePaid}
+                onSyncLive={() => void syncLiveRegistrations(false)}
+                syncingLive={syncingLive}
               />
             )}
             {tab === "licenses" && (

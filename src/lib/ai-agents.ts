@@ -704,12 +704,12 @@ export function evaluateFraudRisk(params: {
   const lower = params.message.toLowerCase();
 
   if (
-    /(edit bukti|transfer palsu|kirim.*tanpa\s*(?:bayar|transfer)|tanpa\s*(?:bayar|transfer)|refund dobel|kode\s*otp|otp\s*admin|password\s*admin|bypass|hack|sql injection|drop table|ignore previous instructions|reveal system prompt|<script)/i.test(
+    /(edit\s*bukti|bukti\s*(?:edit|editan|palsu|fiktif|rekayasa)|transfer\s*(?:palsu|fiktif|editan)|tanpa\s*(?:bayar|transfer|cek\s*mutasi|verifikasi)|kirim.*tanpa\s*(?:bayar|transfer|cek\s*mutasi)|refund\s*dobel|kode\s*otp|minta\s*(?:otp|pin|password)|link\s*(?:hadiah|undian|klaim|verifikasi)|undangan.*\.apk|file\s*\.apk|otp\s*admin|password\s*admin|bypass|hack|sql\s*injection|drop\s*table|ignore\s*previous\s*instructions|reveal\s*system\s*prompt|<script)/i.test(
       lower,
     )
   ) {
     riskScore += 72;
-    reasons.push("Terdeteksi pola rekayasa sosial, prompt injection, atau indikasi manipulasi pembayaran/kredensial.");
+    reasons.push("Terdeteksi pola rekayasa sosial, phishing/APK, prompt injection, atau indikasi manipulasi pembayaran/kredensial.");
   }
   if (/(diskon\s*(?:70|75|80|85|90|95|100)%|gratis semua|harga 0)/i.test(lower)) {
     riskScore += 48;

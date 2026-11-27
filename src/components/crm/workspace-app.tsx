@@ -29,6 +29,8 @@ import {
 import {
   evaluateEditionQuota,
   evaluateTabAccess,
+  evaluateTrialStatus,
+  upgradeCommercialSessionWithLicense,
   type CommercialUserSession,
   type WorkspaceTabId,
 } from "@/lib/access-control";
@@ -80,10 +82,12 @@ const NAV_ITEMS: Array<{
 export function WorkspaceApp({
   adapter,
   commercialUser,
+  onCommercialSessionUpdate,
   onSignOut,
 }: {
   adapter: WorkspaceAdapter;
   commercialUser?: CommercialUserSession | null;
+  onCommercialSessionUpdate?: (next: CommercialUserSession) => void;
   onSignOut?: () => void;
 }) {
   const router = useRouter();
@@ -174,20 +178,35 @@ export function WorkspaceApp({
     setStoreProfile(next);
   }
 
-  function handleSelectEdition(nextEdition: AppEditionId) {
+  function handleSelectEdition(nextEdition: AppEditionId, verifiedLicenseKey?: string) {
     saveTenantEdition(adapter.tenantId, nextEdition);
     setEditionId(nextEdition);
+    if (verifiedLicenseKey && commercialUser) {
+      const upgraded = upgradeCommercialSessionWithLicense(
+        commercialUser,
+        nextEdition,
+        verifiedLicenseKey,
+      );
+      onCommercialSessionUpdate?.(upgraded);
+    }
     const ed = getEditionById(nextEdition);
-    showToast(`Edisi workspace aktif diubah ke ${ed.name} (${ed.badge}).`);
+    showToast(
+      verifiedLicenseKey
+        ? `Lisensi resmi ${ed.name} berhasil diaktifkan! Seluruh fitur edisi ini kini terbuka penuh.`
+        : `Edisi workspace aktif diubah ke ${ed.name} (${ed.badge}).`,
+    );
   }
 
   const activeEdition = useMemo(() => getEditionById(editionId), [editionId]);
   const effectiveRole = commercialUser?.role ?? snapshot?.currentRole ?? "owner";
+  const trialStatus = useMemo(() => evaluateTrialStatus(commercialUser), [commercialUser]);
 
   const currentTabAccess = useMemo(
     () => evaluateTabAccess(editionId, effectiveRole, tab),
     [editionId, effectiveRole, tab],
   );
+  const isTrialExpiredBlock = trialStatus.isExpired && tab !== "editions";
+  const isPreviewRestricted = !isTrialExpiredBlock && !currentTabAccess.allowed;
 
   const quotaSnapshot = useMemo(() => {
     if (!snapshot) return null;
@@ -517,6 +536,34 @@ export function WorkspaceApp({
 
         {/* MAIN CONTENT */}
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {/* 14-DAY UMKM TRIAL COUNTDOWN BANNER (Web & Android) */}
+          {commercialUser && trialStatus.isTrial && (
+            <div
+              className={`flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2 text-xs ${
+                trialStatus.isExpired
+                  ? "border-rose-500/40 bg-rose-950 text-rose-100"
+                  : "border-amber-500/30 bg-amber-950/90 text-amber-100"
+              }`}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-amber-500/20 px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-amber-300">
+                  {commercialUser.platform === "android" ? "Android APK · Trial UMKM" : "Web · Trial UMKM"}
+                </span>
+                <span className="font-semibold">{trialStatus.label}</span>
+                <span className="hidden text-amber-200/80 lg:inline">
+                  — Fitur di atas Starter UMKM ditampilkan sebagai pratinjau (tombol dibatasi hingga License Key aktif).
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTab("editions")}
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1 text-[11px] font-extrabold text-slate-950 hover:bg-emerald-400"
+              >
+                <KeyRound className="h-3.5 w-3.5" /> Aktivasi License Key
+              </button>
+            </div>
+          )}
+
           {loading ? (
             <div className="flex flex-1 items-center justify-center p-8 text-sm text-slate-500">
               Memuat ruang kerja bisnis...
@@ -533,60 +580,85 @@ export function WorkspaceApp({
               </button>
             </div>
           ) : snapshot ? (
-            !currentTabAccess.allowed ? (
+            isTrialExpiredBlock ? (
               <div className="flex flex-1 items-center justify-center bg-slate-950 p-6 text-white">
-                <div className="w-full max-w-lg rounded-3xl border border-amber-500/35 bg-slate-900 p-7 text-center shadow-2xl">
-                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-400">
+                <div className="w-full max-w-lg rounded-3xl border border-rose-500/40 bg-slate-900 p-7 text-center shadow-2xl">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-400">
                     <Lock className="h-7 w-7" />
                   </div>
-                  <p className="mt-4 font-mono text-[11px] font-bold uppercase tracking-widest text-amber-400">
-                    Hak Akses Dibatasi Sesuai Langganan &amp; Peran
+                  <p className="mt-4 font-mono text-[11px] font-bold uppercase tracking-widest text-rose-400">
+                    Masa Trial 14 Hari Versi UMKM Berakhir
                   </p>
                   <h2 className="mt-2 text-xl font-extrabold text-white">
-                    {NAV_ITEMS.find((n) => n.id === tab)?.label ?? "Modul"} Tidak Tersedia di Paket / Peran Saat Ini
+                    Aktifkan License Key Resmi WACRM untuk Melanjutkan
                   </h2>
                   <p className="mt-2 text-xs leading-relaxed text-slate-300">
-                    {currentTabAccess.reason}
+                    Masa uji coba gratis 14 hari akun <strong>{commercialUser?.email}</strong> telah
+                    selesai. Masukkan License Key resmi dari WACRM Publisher HQ untuk melanjutkan
+                    operasional tanpa kehilangan data toko Anda.
                   </p>
-                  <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-3.5 text-left text-xs text-slate-300">
-                    <div className="flex justify-between py-1">
-                      <span className="text-slate-400">Edisi Aktif Workspace:</span>
-                      <strong className="text-emerald-400">{activeEdition.name}</strong>
-                    </div>
-                    <div className="flex justify-between py-1">
-                      <span className="text-slate-400">Peran Akun Anda:</span>
-                      <strong className="uppercase text-cyan-300">{effectiveRole}</strong>
-                    </div>
-                    {currentTabAccess.requiredEditionName && (
-                      <div className="flex justify-between py-1">
-                        <span className="text-slate-400">Minimal Edisi Dibutuhkan:</span>
-                        <strong className="text-amber-300">{currentTabAccess.requiredEditionName}</strong>
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-5 flex flex-wrap justify-center gap-2.5 text-xs">
-                    {currentTabAccess.lockedByEdition && (
-                      <button
-                        type="button"
-                        onClick={() => setTab("editions")}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2.5 font-bold text-slate-950 hover:bg-emerald-400"
-                      >
-                        <KeyRound className="h-4 w-4" />
-                        Buka Edisi, Kuota &amp; Aktivasi License Key
-                      </button>
-                    )}
+                  <div className="mt-5 flex justify-center">
                     <button
                       type="button"
-                      onClick={() => setTab("inbox")}
-                      className="rounded-xl border border-slate-700 px-4 py-2.5 font-semibold text-slate-200 hover:bg-slate-800"
+                      onClick={() => setTab("editions")}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-5 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-emerald-400"
                     >
-                      Kembali ke Inbox
+                      <KeyRound className="h-4 w-4" />
+                      Masukkan License Key Sekarang
                     </button>
                   </div>
                 </div>
               </div>
             ) : (
-            <>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {/* PREVIEW-ONLY BANNER WHEN MODULE IS ABOVE STARTER UMKM (Buttons Restricted!) */}
+              {isPreviewRestricted && (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/40 bg-slate-900 px-4 py-3 text-xs text-white">
+                  <div className="flex items-start gap-2.5">
+                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300">
+                      <Lock className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <div className="font-extrabold text-amber-300">
+                        Mode Pratinjau Tampilan — Tombol Aksi Dibatasi ({activeEdition.name})
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-slate-300">
+                        {currentTabAccess.reason ||
+                          `Modul ini membutuhkan minimal edisi ${currentTabAccess.requiredEditionName}. Anda dapat melihat tampilannya sekarang; aktifkan License Key untuk mengaktifkan semua tombol & otomatisasi.`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTab("editions")}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 text-xs font-extrabold text-slate-950 hover:bg-emerald-400"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" /> Buka dengan License Key
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTab("inbox")}
+                      className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800"
+                    >
+                      Ke Inbox UMKM
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div
+                aria-disabled={isPreviewRestricted || undefined}
+                data-preview-locked={isPreviewRestricted ? "true" : "false"}
+                className={`relative flex min-h-0 flex-1 flex-col ${
+                  isPreviewRestricted ? "overflow-y-auto select-none" : "overflow-hidden"
+                }`}
+              >
+                <div
+                  className={`flex min-h-0 flex-1 flex-col ${
+                    isPreviewRestricted ? "pointer-events-none opacity-85" : "overflow-hidden"
+                  }`}
+                >
               {tab === "inbox" && (
                 <InboxView
                   key={activeConversationId ?? "default-inbox"}
@@ -634,6 +706,7 @@ export function WorkspaceApp({
                   <SeoGrowthView
                     adapter={adapter}
                     storeProfile={storeProfile}
+                    onUpdateStoreProfile={handleSaveStoreProfile}
                     products={snapshot.products}
                     onRefresh={refresh}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
@@ -738,7 +811,9 @@ export function WorkspaceApp({
                   onToast={showToast}
                 />
               )}
-            </>
+                </div>
+              </div>
+            </div>
             )
           ) : null}
         </main>

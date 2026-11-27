@@ -1,58 +1,52 @@
 "use client";
 
 import { useEffect, useMemo, useState, useSyncExternalStore, type FormEvent } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  AlertCircle,
   ArrowRight,
   Bot,
   CheckCircle2,
+  Clock,
+  Crown,
   Eye,
   EyeOff,
   KeyRound,
-  Layers,
   Lock,
   Mail,
+  MessageSquare,
+  Package,
+  Phone,
   QrCode,
   ShieldCheck,
   Smartphone,
   Sparkles,
-  Store,
-  Truck,
-  User,
+  UserPlus,
 } from "lucide-react";
 import { WorkspaceApp } from "@/components/crm/workspace-app";
 import {
   authenticateLocalCommercialAccount,
   clearCommercialSession,
-  COMMERCIAL_DEMO_ACCOUNTS,
+  detectClientPlatform,
   loadCommercialSession,
   registerLocalCommercialAccount,
   resetLocalCommercialPassword,
   saveCommercialSession,
+  TRIAL_DURATION_DAYS,
   type CommercialUserSession,
 } from "@/lib/access-control";
 import { authClient } from "@/lib/auth-client";
-import { formatIdr, type AppEditionId } from "@/lib/crm-types";
+import { formatIdr } from "@/lib/crm-types";
 import { createDemoWorkspaceAdapter } from "@/lib/demo-store";
-import { APP_EDITIONS, loadTenantEdition, saveTenantEdition } from "@/lib/editions";
+import { APP_EDITIONS, saveTenantEdition } from "@/lib/editions";
 import { evaluatePasswordStrength } from "@/lib/security";
+import { loadStoreProfile, saveStoreProfile } from "@/lib/store-profile";
 
 type AuthMode = "signin" | "signup" | "forgot";
-
-const ROLE_LABELS: Record<CommercialUserSession["role"], string> = {
-  owner: "Owner",
-  admin: "Admin",
-  supervisor: "Supervisor",
-  agent: "Agen CS / Kasir",
-  viewer: "Viewer",
-};
 
 const emptySubscribe = () => () => {};
 
 export function CommercialAuthGate({
-  initialMode = "signin",
+  initialMode = "signup",
 }: {
   initialMode?: AuthMode;
 }) {
@@ -71,29 +65,31 @@ export function CommercialAuthGate({
   const [dbReady, setDbReady] = useState<boolean>(false);
 
   // Sign In fields
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [showLoginPass, setShowLoginPass] = useState(false);
 
-  // Sign Up fields
-  const [fullName, setFullName] = useState("");
-  const [companyName, setCompanyName] = useState("");
-  const [signupEdition, setSignupEdition] = useState<AppEditionId>("starter");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  // Sign Up (14-Day UMKM Trial) fields
+  const [regName, setRegName] = useState("");
+  const [regBusiness, setRegBusiness] = useState("");
+  const [regPhone, setRegPhone] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regConfirm, setRegConfirm] = useState("");
+  const [showRegPass, setShowRegPass] = useState(false);
+  const [showRegConfirm, setShowRegConfirm] = useState(false);
 
-  // Forgot Password fields
-  const [forgotStep, setForgotStep] = useState<"request" | "confirm">("request");
+  // Forgot Password 2-step fields
+  const [forgotStep, setForgotStep] = useState<1 | 2>(1);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotCode, setForgotCode] = useState("");
-  const [forgotCodePreview, setForgotCodePreview] = useState<string | null>(null);
-  const [forgotNewPassword, setForgotNewPassword] = useState("");
-  const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotPreviewCode, setForgotPreviewCode] = useState<string | null>(null);
+  const [forgotNewPass, setForgotNewPass] = useState("");
+  const [showForgotPass, setShowForgotPass] = useState(false);
 
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/system/status", { cache: "no-store" })
@@ -104,76 +100,96 @@ export function CommercialAuthGate({
       .catch(() => setDbReady(false));
   }, []);
 
-  const activePasswordForMeter = mode === "signup" ? password : forgotNewPassword;
-  const pwdStrength = useMemo(
-    () => evaluatePasswordStrength(activePasswordForMeter),
-    [activePasswordForMeter],
+  const regStrength = useMemo(() => evaluatePasswordStrength(regPassword), [regPassword]);
+  const forgotStrength = useMemo(() => evaluatePasswordStrength(forgotNewPass), [forgotNewPass]);
+  const clientPlatform = useMemo(
+    () => (isClient ? detectClientPlatform() : "web"),
+    [isClient],
   );
 
-  function switchMode(next: AuthMode) {
-    setMode(next);
-    setError("");
-    setSuccessMsg("");
-    if (next === "forgot") {
-      setForgotStep("request");
-      setForgotCode("");
-      setForgotCodePreview(null);
-      setForgotEmail(email);
+  function activateSession(next: CommercialUserSession) {
+    saveCommercialSession(next);
+    saveTenantEdition(adapter.tenantId, next.editionId);
+    if (next.businessName) {
+      const store = loadStoreProfile(adapter.tenantId);
+      saveStoreProfile(adapter.tenantId, {
+        ...store,
+        businessName: next.businessName,
+        email: next.email,
+      });
     }
-  }
-
-  function enterCommercialSession(nextSession: CommercialUserSession) {
-    saveCommercialSession(nextSession);
-    const currentTenantEd = loadTenantEdition(adapter.tenantId);
-    if (nextSession.authProvider === "workspace_local" || !currentTenantEd) {
-      saveTenantEdition(adapter.tenantId, nextSession.editionId);
-    }
-    setSession(nextSession);
+    setSession(next);
   }
 
   async function handleSignIn(e: FormEvent) {
     e.preventDefault();
+    setError(null);
+    setNotice(null);
     setBusy(true);
-    setError("");
-    setSuccessMsg("");
-
-    const normalizedEmail = email.trim().toLowerCase();
-
     try {
-      // 1. Check Commercial Account / Demo Edition Account first so instant commercial accounts always work cleanly
-      const localCheck = authenticateLocalCommercialAccount(normalizedEmail, password);
-      if (localCheck.ok && localCheck.account) {
-        const acc = localCheck.account;
-        saveTenantEdition(adapter.tenantId, acc.editionId);
-        enterCommercialSession({
-          userId: acc.id,
-          email: acc.email,
-          displayName: acc.displayName,
-          businessName: acc.businessName,
-          role: acc.role,
-          editionId: acc.editionId,
-          authProvider: "workspace_local",
-          signedInAt: new Date().toISOString(),
-        });
+      const cleanEmail = loginEmail.trim().toLowerCase();
+      if (!cleanEmail || !loginPassword) {
+        setError("Masukkan email dan kata sandi Anda.");
         return;
       }
 
-      // 2. If Neon Cloud Better Auth is configured, attempt real Cloud Auth login
+      // 1. Try Better Auth Neon Cloud Sign-In when database is configured
       if (dbReady) {
-        const res = await authClient.signIn.email({
-          email: normalizedEmail,
-          password,
-        });
-        if (!res.error) {
-          router.replace("/dashboard");
-          router.refresh();
-          return;
+        try {
+          const cloudRes = await authClient.signIn.email({
+            email: cleanEmail,
+            password: loginPassword,
+          });
+          if (!cloudRes.error && cloudRes.data?.user) {
+            const now = new Date();
+            const trialEnd = new Date(
+              now.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,
+            ).toISOString();
+            const existingLocal = authenticateLocalCommercialAccount(cleanEmail, loginPassword).account;
+            activateSession({
+              userId: cloudRes.data.user.id,
+              email: cloudRes.data.user.email,
+              displayName: cloudRes.data.user.name || existingLocal?.displayName || cleanEmail.split("@")[0],
+              businessName: existingLocal?.businessName || "Toko WACRM",
+              role: existingLocal?.role || "owner",
+              editionId: existingLocal?.editionId || "starter",
+              authProvider: "cloud_neon",
+              hasPaidLicense: existingLocal?.hasPaidLicense ?? false,
+              licenseKey: existingLocal?.licenseKey ?? null,
+              trialStartedAt: existingLocal?.trialStartedAt || now.toISOString(),
+              trialEndsAt: existingLocal?.trialEndsAt || trialEnd,
+              platform: clientPlatform,
+              signedInAt: now.toISOString(),
+            });
+            return;
+          }
+        } catch {
+          // Fall back cleanly to local commercial account auth
         }
       }
 
-      setError(localCheck.error ?? "Email atau kata sandi tidak cocok.");
-    } catch {
-      setError("Koneksi server gagal. Periksa jaringan Anda lalu coba lagi.");
+      // 2. Local registered commercial account auth
+      const localRes = authenticateLocalCommercialAccount(cleanEmail, loginPassword);
+      if (!localRes.ok || !localRes.account) {
+        setError(localRes.error || "Email atau kata sandi tidak valid.");
+        return;
+      }
+
+      activateSession({
+        userId: localRes.account.id,
+        email: localRes.account.email,
+        displayName: localRes.account.displayName,
+        businessName: localRes.account.businessName,
+        role: localRes.account.role,
+        editionId: localRes.account.editionId,
+        authProvider: "workspace_local",
+        hasPaidLicense: localRes.account.hasPaidLicense ?? false,
+        licenseKey: localRes.account.licenseKey ?? null,
+        trialStartedAt: localRes.account.trialStartedAt || localRes.account.createdAt,
+        trialEndsAt: localRes.account.trialEndsAt,
+        platform: clientPlatform,
+        signedInAt: new Date().toISOString(),
+      });
     } finally {
       setBusy(false);
     }
@@ -181,80 +197,119 @@ export function CommercialAuthGate({
 
   async function handleSignUp(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setError("");
-    setSuccessMsg("");
+    setError(null);
+    setNotice(null);
 
-    if (password !== confirmPassword) {
+    if (regName.trim().length < 2) {
+      setError("Masukkan nama lengkap minimal 2 karakter.");
+      return;
+    }
+    if (regBusiness.trim().length < 2) {
+      setError("Masukkan nama toko / usaha Anda.");
+      return;
+    }
+    if (regPassword !== regConfirm) {
       setError("Konfirmasi kata sandi tidak cocok.");
-      setBusy(false);
+      return;
+    }
+    if (regStrength.score < 2) {
+      setError("Kata sandi terlalu lemah. Gunakan minimal 8 karakter dengan kombinasi huruf & angka.");
       return;
     }
 
-    const strength = evaluatePasswordStrength(password);
-    if (strength.score < 2) {
-      setError("Kata sandi terlalu lemah. Gunakan minimal 8–12 karakter kombinasi huruf besar, huruf kecil, dan angka.");
-      setBusy(false);
-      return;
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-
+    setBusy(true);
     try {
-      // Also register in Neon Better Auth when configured & password >= 12 chars
-      if (dbReady && password.length >= 12) {
-        const cloudRes = await authClient.signUp.email({
-          name: fullName.trim(),
-          email: normalizedEmail,
-          password,
+      const cleanEmail = regEmail.trim().toLowerCase();
+      const cleanName = regName.trim();
+      const cleanBusiness = regBusiness.trim();
+      const cleanPhone = regPhone.trim();
+
+      // 1. Register local account locked to Starter UMKM 14-Day Trial
+      const localRes = registerLocalCommercialAccount({
+        displayName: cleanName,
+        businessName: cleanBusiness,
+        phone: cleanPhone,
+        email: cleanEmail,
+        password: regPassword,
+        platform: clientPlatform,
+        editionId: "starter",
+      });
+
+      if (!localRes.ok || !localRes.account) {
+        setError(localRes.error || "Gagal mendaftarkan akun.");
+        return;
+      }
+
+      // 2. Sync new user registration immediately to Neon PostgreSQL & WACRM Publisher HQ!
+      let syncedTrialEndsAt = localRes.account.trialEndsAt;
+      try {
+        const regApiRes = await fetch("/api/auth/register-tenant", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            fullName: cleanName,
+            businessName: cleanBusiness,
+            email: cleanEmail,
+            phone: cleanPhone,
+            platform: clientPlatform,
+          }),
         });
-        if (!cloudRes.error) {
-          saveTenantEdition(adapter.tenantId, signupEdition);
-          router.replace("/dashboard");
-          router.refresh();
-          return;
+        if (regApiRes.ok) {
+          const regData = (await regApiRes.json()) as { trialEndsAt?: string };
+          if (regData.trialEndsAt) {
+            syncedTrialEndsAt = regData.trialEndsAt;
+          }
+        }
+      } catch {
+        // Non-blocking fallback so user can still enter trial immediately
+      }
+
+      // 3. Also sync to Neon Cloud Better Auth if live DB configured & password >= 12 chars
+      let provider: "cloud_neon" | "workspace_local" = "workspace_local";
+      if (dbReady && regPassword.length >= 12) {
+        try {
+          const cloud = await authClient.signUp.email({
+            name: cleanName,
+            email: cleanEmail,
+            password: regPassword,
+          });
+          if (!cloud.error) {
+            provider = "cloud_neon";
+          }
+        } catch {
+          // Local + Neon tenant registration already succeeded
         }
       }
 
-      const localReg = registerLocalCommercialAccount({
-        displayName: fullName.trim(),
-        email: normalizedEmail,
-        password,
-        businessName: companyName.trim() || "Toko WACRM Saya",
-        editionId: signupEdition,
-      });
-      if (!localReg.ok || !localReg.account) {
-        setError(localReg.error ?? "Gagal mendaftarkan akun.");
-        return;
-      }
-      const acc = localReg.account;
-      saveTenantEdition(adapter.tenantId, acc.editionId);
-      enterCommercialSession({
-        userId: acc.id,
-        email: acc.email,
-        displayName: acc.displayName,
-        businessName: acc.businessName,
-        role: acc.role,
-        editionId: acc.editionId,
-        authProvider: "workspace_local",
+      activateSession({
+        userId: localRes.account.id,
+        email: localRes.account.email,
+        displayName: localRes.account.displayName,
+        businessName: localRes.account.businessName,
+        role: "owner",
+        editionId: "starter",
+        authProvider: provider,
+        hasPaidLicense: false,
+        licenseKey: null,
+        trialStartedAt: localRes.account.trialStartedAt,
+        trialEndsAt: syncedTrialEndsAt,
+        platform: clientPlatform,
         signedInAt: new Date().toISOString(),
       });
-    } catch {
-      setError("Gagal membuat akun. Silakan coba beberapa saat lagi.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleForgotRequest(e: FormEvent) {
+  async function handleForgotStep1(e: FormEvent) {
     e.preventDefault();
+    setError(null);
+    setNotice(null);
     setBusy(true);
-    setError("");
-    setSuccessMsg("");
     try {
       const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "request", email: forgotEmail.trim() }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -264,40 +319,35 @@ export function CommercialAuthGate({
         verificationCodePreview?: string;
       };
       if (!res.ok || !data.ok) {
-        setError(data.error || "Gagal memproses permintaan reset kata sandi.");
+        setError(data.error || "Gagal membuat kode verifikasi reset kata sandi.");
         return;
       }
-      setForgotCodePreview(data.verificationCodePreview ?? null);
-      setSuccessMsg(data.message || "Kode verifikasi 6 digit telah dikirim.");
-      setForgotStep("confirm");
-    } catch {
-      setError("Tidak dapat menghubungi layanan reset kata sandi.");
+      setForgotPreviewCode(data.verificationCodePreview ?? null);
+      setNotice(data.message || "Kode 6 digit berhasil dibuat.");
+      setForgotStep(2);
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleForgotConfirm(e: FormEvent) {
+  async function handleForgotStep2(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setError("");
-    setSuccessMsg("");
-
-    if (forgotNewPassword !== forgotConfirmPassword) {
-      setError("Konfirmasi kata sandi baru tidak cocok.");
-      setBusy(false);
+    setError(null);
+    setNotice(null);
+    if (forgotStrength.score < 2) {
+      setError("Kata sandi baru terlalu lemah. Gunakan minimal 8 karakter dengan huruf & angka.");
       return;
     }
-
+    setBusy(true);
     try {
       const res = await fetch("/api/auth/forgot-password", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           action: "confirm",
           email: forgotEmail.trim(),
           code: forgotCode.trim(),
-          newPassword: forgotNewPassword,
+          newPassword: forgotNewPass,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -306,53 +356,35 @@ export function CommercialAuthGate({
         message?: string;
       };
       if (!res.ok || !data.ok) {
-        setError(data.error || "Kode verifikasi tidak valid.");
+        setError(data.error || "Kode verifikasi salah atau kedaluwarsa.");
         return;
       }
 
-      // Sync reset into local commercial account store as well
-      resetLocalCommercialPassword(forgotEmail.trim(), forgotNewPassword);
-
-      setEmail(forgotEmail.trim());
-      setPassword("");
-      setForgotNewPassword("");
-      setForgotConfirmPassword("");
+      resetLocalCommercialPassword(forgotEmail.trim(), forgotNewPass);
+      setNotice(data.message || "Kata sandi berhasil diperbarui! Silakan masuk dengan sandi baru.");
+      setLoginEmail(forgotEmail.trim());
+      setLoginPassword("");
+      setForgotStep(1);
       setForgotCode("");
-      setForgotCodePreview(null);
+      setForgotNewPass("");
+      setForgotPreviewCode(null);
       setMode("signin");
-      setSuccessMsg(
-        data.message || "Kata sandi berhasil diperbarui! Silakan masuk dengan kata sandi baru Anda.",
-      );
-    } catch {
-      setError("Gagal menyelesaikan reset kata sandi.");
     } finally {
       setBusy(false);
     }
   }
 
-  function handleQuickDemoLogin(demoAcc: (typeof COMMERCIAL_DEMO_ACCOUNTS)[number]) {
-    saveTenantEdition(adapter.tenantId, demoAcc.editionId);
-    enterCommercialSession({
-      userId: `demo-${demoAcc.editionId}-${demoAcc.role}`,
-      displayName: demoAcc.displayName,
-      email: demoAcc.email,
-      businessName: demoAcc.businessName,
-      role: demoAcc.role,
-      editionId: demoAcc.editionId,
-      signedInAt: new Date().toISOString(),
-      authProvider: "workspace_local",
-    });
-  }
-
   async function handleSignOut() {
     clearCommercialSession();
-    setSession(null);
-    setPassword("");
-    setError("");
-    setSuccessMsg("Anda telah keluar (Sign Out) dengan aman dari workspace WACRM.");
-    if (dbReady) {
-      await authClient.signOut().catch(() => undefined);
+    try {
+      await authClient.signOut();
+    } catch {
+      // ignore if local session
     }
+    setSession(null);
+    setMode("signin");
+    setNotice("Anda telah keluar dari sesi WACRM dengan aman.");
+    router.refresh();
   }
 
   if (!isClient) {
@@ -363,173 +395,130 @@ export function CommercialAuthGate({
     );
   }
 
-  // Active signed-in commercial session -> Render full WorkspaceApp with Sign Out & Edition/Role Enforcement
   if (session) {
     return (
       <WorkspaceApp
         adapter={adapter}
         commercialUser={session}
+        onCommercialSessionUpdate={(next) => {
+          saveCommercialSession(next);
+          setSession(next);
+        }}
         onSignOut={() => void handleSignOut()}
       />
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      {/* COMMERCIAL TOP BAR */}
-      <header className="sticky top-0 z-30 border-b border-slate-800/90 bg-slate-950/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3.5 md:px-6">
-          <div className="flex items-center gap-2.5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/icons/icon-192.png" alt="WACRM" className="h-9 w-9 rounded-xl shadow-md" />
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-base font-extrabold tracking-tight text-white">WACRM</span>
-                <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300 ring-1 ring-emerald-500/40">
-                  Commercial v4.2
-                </span>
-              </div>
-              <p className="hidden text-[11px] text-slate-400 sm:block">
-                Omnichannel CRM, Multi-Agent AI, POS QR, ERP &amp; Akuntansi
-              </p>
-            </div>
-          </div>
-
-          <nav className="flex items-center gap-2 text-xs">
-            <Link
-              href="/katalog"
-              className="hidden rounded-xl border border-slate-800 px-3 py-2 font-semibold text-slate-300 hover:bg-slate-900 hover:text-white md:inline-flex"
-            >
-              Katalog Publik
-            </Link>
-            <Link
-              href="/android"
-              className="hidden items-center gap-1.5 rounded-xl border border-slate-800 px-3 py-2 font-semibold text-slate-300 hover:bg-slate-900 hover:text-white sm:inline-flex"
-            >
-              <Smartphone className="h-3.5 w-3.5 text-emerald-400" />
-              Android APK
-            </Link>
-            <button
-              type="button"
-              onClick={() => switchMode("signin")}
-              className={`rounded-xl px-3.5 py-2 font-bold transition ${
-                mode === "signin"
-                  ? "bg-emerald-500 text-slate-950"
-                  : "border border-slate-700 text-slate-200 hover:bg-slate-900"
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => switchMode("signup")}
-              className={`rounded-xl px-3.5 py-2 font-bold transition ${
-                mode === "signup"
-                  ? "bg-cyan-400 text-slate-950"
-                  : "border border-slate-700 text-slate-200 hover:bg-slate-900"
-              }`}
-            >
-              Daftar
-            </button>
-          </nav>
-        </div>
-      </header>
-
-      {/* MAIN COMMERCIAL LANDING + AUTH GRID */}
-      <main className="mx-auto grid max-w-7xl gap-8 px-4 py-8 md:px-6 lg:grid-cols-12 lg:items-start lg:py-12">
-        {/* LEFT COLUMN: Commercial Value Proposition + Editions Matrix */}
+    <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/80 text-slate-100">
+      <div className="mx-auto grid min-h-screen max-w-7xl items-center gap-8 px-4 py-8 lg:grid-cols-12 lg:px-8">
+        {/* LEFT COLUMN: Commercial Value Proposition + 14-Day UMKM Trial Info + Editions */}
         <section className="space-y-6 lg:col-span-7">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-semibold text-emerald-300">
-            <Sparkles className="h-3.5 w-3.5" />
-            Platform Bisnis Komersial Siap Produksi · Lisensi &amp; Hak Akses Terverifikasi
-          </div>
-
-          <h1 className="text-3xl font-black leading-tight tracking-tight text-white sm:text-4xl lg:text-5xl">
-            Satu Aplikasi untuk{" "}
-            <span className="bg-gradient-to-r from-emerald-400 via-cyan-300 to-teal-300 bg-clip-text text-transparent">
-              CS AI Otomatis, POS QR, ERP &amp; Akuntansi
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-bold text-emerald-300">
+              <Sparkles className="h-3.5 w-3.5" />
+              Trial Gratis {TRIAL_DURATION_DAYS} Hari Versi Starter UMKM · Web &amp; Android
             </span>
-          </h1>
+            {clientPlatform === "android" && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/40 bg-cyan-500/15 px-3 py-1.5 text-xs font-bold text-cyan-200">
+                <Smartphone className="h-3.5 w-3.5" /> Aplikasi Android WACRM
+              </span>
+            )}
+          </div>
 
-          <p className="max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">
-            Balas chat WhatsApp/Instagram/TikTok otomatis dengan AI Sales yang proaktif mem-follow-up prospek lambat &amp; menawarkan produk alternatif, ekstrak checkout + alamat pelanggan langsung ke <strong>POS &amp; Label QR</strong>, kelola <strong>Master Data Barang (Card Picture)</strong>, Supplier &amp; tarif kurir, hingga laporan laba rugi otomatis.
-          </p>
+          <div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl lg:text-5xl">
+              Satu Aplikasi untuk CS AI Otomatis, POS QR, ERP &amp; Akuntansi
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">
+              Daftar cukup menggunakan email untuk langsung mencoba{" "}
+              <strong>Trial Gratis {TRIAL_DURATION_DAYS} Hari Versi UMKM</strong> (berlaku di Web
+              maupun Aplikasi Android). Modul Growth Pro &amp; Enterprise dapat Anda lihat langsung
+              tampilannya dan dibuka penuh kapan saja dengan <strong>License Key</strong> resmi.
+            </p>
+          </div>
 
-          {/* 4 Commercial Highlight Cards */}
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/75 p-4">
-              <div className="flex items-center gap-2 text-emerald-400">
-                <Bot className="h-4 w-4" />
-                <span className="text-xs font-bold">Inbox AI + Auto Follow-Up &amp; Cross-Sell</span>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+              <div className="flex items-center gap-2 text-xs font-bold text-emerald-300">
+                <MessageSquare className="h-4 w-4" /> Inbox AI + Auto Follow-Up &amp; Cross-Sell
               </div>
-              <p className="mt-1.5 text-xs text-slate-400">
-                Saat prospek lambat merespons, AI otomatis menyapa ulang dengan sopan &amp; menawarkan produk katalog lain jika batal checkout.
+              <p className="mt-1 text-xs text-slate-400">
+                Saat prospek lambat merespons, AI otomatis menyapa ulang dengan sopan &amp;
+                menawarkan produk katalog lain jika batal checkout.
               </p>
             </div>
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/75 p-4">
-              <div className="flex items-center gap-2 text-cyan-400">
-                <QrCode className="h-4 w-4" />
-                <span className="text-xs font-bold">POS &amp; Label QR Terisi Otomatis</span>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+              <div className="flex items-center gap-2 text-xs font-bold text-cyan-300">
+                <QrCode className="h-4 w-4" /> POS &amp; Label QR Terisi Otomatis
               </div>
-              <p className="mt-1.5 text-xs text-slate-400">
-                Pelanggan kirim pesanan + alamat di chat, Multi-Agent AI langsung mengisi Invoice POS, ongkir &amp; Label QR siap cetak.
+              <p className="mt-1 text-xs text-slate-400">
+                Pelanggan kirim pesanan + alamat di chat, AI langsung mengisi Invoice POS, ongkir
+                kurir &amp; Label QR siap cetak Bluetooth/USB/WiFi.
               </p>
             </div>
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/75 p-4">
-              <div className="flex items-center gap-2 text-amber-400">
-                <Truck className="h-4 w-4" />
-                <span className="text-xs font-bold">Master Data + Card Picture &amp; Logistik AI</span>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+              <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
+                <Package className="h-4 w-4" /> Master Data Card Picture &amp; Kurir Multi-Tarif
               </div>
-              <p className="mt-1.5 text-xs text-slate-400">
-                Foto produk Card Picture, View detail Supplier lengkap, dan multi-tarif Kurir Ekspedisi yang memperkaya kecerdasan AI.
+              <p className="mt-1 text-xs text-slate-400">
+                Foto produk Card Picture, View detail Supplier lengkap, dan multi-tarif Kurir
+                Ekspedisi yang langsung memperkaya kecerdasan AI.
               </p>
             </div>
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/75 p-4">
-              <div className="flex items-center gap-2 text-violet-400">
-                <ShieldCheck className="h-4 w-4" />
-                <span className="text-xs font-bold">Hak Akses Sesuai Edisi &amp; License Key</span>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+              <div className="flex items-center gap-2 text-xs font-bold text-indigo-300">
+                <Bot className="h-4 w-4" /> Studio SEO Simpel &amp; Upgrade License Key
               </div>
-              <p className="mt-1.5 text-xs text-slate-400">
-                Modul, kuota produk/agen/kanal, dan RBAC terkunci presisi mengikuti langganan aktif &amp; aktivasi License Key resmi WACRM.
+              <p className="mt-1 text-xs text-slate-400">
+                Cukup isi username FB, IG, TikTok, YouTube &amp; WA — konten SEO lintas kanal
+                terbuat otomatis. Upgrade edisi instan dengan License Key.
               </p>
             </div>
           </div>
 
-          {/* LIVE EDITIONS & SUBSCRIPTION RIGHTS OVERVIEW */}
-          <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-5">
+          {/* Transparent Trial & Editions Matrix */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Layers className="h-4 w-4 text-emerald-400" />
-                <h2 className="text-sm font-bold text-white">
-                  Edisi Langganan, Kuota &amp; Hak Akses WACRM
-                </h2>
-              </div>
-              <span className="text-[11px] text-slate-400">
+              <h2 className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-white">
+                <Crown className="h-4 w-4 text-amber-400" /> Paket Edisi &amp; Aturan Trial {TRIAL_DURATION_DAYS} Hari
+              </h2>
+              <span className="text-[11px] font-semibold text-emerald-300">
                 Aktivasi &amp; upgrade instan via License Key
               </span>
             </div>
-            <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {APP_EDITIONS.map((ed) => (
                 <div
                   key={ed.id}
-                  className="rounded-2xl border border-slate-800 bg-slate-950/80 p-3.5 text-xs"
+                  className={`rounded-xl border p-3 text-xs ${
+                    ed.id === "starter"
+                      ? "border-emerald-500/50 bg-emerald-500/10"
+                      : "border-slate-800 bg-slate-950/80"
+                  }`}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-white">{ed.name}</span>
-                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-                      {ed.monthlyPriceIdr === 0 ? "Gratis" : `${formatIdr(ed.monthlyPriceIdr)}/bln`}
+                    <span
+                      className={`font-extrabold ${
+                        ed.id === "starter" ? "text-emerald-300" : "text-amber-300"
+                      }`}
+                    >
+                      {ed.id === "starter"
+                        ? `Trial ${TRIAL_DURATION_DAYS} Hari`
+                        : `${formatIdr(ed.monthlyPriceIdr)}/bln`}
                     </span>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-400">{ed.tagline}</p>
-                  <div className="mt-2 flex flex-wrap gap-1 text-[10px] text-slate-300">
+                  <div className="mt-1 text-[11px] text-slate-400">{ed.tagline}</div>
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-semibold text-slate-300">
                     <span className="rounded bg-slate-800 px-1.5 py-0.5">
-                      {ed.limits.maxAgents < 0 ? "∞ Agen" : `${ed.limits.maxAgents} Agen`}
+                      {ed.limits.maxAgents < 0 ? "∞" : ed.limits.maxAgents} Agen
                     </span>
                     <span className="rounded bg-slate-800 px-1.5 py-0.5">
-                      {ed.limits.maxContacts < 0 ? "∞ Kontak" : `${ed.limits.maxContacts.toLocaleString("id-ID")} Kontak`}
+                      {ed.limits.maxContacts < 0 ? "∞" : ed.limits.maxContacts.toLocaleString("id-ID")} Kontak
                     </span>
                     <span className="rounded bg-slate-800 px-1.5 py-0.5">
-                      {ed.limits.maxChannels < 0 ? "∞ Kanal" : `${ed.limits.maxChannels} Kanal`}
+                      {ed.id === "starter" ? "Aktif saat Trial" : "Preview + License Key"}
                     </span>
                   </div>
                 </div>
@@ -538,17 +527,36 @@ export function CommercialAuthGate({
           </div>
         </section>
 
-        {/* RIGHT COLUMN: COMMERCIAL AUTH CARD (SIGN IN / SIGN UP / FORGOT PASSWORD) */}
+        {/* RIGHT COLUMN: Commercial Sign Up (14-Day Trial) / Sign In / Forgot Password */}
         <section className="lg:col-span-5">
-          <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6 shadow-2xl shadow-black/50 sm:p-7">
-            {/* Mode Switch Tabs */}
-            <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-slate-950 p-1 text-xs">
+          <div className="rounded-3xl border border-slate-700/80 bg-slate-900/95 p-6 shadow-2xl">
+            {/* Mode Switcher Tabs */}
+            <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-slate-800 bg-slate-950 p-1 text-xs font-bold">
               <button
                 type="button"
-                onClick={() => switchMode("signin")}
-                className={`rounded-xl py-2 font-bold transition ${
+                onClick={() => {
+                  setMode("signup");
+                  setError(null);
+                  setNotice(null);
+                }}
+                className={`rounded-xl py-2 transition ${
+                  mode === "signup"
+                    ? "bg-emerald-500 text-slate-950 shadow"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                Trial 14 Hari
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("signin");
+                  setError(null);
+                  setNotice(null);
+                }}
+                className={`rounded-xl py-2 transition ${
                   mode === "signin"
-                    ? "bg-emerald-500 text-slate-950"
+                    ? "bg-emerald-500 text-slate-950 shadow"
                     : "text-slate-400 hover:text-white"
                 }`}
               >
@@ -556,21 +564,14 @@ export function CommercialAuthGate({
               </button>
               <button
                 type="button"
-                onClick={() => switchMode("signup")}
-                className={`rounded-xl py-2 font-bold transition ${
-                  mode === "signup"
-                    ? "bg-emerald-500 text-slate-950"
-                    : "text-slate-400 hover:text-white"
-                }`}
-              >
-                Daftar Akun
-              </button>
-              <button
-                type="button"
-                onClick={() => switchMode("forgot")}
-                className={`rounded-xl py-2 font-bold transition ${
+                onClick={() => {
+                  setMode("forgot");
+                  setError(null);
+                  setNotice(null);
+                }}
+                className={`rounded-xl py-2 transition ${
                   mode === "forgot"
-                    ? "bg-emerald-500 text-slate-950"
+                    ? "bg-emerald-500 text-slate-950 shadow"
                     : "text-slate-400 hover:text-white"
                 }`}
               >
@@ -578,48 +579,197 @@ export function CommercialAuthGate({
               </button>
             </div>
 
-            {successMsg && (
-              <div
-                role="status"
-                className="mt-4 flex items-start gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/15 p-3 text-xs text-emerald-200"
-              >
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
-                <span>{successMsg}</span>
+            {error && (
+              <div className="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 px-3.5 py-2.5 text-xs font-medium text-rose-200">
+                {error}
+              </div>
+            )}
+            {notice && (
+              <div className="mt-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2.5 text-xs font-medium text-emerald-200">
+                {notice}
               </div>
             )}
 
-            {error && (
-              <div
-                role="alert"
-                className="mt-4 flex items-start gap-2 rounded-xl border border-rose-500/40 bg-rose-500/15 p-3 text-xs text-rose-200"
-              >
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
-                <span>{error}</span>
-              </div>
+            {/* SIGN UP (14-DAY UMKM TRIAL) FORM */}
+            {mode === "signup" && (
+              <form onSubmit={(e) => void handleSignUp(e)} className="mt-5 space-y-3.5">
+                <div>
+                  <h2 className="text-lg font-extrabold text-white">
+                    Daftar Gratis — Trial {TRIAL_DURATION_DAYS} Hari UMKM
+                  </h2>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    Akses penuh fitur Starter UMKM selama {TRIAL_DURATION_DAYS} hari di Web &amp;
+                    Android. Fitur Pro/Enterprise tersedia dalam mode pratinjau hingga License Key diaktifkan.
+                  </p>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    Nama Lengkap *
+                    <input
+                      type="text"
+                      required
+                      value={regName}
+                      onChange={(e) => setRegName(e.target.value)}
+                      placeholder="Contoh: Budi Santoso"
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-300">
+                    Nama Toko / Usaha *
+                    <input
+                      type="text"
+                      required
+                      value={regBusiness}
+                      onChange={(e) => setRegBusiness(e.target.value)}
+                      placeholder="Contoh: Toko Berkah Jaya"
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    Email Bisnis / Pribadi *
+                    <input
+                      type="email"
+                      required
+                      autoComplete="email"
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                      placeholder="nama@usahaanda.id"
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-300">
+                    No. WhatsApp (Opsional)
+                    <div className="relative mt-1">
+                      <Phone className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-500" />
+                      <input
+                        type="tel"
+                        value={regPhone}
+                        onChange={(e) => setRegPhone(e.target.value)}
+                        placeholder="0812xxxxxxxx"
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pr-3 pl-9 text-sm text-white outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </label>
+                </div>
+
+                <label className="block text-xs font-semibold text-slate-300">
+                  Kata Sandi *
+                  <div className="relative mt-1">
+                    <input
+                      type={showRegPass ? "text" : "password"}
+                      required
+                      minLength={8}
+                      autoComplete="new-password"
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      placeholder="Minimal 8 karakter (huruf besar, angka & simbol)"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pr-11 pl-3 text-sm text-white outline-none focus:border-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRegPass((v) => !v)}
+                      aria-label={showRegPass ? "Sembunyikan kata sandi" : "Lihat kata sandi"}
+                      className="absolute top-1.5 right-2 rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                    >
+                      {showRegPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {regPassword.length > 0 && (
+                    <div className="mt-1.5 space-y-1">
+                      <div className="flex gap-1">
+                        {[1, 2, 3, 4].map((lvl) => (
+                          <span
+                            key={lvl}
+                            className={`h-1.5 flex-1 rounded-full ${
+                              regStrength.score >= lvl
+                                ? regStrength.score >= 3
+                                  ? "bg-emerald-500"
+                                  : "bg-amber-400"
+                                : "bg-slate-800"
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        Kekuatan sandi:{" "}
+                        <strong className="text-white">{regStrength.label}</strong>
+                      </div>
+                    </div>
+                  )}
+                </label>
+
+                <label className="block text-xs font-semibold text-slate-300">
+                  Konfirmasi Kata Sandi *
+                  <div className="relative mt-1">
+                    <input
+                      type={showRegConfirm ? "text" : "password"}
+                      required
+                      minLength={8}
+                      autoComplete="new-password"
+                      value={regConfirm}
+                      onChange={(e) => setRegConfirm(e.target.value)}
+                      placeholder="Ulangi kata sandi"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pr-11 pl-3 text-sm text-white outline-none focus:border-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRegConfirm((v) => !v)}
+                      aria-label={showRegConfirm ? "Sembunyikan konfirmasi sandi" : "Lihat konfirmasi sandi"}
+                      className="absolute top-1.5 right-2 rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+                    >
+                      {showRegConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </label>
+
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-[11px] text-emerald-200">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <Clock className="h-3.5 w-3.5 shrink-0" />
+                    Paket Aktif Otomatis: Trial {TRIAL_DURATION_DAYS} Hari Starter UMKM
+                  </div>
+                  <p className="mt-1 text-emerald-100/80">
+                    Termasuk Inbox AI Dasar, POS QR, Master Data Barang/Supplier/Kurir &amp; Kontak.
+                    Modul Growth Pro &amp; Enterprise ditampilkan sebagai pratinjau hingga aktivasi License Key.
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 shadow-lg hover:bg-emerald-400 disabled:opacity-60"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  {busy ? "Mengaktifkan Trial 14 Hari..." : `Mulai Trial ${TRIAL_DURATION_DAYS} Hari Gratis`}
+                </button>
+              </form>
             )}
 
             {/* SIGN IN FORM */}
             {mode === "signin" && (
-              <form onSubmit={handleSignIn} className="mt-5 space-y-4">
+              <form onSubmit={(e) => void handleSignIn(e)} className="mt-5 space-y-4">
                 <div>
                   <h2 className="text-lg font-extrabold text-white">Masuk ke Ruang Kerja WACRM</h2>
                   <p className="mt-0.5 text-xs text-slate-400">
-                    Hak akses modul &amp; kuota aktif otomatis mengikuti paket langganan akun Anda.
+                    Gunakan email yang sudah terdaftar untuk melanjutkan sesi Trial UMKM atau Lisensi aktif Anda.
                   </p>
                 </div>
 
                 <label className="block text-xs font-semibold text-slate-300">
                   Email Akun
                   <div className="relative mt-1.5">
-                    <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                    <Mail className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-500" />
                     <input
                       type="email"
-                      autoComplete="email"
                       required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="owner@wacrm.id"
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-9 pr-3 text-sm text-white outline-none focus:border-emerald-500"
+                      autoComplete="email"
+                      value={loginEmail}
+                      onChange={(e) => setLoginEmail(e.target.value)}
+                      placeholder="nama@usahaanda.id"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pr-3 pl-9 text-sm text-white outline-none focus:border-emerald-500"
                     />
                   </div>
                 </label>
@@ -629,31 +779,34 @@ export function CommercialAuthGate({
                     <span>Kata Sandi</span>
                     <button
                       type="button"
-                      onClick={() => switchMode("forgot")}
-                      className="text-[11px] font-semibold text-emerald-400 hover:underline"
+                      onClick={() => {
+                        setMode("forgot");
+                        setForgotEmail(loginEmail);
+                        setError(null);
+                      }}
+                      className="text-[11px] font-bold text-emerald-400 hover:underline"
                     >
                       Lupa password?
                     </button>
                   </div>
                   <div className="relative mt-1.5">
-                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                    <Lock className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-500" />
                     <input
-                      type={showPassword ? "text" : "password"}
+                      type={showLoginPass ? "text" : "password"}
+                      required
                       autoComplete="current-password"
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
                       placeholder="Masukkan kata sandi"
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-9 pr-11 text-sm text-white outline-none focus:border-emerald-500"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pr-11 pl-9 text-sm text-white outline-none focus:border-emerald-500"
                     />
                     <button
                       type="button"
-                      onClick={() => setShowPassword((v) => !v)}
-                      aria-label={showPassword ? "Sembunyikan kata sandi" : "Lihat kata sandi"}
-                      title={showPassword ? "Sembunyikan kata sandi" : "Lihat kata sandi"}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
+                      onClick={() => setShowLoginPass((v) => !v)}
+                      aria-label={showLoginPass ? "Sembunyikan kata sandi" : "Lihat kata sandi"}
+                      className="absolute top-2 right-2 rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
                     >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {showLoginPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
                 </label>
@@ -661,208 +814,25 @@ export function CommercialAuthGate({
                 <button
                   type="submit"
                   disabled={busy}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3 text-sm font-extrabold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400 disabled:opacity-50"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 shadow-lg hover:bg-emerald-400 disabled:opacity-60"
                 >
-                  {busy ? "Memverifikasi Kredensial..." : "Masuk ke Aplikasi"}
+                  {busy ? "Memverifikasi Akun..." : "Masuk ke Aplikasi"}
                   <ArrowRight className="h-4 w-4" />
                 </button>
 
-                {/* Commercial Instant Trial Access Matrix (Per Edition & Role) */}
-                <div className="border-t border-slate-800 pt-4">
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                    Uji Coba Langsung Sesuai Edisi &amp; Hak Akses
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">
-                    Pilih akun uji untuk melihat perbedaan modul, kuota &amp; proteksi lisensi secara nyata:
-                  </p>
-                  <div className="mt-2.5 space-y-2">
-                    {COMMERCIAL_DEMO_ACCOUNTS.map((acc) => (
-                      <button
-                        key={acc.email}
-                        type="button"
-                        onClick={() => handleQuickDemoLogin(acc)}
-                        className="flex w-full items-center justify-between rounded-xl border border-slate-800 bg-slate-950/90 px-3 py-2.5 text-left text-xs transition hover:border-emerald-500/50 hover:bg-slate-900"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 font-bold text-white">
-                            <span>{acc.displayName}</span>
-                            <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-bold uppercase text-indigo-300">
-                              {acc.editionId}
-                            </span>
-                            <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300">
-                              {ROLE_LABELS[acc.role]}
-                            </span>
-                          </div>
-                          <div className="mt-0.5 truncate text-[11px] text-slate-400">
-                            {acc.email} · {acc.badge}
-                          </div>
-                        </div>
-                        <ArrowRight className="h-4 w-4 shrink-0 text-emerald-400" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </form>
-            )}
-
-            {/* SIGN UP FORM */}
-            {mode === "signup" && (
-              <form onSubmit={handleSignUp} className="mt-5 space-y-3.5">
-                <div>
-                  <h2 className="text-lg font-extrabold text-white">Buat Akun Bisnis WACRM</h2>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    Daftar gratis &amp; aktifkan License Key kapan saja untuk memperluas kuota dan modul AI.
-                  </p>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block text-xs font-semibold text-slate-300">
-                    Nama Lengkap *
-                    <div className="relative mt-1">
-                      <User className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
-                      <input
-                        required
-                        minLength={2}
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        placeholder="Budi Santoso"
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pl-8 pr-3 text-xs text-white outline-none focus:border-emerald-500"
-                      />
-                    </div>
-                  </label>
-                  <label className="block text-xs font-semibold text-slate-300">
-                    Nama Toko / Bisnis *
-                    <div className="relative mt-1">
-                      <Store className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
-                      <input
-                        required
-                        value={companyName}
-                        onChange={(e) => setCompanyName(e.target.value)}
-                        placeholder="Toko Kopi Nusantara"
-                        className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pl-8 pr-3 text-xs text-white outline-none focus:border-emerald-500"
-                      />
-                    </div>
-                  </label>
-                </div>
-
-                <label className="block text-xs font-semibold text-slate-300">
-                  Email Bisnis *
-                  <div className="relative mt-1">
-                    <Mail className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
-                    <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="owner@tokosaya.id"
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pl-8 pr-3 text-xs text-white outline-none focus:border-emerald-500"
-                    />
-                  </div>
-                </label>
-
-                <label className="block text-xs font-semibold text-slate-300">
-                  Edisi Awal (Dapat Diupgrade via License Key)
-                  <select
-                    value={signupEdition}
-                    onChange={(e) => setSignupEdition(e.target.value as AppEditionId)}
-                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+                <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-center text-xs text-slate-400">
+                  Belum punya akun?{" "}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode("signup");
+                      setError(null);
+                    }}
+                    className="font-bold text-emerald-400 hover:underline"
                   >
-                    {APP_EDITIONS.map((ed) => (
-                      <option key={ed.id} value={ed.id}>
-                        {ed.name} — {ed.monthlyPriceIdr === 0 ? "Gratis" : `${formatIdr(ed.monthlyPriceIdr)}/bln`} ({ed.limits.maxAgents < 0 ? "Unlimited" : ed.limits.maxAgents} Agen)
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="block text-xs font-semibold text-slate-300">
-                  Kata Sandi *
-                  <div className="relative mt-1">
-                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      required
-                      minLength={8}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Min 8 karakter (huruf besar, kecil & angka)"
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pl-8 pr-10 text-xs text-white outline-none focus:border-emerald-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((v) => !v)}
-                      aria-label={showPassword ? "Sembunyikan kata sandi" : "Lihat kata sandi"}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-white"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </label>
-
-                {password.length > 0 && (
-                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5 text-[11px]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400">Kekuatan Kata Sandi:</span>
-                      <span
-                        className={`font-bold ${
-                          pwdStrength.score >= 3
-                            ? "text-emerald-400"
-                            : pwdStrength.score === 2
-                              ? "text-amber-400"
-                              : "text-rose-400"
-                        }`}
-                      >
-                        {pwdStrength.label}
-                      </span>
-                    </div>
-                    <div className="mt-1.5 grid grid-cols-4 gap-1">
-                      {[1, 2, 3, 4].map((lvl) => (
-                        <div
-                          key={lvl}
-                          className={`h-1.5 rounded-full ${
-                            pwdStrength.score >= lvl
-                              ? pwdStrength.score >= 3
-                                ? "bg-emerald-500"
-                                : "bg-amber-400"
-                              : "bg-slate-800"
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <label className="block text-xs font-semibold text-slate-300">
-                  Konfirmasi Kata Sandi *
-                  <div className="relative mt-1">
-                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
-                    <input
-                      type={showConfirmPassword ? "text" : "password"}
-                      required
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Ulangi kata sandi"
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pl-8 pr-10 text-xs text-white outline-none focus:border-emerald-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowConfirmPassword((v) => !v)}
-                      aria-label={showConfirmPassword ? "Sembunyikan konfirmasi sandi" : "Lihat konfirmasi sandi"}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-white"
-                    >
-                      {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </label>
-
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3 text-sm font-extrabold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
-                >
-                  {busy ? "Membuat Akun..." : "Daftar & Buka Workspace"}
-                  <ArrowRight className="h-4 w-4" />
-                </button>
+                    Daftar Trial {TRIAL_DURATION_DAYS} Hari Gratis →
+                  </button>
+                </div>
               </form>
             )}
 
@@ -870,68 +840,55 @@ export function CommercialAuthGate({
             {mode === "forgot" && (
               <div className="mt-5 space-y-4">
                 <div>
-                  <h2 className="flex items-center gap-2 text-lg font-extrabold text-white">
-                    <KeyRound className="h-5 w-5 text-emerald-400" />
-                    Reset Kata Sandi (Lupa Password)
-                  </h2>
+                  <h2 className="text-lg font-extrabold text-white">Reset Kata Sandi</h2>
                   <p className="mt-0.5 text-xs text-slate-400">
-                    {forgotStep === "request"
-                      ? "Masukkan email akun Anda untuk menerima kode verifikasi 6 digit sekali pakai (berlaku 15 menit)."
-                      : "Masukkan kode verifikasi 6 digit dan buat kata sandi baru yang kuat."}
+                    Verifikasi 2 langkah dengan kode OTP 6 digit sekali pakai (kedaluwarsa 15 menit).
                   </p>
                 </div>
 
-                {forgotStep === "request" ? (
-                  <form onSubmit={handleForgotRequest} className="space-y-4">
+                {forgotStep === 1 ? (
+                  <form onSubmit={(e) => void handleForgotStep1(e)} className="space-y-3.5">
                     <label className="block text-xs font-semibold text-slate-300">
                       Email Terdaftar
-                      <div className="relative mt-1.5">
-                        <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                        <input
-                          type="email"
-                          required
-                          value={forgotEmail}
-                          onChange={(e) => setForgotEmail(e.target.value)}
-                          placeholder="owner@wacrm.id"
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-9 pr-3 text-sm text-white outline-none focus:border-emerald-500"
-                        />
-                      </div>
+                      <input
+                        type="email"
+                        required
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        placeholder="nama@usahaanda.id"
+                        className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500"
+                      />
                     </label>
                     <button
                       type="submit"
                       disabled={busy}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3 text-sm font-extrabold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
                     >
-                      {busy ? "Mengirim Kode..." : "Kirim Kode Verifikasi 6 Digit"}
-                      <ArrowRight className="h-4 w-4" />
+                      <KeyRound className="h-4 w-4" />
+                      {busy ? "Membuat Kode OTP..." : "Kirim Kode Verifikasi 6 Digit"}
                     </button>
                   </form>
                 ) : (
-                  <form onSubmit={handleForgotConfirm} className="space-y-3.5">
-                    {forgotCodePreview && (
-                      <div className="rounded-xl border border-cyan-500/40 bg-cyan-500/15 p-3 text-xs text-cyan-200">
-                        <div className="font-bold">Kode Verifikasi Anda (Mode Pratinjau Non-SMTP):</div>
-                        <div className="mt-1 flex items-center justify-between">
-                          <span className="font-mono text-lg font-black tracking-widest text-white">
-                            {forgotCodePreview}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setForgotCode(forgotCodePreview)}
-                            className="rounded-lg bg-cyan-400 px-2.5 py-1 text-[11px] font-bold text-slate-950"
-                          >
-                            Isi Otomatis
-                          </button>
+                  <form onSubmit={(e) => void handleForgotStep2(e)} className="space-y-3.5">
+                    {forgotPreviewCode && (
+                      <div className="rounded-xl border border-cyan-500/40 bg-cyan-500/10 p-3 text-xs text-cyan-200">
+                        <div className="font-bold">Kode Verifikasi OTP Anda:</div>
+                        <div className="mt-1 font-mono text-lg font-extrabold tracking-widest text-white">
+                          {forgotPreviewCode}
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-cyan-200/80">
+                          (Ditampilkan langsung karena SMTP eksternal belum dikonfigurasi di server)
                         </div>
                       </div>
                     )}
 
                     <label className="block text-xs font-semibold text-slate-300">
-                      Kode Verifikasi 6 Digit *
+                      Kode OTP 6 Digit
                       <input
-                        required
-                        pattern="\d{6}"
+                        type="text"
+                        inputMode="numeric"
                         maxLength={6}
+                        required
                         value={forgotCode}
                         onChange={(e) => setForgotCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                         placeholder="123456"
@@ -940,73 +897,65 @@ export function CommercialAuthGate({
                     </label>
 
                     <label className="block text-xs font-semibold text-slate-300">
-                      Kata Sandi Baru *
+                      Kata Sandi Baru
                       <div className="relative mt-1">
-                        <Lock className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
                         <input
-                          type={showForgotPassword ? "text" : "password"}
+                          type={showForgotPass ? "text" : "password"}
                           required
                           minLength={8}
-                          value={forgotNewPassword}
-                          onChange={(e) => setForgotNewPassword(e.target.value)}
-                          placeholder="Kata sandi baru (min 8 karakter)"
-                          className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pl-8 pr-10 text-xs text-white outline-none focus:border-emerald-500"
+                          value={forgotNewPass}
+                          onChange={(e) => setForgotNewPass(e.target.value)}
+                          placeholder="Minimal 8 karakter kuat"
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pr-11 pl-3 text-sm text-white outline-none focus:border-emerald-500"
                         />
                         <button
                           type="button"
-                          onClick={() => setShowForgotPassword((v) => !v)}
-                          aria-label={showForgotPassword ? "Sembunyikan sandi baru" : "Lihat sandi baru"}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-white"
+                          onClick={() => setShowForgotPass((v) => !v)}
+                          aria-label={showForgotPass ? "Sembunyikan sandi baru" : "Lihat sandi baru"}
+                          className="absolute top-2 right-2 rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
                         >
-                          {showForgotPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          {showForgotPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
                       </div>
-                    </label>
-
-                    {forgotNewPassword.length > 0 && (
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-slate-400">Kekuatan Sandi:</span>
-                        <span className={pwdStrength.score >= 3 ? "font-bold text-emerald-400" : "font-bold text-amber-400"}>
-                          {pwdStrength.label}
-                        </span>
-                      </div>
-                    )}
-
-                    <label className="block text-xs font-semibold text-slate-300">
-                      Konfirmasi Kata Sandi Baru *
-                      <input
-                        type={showForgotPassword ? "text" : "password"}
-                        required
-                        value={forgotConfirmPassword}
-                        onChange={(e) => setForgotConfirmPassword(e.target.value)}
-                        placeholder="Ulangi kata sandi baru"
-                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
-                      />
+                      {forgotNewPass.length > 0 && (
+                        <div className="mt-1 text-[11px] text-slate-400">
+                          Kekuatan: <strong className="text-white">{forgotStrength.label}</strong>
+                        </div>
+                      )}
                     </label>
 
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setForgotStep("request")}
-                        className="rounded-xl border border-slate-700 px-3.5 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-800"
+                        onClick={() => setForgotStep(1)}
+                        className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs font-bold text-slate-300 hover:bg-slate-800"
                       >
                         Kembali
                       </button>
                       <button
                         type="submit"
                         disabled={busy}
-                        className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-500 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
+                        className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
                       >
-                        {busy ? "Menyimpan..." : "Simpan Kata Sandi Baru"}
+                        <CheckCircle2 className="h-4 w-4" />
+                        {busy ? "Menyimpan Sandi..." : "Simpan Kata Sandi Baru"}
                       </button>
                     </div>
                   </form>
                 )}
               </div>
             )}
+
+            <div className="mt-5 flex items-center justify-between border-t border-slate-800 pt-3 text-[11px] text-slate-400">
+              <span className="inline-flex items-center gap-1">
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+                Enkripsi SSL &amp; Proteksi Rate-Limit
+              </span>
+              <span className="font-mono text-slate-500">WACRM v4.2</span>
+            </div>
           </div>
         </section>
-      </main>
-    </div>
+      </div>
+    </main>
   );
 }

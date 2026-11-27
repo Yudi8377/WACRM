@@ -73,6 +73,11 @@ export default function SignInPage() {
           role: acc.role,
           editionId: acc.editionId,
           authProvider: "workspace_local",
+          hasPaidLicense: acc.hasPaidLicense,
+          trialStartedAt: acc.trialStartedAt,
+          trialEndsAt: acc.trialEndsAt,
+          platform: acc.platform,
+          licenseKey: acc.licenseKey,
           signedInAt: new Date().toISOString(),
         });
         router.replace("/");

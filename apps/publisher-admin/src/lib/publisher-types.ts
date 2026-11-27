@@ -55,6 +55,9 @@ export interface TenantCustomerRecord {
   monthlyAiTokenCostIdr: number;
   healthScore: number;
   createdAt: string;
+  trialEndsAt?: string;
+  signupPlatform?: "web" | "android";
+  syncedFromLive?: boolean;
 }
 
 export interface ProductSkuRecord {
