@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { createDemoWorkspaceAdapter } from "@/lib/demo-store";
 import {
   createArrivalQrLabelRecord,
+  createBulkArrivalQrLabels,
   encodeArrivalQrPayload,
   generateNextArrivalCodes,
   generateNextGroupSku,
+  parseBulkArrivalLines,
   parseScannedQrCode,
   renderArrivalQrStickersPrintHtml,
   type FifoBatchRecord,
@@ -307,5 +309,80 @@ describe("End-to-End Scan-to-Integrated-System Intake (Master + ERP + POS + AI +
         (m) => m.sku === "SKC-2611-001" && m.notes?.includes("RCV-SKC-261126-02"),
       ),
     ).toBe(true);
+
+    // 4. Printed Arrival QR sticker can also be scanned straight at POS Kasir checkout
+    const posParsed = parseScannedQrCode(arrival.qrPayload);
+    const posProduct = afterRestock.products.find(
+      (p) => p.sku.toUpperCase() === (posParsed.sku ?? "").toUpperCase(),
+    );
+    expect(posProduct?.id).toBe(created.id);
+    expect(posProduct?.unitPrice).toBe(99_000);
+  });
+
+  it("parses multi-line Surat Jalan bulk input and generates collision-free batch QR stickers ready for A4 Grid print", () => {
+    const minumanGroup: MasterCategoryRecord = {
+      id: "cat-2",
+      name: "Minuman",
+      description: "Kopi & bahan minuman",
+      groupCode: "MNM",
+      defaultRack: "Rak B-1",
+      defaultUnit: "pack",
+      defaultShelfLifeDays: 90,
+      requiresExpiry: true,
+      badgeColorHex: "#06b6d4",
+    };
+
+    const rawSuratJalan = [
+      "# Daftar kedatangan pagi",
+      "Kopi Arabika Kintamani 250gr | 20 | Rp 52.000 | Rp 89.000 | 3",
+      "Matcha Uji Ceremonial 100gr; 15; 75000; 129000; 2",
+      "Kopi Arabika Gayo 500gr | 10 | 78000 | 125000 | 2",
+    ].join("\n");
+
+    const parsedLines = parseBulkArrivalLines(rawSuratJalan);
+    expect(parsedLines).toHaveLength(3);
+    expect(parsedLines[0]).toEqual({
+      productName: "Kopi Arabika Kintamani 250gr",
+      qty: 20,
+      costPrice: 52_000,
+      unitPrice: 89_000,
+      stickerCopies: 3,
+    });
+    expect(parsedLines[1].costPrice).toBe(75_000);
+
+    const bulkLabels = createBulkArrivalQrLabels({
+      lines: parsedLines,
+      group: minumanGroup,
+      supplierName: "PT Roastery Nusantara",
+      existingProducts: SAMPLE_PRODUCTS,
+      existingBatches: [],
+      existingLabels: [],
+      now: new Date("2026-11-26T09:00:00.000Z"),
+    });
+
+    expect(bulkLabels).toHaveLength(3);
+    // First two are brand-new Master items with unique sequential SKUs
+    expect(bulkLabels[0].sku).toBe("MNM-2611-002");
+    expect(bulkLabels[0].isNewMasterProduct).toBe(true);
+    expect(bulkLabels[1].sku).toBe("MNM-2611-003");
+    expect(bulkLabels[1].isNewMasterProduct).toBe(true);
+    // Third matches existing SAMPLE_PRODUCTS[0] by name automatically!
+    expect(bulkLabels[2].sku).toBe("MNM-2611-001");
+    expect(bulkLabels[2].isNewMasterProduct).toBe(false);
+    expect(bulkLabels[2].existingProductId).toBe("prod-1");
+
+    // All three receive distinct sequential IDs & Batch codes
+    expect(new Set(bulkLabels.map((l) => l.id)).size).toBe(3);
+    expect(new Set(bulkLabels.map((l) => l.batchCode)).size).toBe(3);
+
+    const a4Html = renderArrivalQrStickersPrintHtml({
+      labels: bulkLabels,
+      qrDataUrlById: {},
+      storeProfile: { businessName: "Toko Berkah", phone: "+628123" },
+      layout: "a4_grid",
+    });
+    // 3 + 2 + 2 = 7 total sticker blocks rendered on the A4 sheet
+    const stickerCount = (a4Html.match(/class="sticker"/g) ?? []).length;
+    expect(stickerCount).toBe(7);
   });
 });

@@ -938,3 +938,96 @@ export function renderArrivalQrStickersPrintHtml(params: {
 </html>`;
 }
 
+export interface BulkArrivalLineDraft {
+  productName: string;
+  qty: number;
+  costPrice: number;
+  unitPrice: number;
+  stickerCopies: number;
+}
+
+function parseFlexibleIdrNumber(raw: string | undefined, fallback: number): number {
+  if (!raw) return fallback;
+  const digits = raw.replace(/[^0-9]/g, "");
+  if (!digits) return fallback;
+  const parsed = Number(digits);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
+ * Mengurai teks surat jalan multi-baris menjadi daftar barang datang siap generate QR massal.
+ * Format tiap baris: `Nama Barang | Qty | HPP | Harga Jual | Jumlah Stiker`
+ * (mendukung pemisah `|`, `;`, atau tab `\t`).
+ */
+export function parseBulkArrivalLines(rawText: string): BulkArrivalLineDraft[] {
+  const lines = rawText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("#"));
+
+  const drafts: BulkArrivalLineDraft[] = [];
+  for (const line of lines) {
+    const delimiter = line.includes("|") ? "|" : line.includes(";") ? ";" : "\t";
+    const cols = line.split(delimiter).map((c) => c.trim());
+    const productName = cols[0];
+    if (!productName) continue;
+    const qty = Math.max(1, parseFlexibleIdrNumber(cols[1], 10));
+    const costPrice = parseFlexibleIdrNumber(cols[2], 25_000);
+    const defaultSell = costPrice > 0 ? Math.round(costPrice * 1.35) : 35_000;
+    const unitPrice = parseFlexibleIdrNumber(cols[3], defaultSell);
+    const stickerCopies = Math.min(50, Math.max(1, parseFlexibleIdrNumber(cols[4], Math.min(qty, 4))));
+    drafts.push({ productName, qty, costPrice, unitPrice, stickerCopies });
+  }
+  return drafts;
+}
+
+/**
+ * Membuat banyak label QR Barang Datang secara berurutan tanpa tabrakan SKU maupun kode Batch FIFO.
+ */
+export function createBulkArrivalQrLabels(params: {
+  lines: BulkArrivalLineDraft[];
+  group: MasterCategoryRecord;
+  supplierName?: string;
+  rackLocation?: string;
+  expiryDate?: string | null;
+  existingProducts: ErpProductRecord[];
+  existingBatches: FifoBatchRecord[];
+  existingLabels: ArrivalQrLabelRecord[];
+  now?: Date;
+}): ArrivalQrLabelRecord[] {
+  const created: ArrivalQrLabelRecord[] = [];
+  let runningLabels = [...params.existingLabels];
+  const now = params.now ?? new Date();
+
+  for (const line of params.lines) {
+    const matchedExisting =
+      params.existingProducts.find(
+        (p) => p.name.trim().toLowerCase() === line.productName.trim().toLowerCase(),
+      ) ?? null;
+
+    const record = createArrivalQrLabelRecord(
+      {
+        group: params.group,
+        productName: line.productName,
+        existingProduct: matchedExisting,
+        qty: line.qty,
+        costPrice: line.costPrice,
+        unitPrice: line.unitPrice,
+        stickerCopies: line.stickerCopies,
+        supplierName: params.supplierName,
+        rackLocation: params.rackLocation,
+        expiryDate: params.expiryDate,
+      },
+      params.existingProducts,
+      params.existingBatches,
+      runningLabels,
+      now,
+    );
+    created.push(record);
+    runningLabels = [record, ...runningLabels];
+  }
+
+  return created;
+}
+
+

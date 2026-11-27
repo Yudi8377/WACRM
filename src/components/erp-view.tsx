@@ -9,6 +9,7 @@ import {
   Building2,
   Cable,
   Download,
+  QrCode,
   Wifi,
   X,
 } from "lucide-react";
@@ -22,11 +23,17 @@ import {
   type StoreBusinessProfile,
 } from "@/lib/crm-types";
 import {
+  evaluateExpiryHealth,
+  loadFifoBatches,
+  sortBatchesFifoFefo,
+} from "@/lib/fifo-inventory";
+import {
   buildEscPosTextReport,
   printViaBluetooth,
   printViaWifiHtml,
   renderErpReportPrintHtml,
 } from "@/lib/printer";
+import { loadLocalMasterData, normalizeProductGroup } from "@/lib/store-profile";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 interface ErpViewProps {
@@ -35,6 +42,7 @@ interface ErpViewProps {
   products: ErpProductRecord[];
   suppliers: ErpSupplierRecord[];
   movements: ErpStockMovementRecord[];
+  onOpenQrGenerator?: (sku?: string) => void;
   onRefresh: () => Promise<void>;
   onToast: (message: string, tone?: "ok" | "error") => void;
 }
@@ -47,11 +55,13 @@ export function ErpView({
   products,
   suppliers,
   movements,
+  onOpenQrGenerator,
   onRefresh,
   onToast,
 }: ErpViewProps) {
   const [tab, setTab] = useState<"products" | "suppliers" | "movements">("products");
   const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [modalMode, setModalMode] = useState<"none" | "create" | "edit">("none");
@@ -81,17 +91,45 @@ export function ErpView({
   const inventoryValue = products.reduce((s, p) => s + p.stockQty * p.costPrice, 0);
   const lowStockProducts = products.filter((p) => p.isActive && p.stockQty <= p.minStock);
 
+  const productGroups = useMemo(
+    () =>
+      loadLocalMasterData(adapter.tenantId).categories.map((c, idx) =>
+        normalizeProductGroup(c, idx),
+      ),
+    [adapter.tenantId],
+  );
+
+  const fifoBySku = useMemo(() => {
+    const batches = sortBatchesFifoFefo(loadFifoBatches(adapter.tenantId, products)).filter(
+      (b) => b.remainingQty > 0,
+    );
+    const map = new Map<string, { count: number; nearestBatch: (typeof batches)[number] }>();
+    for (const b of batches) {
+      const key = b.sku.toUpperCase();
+      const curr = map.get(key);
+      if (!curr) {
+        map.set(key, { count: 1, nearestBatch: b });
+      } else {
+        curr.count += 1;
+      }
+    }
+    return map;
+  }, [adapter.tenantId, products]);
+
   const q = search.trim().toLowerCase();
   const filteredProducts = useMemo(
     () =>
-      products.filter(
-        (p) =>
+      products.filter((p) => {
+        const matchGroup =
+          groupFilter === "all" || p.category.toLowerCase() === groupFilter.toLowerCase();
+        const matchSearch =
           !q ||
           p.sku.toLowerCase().includes(q) ||
           p.name.toLowerCase().includes(q) ||
-          p.category.toLowerCase().includes(q),
-      ),
-    [products, q],
+          p.category.toLowerCase().includes(q);
+        return matchGroup && matchSearch;
+      }),
+    [products, q, groupFilter],
   );
   const filteredSuppliers = useMemo(
     () =>
@@ -316,6 +354,15 @@ export function ErpView({
           <h2 className="mt-2 text-xl font-bold text-white">Manajemen ERP, Gudang &amp; Supplier</h2>
         </div>
         <div className="flex flex-wrap gap-2">
+          {onOpenQrGenerator && (
+            <button
+              type="button"
+              onClick={() => onOpenQrGenerator()}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-xs font-bold text-emerald-300 hover:bg-emerald-500/25"
+            >
+              <QrCode className="h-3.5 w-3.5" /> Stiker QR Barang Datang
+            </button>
+          )}
           <button type="button" onClick={handleExportCsv} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800">
             <Download className="h-3.5 w-3.5" /> CSV
           </button>
@@ -427,48 +474,137 @@ export function ErpView({
         onRefresh={() => void onRefresh()}
       />
 
+      {/* Kelompok Barang Filter Bar */}
+      {tab === "products" && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setGroupFilter("all");
+              setPage(1);
+            }}
+            className={`rounded-xl border px-3 py-1.5 text-[11px] font-bold transition ${
+              groupFilter === "all"
+                ? "border-emerald-400 bg-emerald-500/20 text-emerald-200"
+                : "border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
+            }`}
+          >
+            Semua Kelompok ({products.length})
+          </button>
+          {productGroups.map((grp) => {
+            const count = products.filter(
+              (p) => p.category.toLowerCase() === grp.name.toLowerCase(),
+            ).length;
+            const active = groupFilter.toLowerCase() === grp.name.toLowerCase();
+            return (
+              <button
+                key={grp.id}
+                type="button"
+                onClick={() => {
+                  setGroupFilter(grp.name);
+                  setPage(1);
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition ${
+                  active
+                    ? "border-emerald-400 bg-emerald-500/20 text-white"
+                    : "border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-700"
+                }`}
+              >
+                <span
+                  className="rounded px-1.5 py-0.5 font-mono text-[9px] font-extrabold text-white"
+                  style={{ backgroundColor: grp.badgeColorHex }}
+                >
+                  {grp.groupCode}
+                </span>
+                <span>
+                  {grp.name} ({count})
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Table */}
       <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/80">
         {tab === "products" && (
           <table className="w-full text-left text-xs">
             <thead className="border-b border-slate-800 bg-slate-950/70 text-slate-400">
               <tr>
-                <th className="px-4 py-3">SKU &amp; Produk</th>
+                <th className="px-4 py-3">SKU, Kelompok &amp; Produk</th>
                 <th className="px-4 py-3">Harga Jual / HPP</th>
-                <th className="px-4 py-3">Stok Gudang</th>
-                <th className="px-4 py-3 text-right">Penyesuaian Stok</th>
+                <th className="px-4 py-3">Stok &amp; Radar FIFO</th>
+                <th className="px-4 py-3 text-right">Penyesuaian &amp; QR</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/80">
-              {filteredProducts.slice(start, start + PAGE_SIZE).map((p) => (
-                <tr
-                  key={p.id}
-                  onClick={() => setSelectedId(p.id)}
-                  className={`cursor-pointer ${selectedId === p.id ? "bg-emerald-500/15" : "hover:bg-slate-800/40"}`}
-                >
-                  <td className="px-4 py-3">
-                    <div className="font-mono text-[11px] font-bold text-cyan-400">{p.sku}</div>
-                    <div className="font-semibold text-white">{p.name}</div>
-                    <div className="text-[11px] text-slate-400">{p.category}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="font-bold text-emerald-400">{formatIdr(p.unitPrice)}</div>
-                    <div className="text-[11px] text-slate-400">HPP: {formatIdr(p.costPrice)}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${p.stockQty <= p.minStock ? "bg-amber-500/20 text-amber-300" : "bg-emerald-500/15 text-emerald-300"}`}>
-                      {p.stockQty} {p.unit}
-                    </span>
-                    <div className="mt-0.5 text-[10px] text-slate-500">Min: {p.minStock}</div>
-                  </td>
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="inline-flex items-center gap-1.5">
-                      <button type="button" onClick={() => void handleAdjustStock(p, 10)} className="rounded-lg bg-emerald-500/15 px-2.5 py-1 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/25">+10</button>
-                      <button type="button" onClick={() => void handleAdjustStock(p, -1)} className="rounded-lg bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:bg-slate-700">-1</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filteredProducts.slice(start, start + PAGE_SIZE).map((p) => {
+                const grp = productGroups.find(
+                  (g) => g.name.toLowerCase() === p.category.toLowerCase(),
+                );
+                const fifoInfo = fifoBySku.get(p.sku.toUpperCase());
+                const fifoHealth = fifoInfo
+                  ? evaluateExpiryHealth(fifoInfo.nearestBatch.expiryDate)
+                  : null;
+                return (
+                  <tr
+                    key={p.id}
+                    onClick={() => setSelectedId(p.id)}
+                    className={`cursor-pointer ${selectedId === p.id ? "bg-emerald-500/15" : "hover:bg-slate-800/40"}`}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        {grp && (
+                          <span
+                            className="rounded px-1.5 py-0.5 font-mono text-[9px] font-extrabold text-white"
+                            style={{ backgroundColor: grp.badgeColorHex }}
+                          >
+                            {grp.groupCode}
+                          </span>
+                        )}
+                        <span className="font-mono text-[11px] font-bold text-cyan-400">{p.sku}</span>
+                      </div>
+                      <div className="mt-0.5 font-semibold text-white">{p.name}</div>
+                      <div className="text-[11px] text-slate-400">{p.category}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="font-bold text-emerald-400">{formatIdr(p.unitPrice)}</div>
+                      <div className="text-[11px] text-slate-400">HPP: {formatIdr(p.costPrice)}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${p.stockQty <= p.minStock ? "bg-amber-500/20 text-amber-300" : "bg-emerald-500/15 text-emerald-300"}`}>
+                          {p.stockQty} {p.unit}
+                        </span>
+                        {fifoInfo && fifoHealth && (
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${fifoHealth.badgeClass}`}>
+                            {fifoInfo.count} Batch · {fifoInfo.nearestBatch.expiryDate ? `Exp ${fifoInfo.nearestBatch.expiryDate}` : "FIFO"}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-slate-500">
+                        Min: {p.minStock}{fifoInfo ? ` · ${fifoInfo.nearestBatch.rackLocation}` : ""}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                      <div className="inline-flex flex-wrap justify-end gap-1.5">
+                        {onOpenQrGenerator && (
+                          <button
+                            type="button"
+                            onClick={() => onOpenQrGenerator(p.sku)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-cyan-500/40 bg-cyan-500/15 px-2.5 py-1 text-[11px] font-bold text-cyan-200 hover:bg-cyan-500/25"
+                            title="Buat & cetak stiker QR barang datang untuk produk ini"
+                          >
+                            <QrCode className="h-3 w-3" /> QR
+                          </button>
+                        )}
+                        <button type="button" onClick={() => void handleAdjustStock(p, 10)} className="rounded-lg bg-emerald-500/15 px-2.5 py-1 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/25">+10</button>
+                        <button type="button" onClick={() => void handleAdjustStock(p, -1)} className="rounded-lg bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:bg-slate-700">-1</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

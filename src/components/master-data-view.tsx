@@ -62,7 +62,7 @@ interface MasterDataViewProps {
   contacts: ContactRecord[];
   onRefresh: () => Promise<void>;
   onToast: (message: string, tone?: "success" | "error") => void;
-  onOpenQrGenerator?: () => void;
+  onOpenQrGenerator?: (sku?: string) => void;
 }
 
 type MasterSubTab = "products" | "suppliers" | "customers" | "categories" | "couriers" | "payments";
@@ -127,6 +127,7 @@ export function MasterDataView({
 }: MasterDataViewProps) {
   const [subTab, setSubTab] = useState<MasterSubTab>("products");
   const [productLayout, setProductLayout] = useState<"cards" | "table">("cards");
+  const [productGroupFilter, setProductGroupFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -258,9 +259,13 @@ export function MasterDataView({
 
   const q = search.trim().toLowerCase();
 
-  const filteredProducts = products.filter(
-    (p) => !q || `${p.sku} ${p.name} ${p.category}`.toLowerCase().includes(q),
-  );
+  const filteredProducts = products.filter((p) => {
+    const matchGroup =
+      productGroupFilter === "all" ||
+      p.category.toLowerCase() === productGroupFilter.toLowerCase();
+    const matchQuery = !q || `${p.sku} ${p.name} ${p.category}`.toLowerCase().includes(q);
+    return matchGroup && matchQuery;
+  });
   const filteredSuppliers = suppliers.filter(
     (s) => !q || `${s.name} ${s.contactPerson ?? ""} ${s.phone ?? ""} ${s.address ?? ""}`.toLowerCase().includes(q),
   );
@@ -751,7 +756,7 @@ export function MasterDataView({
           {onOpenQrGenerator && (
             <button
               type="button"
-              onClick={onOpenQrGenerator}
+              onClick={() => onOpenQrGenerator()}
               className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-xs font-bold text-emerald-300 transition hover:bg-emerald-500/25"
             >
               <QrCode className="h-3.5 w-3.5" />
@@ -865,6 +870,58 @@ export function MasterDataView({
         onRefresh={() => void onRefresh()}
       />
 
+      {/* Kelompok Barang Quick Filter Bar for Master Products */}
+      {subTab === "products" && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setProductGroupFilter("all");
+              setPage(1);
+            }}
+            className={`rounded-xl border px-3 py-1.5 text-[11px] font-bold transition ${
+              productGroupFilter === "all"
+                ? "border-emerald-400 bg-emerald-500/20 text-emerald-200"
+                : "border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
+            }`}
+          >
+            Semua Kelompok ({products.length})
+          </button>
+          {localMaster.categories.map((cat, idx) => {
+            const norm = normalizeProductGroup(cat, idx);
+            const count = products.filter(
+              (p) => p.category.toLowerCase() === norm.name.toLowerCase(),
+            ).length;
+            const active = productGroupFilter.toLowerCase() === norm.name.toLowerCase();
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => {
+                  setProductGroupFilter(norm.name);
+                  setPage(1);
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition ${
+                  active
+                    ? "border-emerald-400 bg-emerald-500/20 text-white"
+                    : "border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-700"
+                }`}
+              >
+                <span
+                  className="rounded px-1.5 py-0.5 font-mono text-[9px] font-extrabold text-white"
+                  style={{ backgroundColor: norm.badgeColorHex }}
+                >
+                  {norm.groupCode}
+                </span>
+                <span>
+                  {norm.name} ({count})
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* PRODUCTS: CARD PICTURE GRID OR TABLE */}
       {subTab === "products" && productLayout === "cards" && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -946,6 +1003,16 @@ export function MasterDataView({
                       </div>
                     </div>
                     <div className="inline-flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      {onOpenQrGenerator && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenQrGenerator(p.sku)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/25"
+                          title="Buat & cetak stiker QR barang datang untuk produk ini"
+                        >
+                          <QrCode className="h-3 w-3" /> QR
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => openEditModal(p.id)}
@@ -1175,7 +1242,7 @@ export function MasterDataView({
                 {onOpenQrGenerator && (
                   <button
                     type="button"
-                    onClick={onOpenQrGenerator}
+                    onClick={() => onOpenQrGenerator()}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-[11px] font-bold text-slate-950 hover:bg-emerald-400"
                   >
                     <QrCode className="h-3.5 w-3.5" />

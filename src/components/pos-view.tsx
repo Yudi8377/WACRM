@@ -30,6 +30,7 @@ import {
   type StoreBusinessProfile,
 } from "@/lib/crm-types";
 import { editionHasFeature } from "@/lib/editions";
+import { parseScannedQrCode } from "@/lib/fifo-inventory";
 import {
   buildEscPosEdcCompact,
   buildEscPosReceipt,
@@ -51,6 +52,8 @@ interface PosViewProps {
   orders: PosOrderRecord[];
   highlightOrderId?: string | null;
   onClearHighlight?: () => void;
+  initialScannedSku?: string | null;
+  onClearScannedSku?: () => void;
   onRefresh: () => Promise<void>;
   onToast: (message: string, tone?: "ok" | "error") => void;
 }
@@ -70,6 +73,8 @@ export function PosView({
   orders,
   highlightOrderId,
   onClearHighlight,
+  initialScannedSku,
+  onClearScannedSku,
   onRefresh,
   onToast,
 }: PosViewProps) {
@@ -89,10 +94,19 @@ export function PosView({
   const [posSubView, setPosSubView] = useState<"pos" | "cod_tracking">("pos");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(highlightOrderId ?? null);
 
+  const initialScannedProduct = initialScannedSku
+    ? products.find((p) => p.sku.toUpperCase() === initialScannedSku.trim().toUpperCase()) ?? null
+    : null;
+
   // Sub-Module Modals: "none" | "create" | "edit"
-  const [formModal, setFormModal] = useState<"none" | "create" | "edit">("none");
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [formModal, setFormModal] = useState<"none" | "create" | "edit">(() =>
+    initialScannedProduct ? "create" : "none",
+  );
+  const [cart, setCart] = useState<CartItem[]>(() =>
+    initialScannedProduct ? [{ product: initialScannedProduct, quantity: 1 }] : [],
+  );
   const [productSearch, setProductSearch] = useState("");
+  const [qrScanInput, setQrScanInput] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [shippingAddress, setShippingAddress] = useState("");
@@ -160,11 +174,16 @@ export function PosView({
     return opts;
   }, [couriers]);
 
-  // Clear highlight flag cleanly once consumed
+  // Clear highlight & scanned SKU flags cleanly once consumed
   useEffect(() => {
     if (!highlightOrderId) return;
     onClearHighlight?.();
   }, [highlightOrderId, onClearHighlight]);
+
+  useEffect(() => {
+    if (!initialScannedSku) return;
+    onClearScannedSku?.();
+  }, [initialScannedSku, onClearScannedSku]);
 
   useEffect(() => {
     let active = true;
@@ -782,16 +801,62 @@ export function PosView({
             <form onSubmit={handleSubmitOrder} className="mt-4 space-y-4 text-xs">
               {formModal === "create" && (
                 <>
-                  {/* Product Picker */}
+                  {/* Product Picker + Direct Arrival/Batch QR Scanner */}
                   <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-emerald-300">1. Pilih Produk dari Master Barang</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-bold text-emerald-300">1. Pilih Produk / Scan Stiker QR Barang</span>
                       <input
                         value={productSearch}
                         onChange={(e) => setProductSearch(e.target.value)}
-                        placeholder="Filter barang..."
+                        placeholder="Filter nama / SKU..."
                         className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-white"
                       />
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        value={qrScanInput}
+                        onChange={(e) => setQrScanInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const parsed = parseScannedQrCode(qrScanInput);
+                            const lookupSku = (parsed.sku || qrScanInput).trim().toUpperCase();
+                            const match = products.find(
+                              (p) => p.sku.toUpperCase() === lookupSku,
+                            );
+                            if (match) {
+                              addToCart(match);
+                              setQrScanInput("");
+                              onToast(`QR ${match.sku} (${match.name}) masuk keranjang POS!`);
+                            } else if (lookupSku) {
+                              onToast(`SKU "${lookupSku}" belum ada di Master Barang.`, "error");
+                            }
+                          }
+                        }}
+                        placeholder="Tembak Scanner USB / tempel kode Stiker QR (WACRM-IN|... / SKU) lalu Enter"
+                        className="flex-1 rounded-lg border border-cyan-500/40 bg-slate-900 px-2.5 py-1.5 font-mono text-[11px] text-cyan-200 placeholder:text-slate-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const parsed = parseScannedQrCode(qrScanInput);
+                          const lookupSku = (parsed.sku || qrScanInput).trim().toUpperCase();
+                          const match = products.find(
+                            (p) => p.sku.toUpperCase() === lookupSku,
+                          );
+                          if (match) {
+                            addToCart(match);
+                            setQrScanInput("");
+                            onToast(`QR ${match.sku} (${match.name}) masuk keranjang POS!`);
+                          } else if (lookupSku) {
+                            onToast(`SKU "${lookupSku}" belum ada di Master Barang.`, "error");
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg bg-cyan-500/20 px-3 py-1.5 text-[11px] font-bold text-cyan-200 hover:bg-cyan-500/30"
+                      >
+                        <QrCode className="h-3.5 w-3.5" />
+                        Scan
+                      </button>
                     </div>
                     <div className="grid max-h-44 gap-2 overflow-y-auto sm:grid-cols-2">
                       {filteredProducts.map((p) => (

@@ -37,6 +37,7 @@ import {
   buildAntiBasiFlashSaleCampaign,
   consumeStockFifo,
   createArrivalQrLabelRecord,
+  createBulkArrivalQrLabels,
   encodeBatchQrPayload,
   evaluateExpiryHealth,
   generateNextArrivalCodes,
@@ -44,6 +45,7 @@ import {
   loadArrivalQrLabels,
   loadFifoBatches,
   loadFifoScanLogs,
+  parseBulkArrivalLines,
   parseScannedQrCode,
   QR_SCANNER_SCENARIOS,
   renderArrivalQrStickersPrintHtml,
@@ -102,6 +104,8 @@ interface QrScannerStudioProps {
   }) => Promise<void>;
   onOpenPosWithSku?: (sku: string) => void;
   onOpenMasterData?: () => void;
+  initialProductSku?: string | null;
+  onClearInitialProductSku?: () => void;
   onNotify: (msg: string, tone?: "success" | "error") => void;
 }
 
@@ -124,6 +128,8 @@ export function QrScannerStudio({
   onRecordAccountingEntry,
   onOpenPosWithSku,
   onOpenMasterData,
+  initialProductSku,
+  onClearInitialProductSku,
   onNotify,
 }: QrScannerStudioProps) {
   const [studioTab, setStudioTab] = useState<StudioWorkspaceTab>("arrival_generator");
@@ -177,17 +183,36 @@ export function QrScannerStudio({
   // ===========================================================================
   // ARRIVAL QR GENERATOR STATE (Kelompok Barang -> Generate & Cetak -> Scan Masuk Master)
   // ===========================================================================
-  const initialGroup = productGroups[0];
-  const [genTargetMode, setGenTargetMode] = useState<"new_product" | "restock_existing">("new_product");
+  const preselectedProduct = initialProductSku
+    ? products.find((p) => p.sku.toUpperCase() === initialProductSku.trim().toUpperCase()) ?? null
+    : null;
+  const initialGroup =
+    (preselectedProduct
+      ? productGroups.find(
+          (g) => g.name.toLowerCase() === preselectedProduct.category.toLowerCase(),
+        )
+      : null) ?? productGroups[0];
+
+  const [genTargetMode, setGenTargetMode] = useState<"new_product" | "restock_existing">(() =>
+    preselectedProduct ? "restock_existing" : "new_product",
+  );
   const [genGroupId, setGenGroupId] = useState<string>(initialGroup?.id ?? "cat-1");
-  const [genExistingSku, setGenExistingSku] = useState<string>(products[0]?.sku ?? "");
-  const [genProductName, setGenProductName] = useState<string>("");
+  const [genExistingSku, setGenExistingSku] = useState<string>(
+    preselectedProduct?.sku ?? products[0]?.sku ?? "",
+  );
+  const [genProductName, setGenProductName] = useState<string>(preselectedProduct?.name ?? "");
   const [genCustomSku, setGenCustomSku] = useState<string>("");
-  const [genUnit, setGenUnit] = useState<string>(initialGroup?.defaultUnit ?? "pcs");
+  const [genUnit, setGenUnit] = useState<string>(
+    preselectedProduct?.unit ?? initialGroup?.defaultUnit ?? "pcs",
+  );
   const [genQty, setGenQty] = useState<number>(24);
-  const [genCostPrice, setGenCostPrice] = useState<number>(35_000);
-  const [genUnitPrice, setGenUnitPrice] = useState<number>(55_000);
-  const [genMinStock, setGenMinStock] = useState<number>(5);
+  const [genCostPrice, setGenCostPrice] = useState<number>(
+    preselectedProduct?.costPrice || 35_000,
+  );
+  const [genUnitPrice, setGenUnitPrice] = useState<number>(
+    preselectedProduct?.unitPrice || 55_000,
+  );
+  const [genMinStock, setGenMinStock] = useState<number>(preselectedProduct?.minStock || 5);
   const [genBatchCode, setGenBatchCode] = useState<string>("");
   const [genExpiryDate, setGenExpiryDate] = useState<string>(() =>
     initialGroup?.requiresExpiry && initialGroup.defaultShelfLifeDays > 0
@@ -203,6 +228,15 @@ export function QrScannerStudio({
   const [paperLayout, setPaperLayout] = useState<StickerPaperLayout>("thermal58");
   const [activePreviewLabel, setActivePreviewLabel] = useState<ArrivalQrLabelRecord | null>(null);
   const [previewQrDataUrls, setPreviewQrDataUrls] = useState<Record<string, string>>({});
+
+  // Bulk Surat Jalan Multi-Item Generator
+  const [showBulkSuratJalan, setShowBulkSuratJalan] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+
+  useEffect(() => {
+    if (!initialProductSku) return;
+    onClearInitialProductSku?.();
+  }, [initialProductSku, onClearInitialProductSku]);
 
   // Quick-Create Kelompok Barang inline form
   const [showQuickGroupForm, setShowQuickGroupForm] = useState(false);
@@ -429,6 +463,47 @@ export function QrScannerStudio({
     }
     onNotify(
       `QR Barang Datang [${label.id}] untuk "${label.productName}" (${label.sku}) siap dicetak & ditempel!`,
+    );
+  }
+
+  async function handleGenerateBulkSuratJalan() {
+    if (!selectedGroup) {
+      onNotify("Pilih Kelompok Barang terlebih dahulu.", "error");
+      return;
+    }
+    const parsedLines = parseBulkArrivalLines(bulkText);
+    if (parsedLines.length === 0) {
+      onNotify(
+        "Masukkan minimal 1 baris barang datang (Format: Nama Barang | Qty | HPP | Harga Jual | Stiker).",
+        "error",
+      );
+      return;
+    }
+    const created = createBulkArrivalQrLabels({
+      lines: parsedLines,
+      group: selectedGroup,
+      supplierName: genSupplier.trim() || "Supplier Utama",
+      rackLocation: genRack.trim() || selectedGroup.defaultRack,
+      expiryDate: genExpiryDate.trim() || null,
+      existingProducts: products,
+      existingBatches: batches,
+      existingLabels: arrivalLabels,
+    });
+    const nextLabels = [...created, ...arrivalLabels];
+    persistArrivalLabels(nextLabels);
+    setActivePreviewLabel(created[0] ?? null);
+    setBulkText("");
+    setShowBulkSuratJalan(false);
+    playWarmActivationChime();
+    if (created[0]) {
+      try {
+        await ensureQrDataUrl(created[0]);
+      } catch {
+        // ignore fallback
+      }
+    }
+    onNotify(
+      `✨ ${created.length} Stiker QR Barang Datang kelompok [${selectedGroup.groupCode}] berhasil dibuat sekaligus! Klik "Cetak Semua Antrean" untuk cetak massal A4/Thermal.`,
     );
   }
 
@@ -1668,6 +1743,63 @@ export function QrScannerStudio({
                 <Sparkles className="h-4 w-4" />
                 Generate QR Barang Datang ({genStickerCopies} Stiker Siap Cetak &amp; Tempel)
               </button>
+
+              {/* Bulk Surat Jalan Multi-Item Generator */}
+              <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-950/75 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkSuratJalan((v) => !v)}
+                    className="flex items-center gap-1.5 text-left text-xs font-bold text-cyan-300 hover:text-cyan-200"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {showBulkSuratJalan
+                      ? "Tutup Impor Massal Surat Jalan"
+                      : "📋 Impor Massal Surat Jalan (Generate Banyak Barang Datang Sekaligus)"}
+                  </button>
+                  {showBulkSuratJalan && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setBulkText(
+                          "Kopi Arabika Kintamani 250gr | 20 | 52000 | 89000 | 4\nMatcha Uji Ceremonial 100gr | 15 | 75000 | 129000 | 3\nSirup Caramel Cafe 750ml | 12 | 48000 | 79000 | 3",
+                        )
+                      }
+                      className="rounded-lg bg-slate-800 px-2.5 py-1 text-[10px] font-bold text-emerald-300 hover:bg-slate-700"
+                    >
+                      Isi Contoh 3 Barang
+                    </button>
+                  )}
+                </div>
+                {showBulkSuratJalan && (
+                  <div className="mt-2.5 space-y-2">
+                    <p className="text-[11px] text-slate-400">
+                      Tempel daftar barang datang per baris dengan format:{" "}
+                      <code className="text-cyan-300">Nama Barang | Qty | HPP | Harga Jual | Jml Stiker</code>{" "}
+                      (otomatis mengikuti Kelompok Barang{" "}
+                      <strong className="text-white">
+                        [{selectedGroup?.groupCode}] {selectedGroup?.name}
+                      </strong>
+                      ).
+                    </p>
+                    <textarea
+                      rows={4}
+                      value={bulkText}
+                      onChange={(e) => setBulkText(e.target.value)}
+                      placeholder={"Kopi Arabika 250gr | 20 | 52000 | 89000 | 4\nMatcha Ceremonial 100gr | 15 | 75000 | 129000 | 3"}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-900 p-2.5 font-mono text-[11px] text-white outline-none focus:border-cyan-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleGenerateBulkSuratJalan()}
+                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-cyan-400 px-3 py-2 text-xs font-extrabold text-slate-950 hover:bg-cyan-300"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Generate Semua Stiker QR Surat Jalan Sekaligus
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Right Preview: Printable Sticker Preview & Layout Printer */}

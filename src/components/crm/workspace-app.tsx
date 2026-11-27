@@ -256,6 +256,8 @@ export function WorkspaceApp({
   const [error, setError] = useState("");
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
+  const [pendingPosSku, setPendingPosSku] = useState<string | null>(null);
+  const [pendingQrProductSku, setPendingQrProductSku] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [companionTrigger, setCompanionTrigger] = useState<{
     id: number;
@@ -935,8 +937,9 @@ export function WorkspaceApp({
                     contacts={snapshot.contacts}
                     onRefresh={refresh}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
-                    onOpenQrGenerator={() => {
+                    onOpenQrGenerator={(sku) => {
                       if (editionHasFeature(editionId, "qr_camera_fifo_scanner")) {
+                        setPendingQrProductSku(sku ?? null);
                         setTab("qr_scanner");
                       } else {
                         setTab("editions");
@@ -1015,7 +1018,7 @@ export function WorkspaceApp({
               {tab === "pos" && (
                 <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
                   <PosView
-                    key={highlightOrderId ?? "pos-default"}
+                    key={`${highlightOrderId ?? "pos"}-${pendingPosSku ?? "none"}`}
                     adapter={adapter}
                     editionId={editionId}
                     storeProfile={storeProfile}
@@ -1023,6 +1026,8 @@ export function WorkspaceApp({
                     orders={snapshot.orders}
                     highlightOrderId={highlightOrderId}
                     onClearHighlight={() => setHighlightOrderId(null)}
+                    initialScannedSku={pendingPosSku}
+                    onClearScannedSku={() => setPendingPosSku(null)}
                     onRefresh={refresh}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
@@ -1031,11 +1036,14 @@ export function WorkspaceApp({
               {tab === "qr_scanner" && (
                 <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
                   <QrScannerStudio
+                    key={pendingQrProductSku ?? "qr-default"}
                     tenantId={adapter.tenantId}
                     products={snapshot.products}
                     suppliers={snapshot.suppliers}
                     orders={snapshot.orders}
                     storeProfile={storeProfile}
+                    initialProductSku={pendingQrProductSku}
+                    onClearInitialProductSku={() => setPendingQrProductSku(null)}
                     onCreateProduct={async (input) => {
                       const created = await adapter.createProduct(input);
                       await refresh();
@@ -1065,7 +1073,10 @@ export function WorkspaceApp({
                         await refresh();
                       }
                     }}
-                    onOpenPosWithSku={() => setTab("pos")}
+                    onOpenPosWithSku={(sku) => {
+                      setPendingPosSku(sku);
+                      setTab("pos");
+                    }}
                     onOpenMasterData={() => setTab("master")}
                     onNotify={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
@@ -1092,6 +1103,18 @@ export function WorkspaceApp({
                     products={snapshot.products}
                     suppliers={snapshot.suppliers}
                     movements={snapshot.stockMovements}
+                    onOpenQrGenerator={(sku) => {
+                      if (editionHasFeature(editionId, "qr_camera_fifo_scanner")) {
+                        setPendingQrProductSku(sku ?? null);
+                        setTab("qr_scanner");
+                      } else {
+                        setTab("editions");
+                        showToast(
+                          "Aktifkan Uji Coba Gratis Pro 14 Hari untuk menggunakan Generator & Scanner QR Barang Datang.",
+                          "error",
+                        );
+                      }
+                    }}
                     onRefresh={refresh}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
