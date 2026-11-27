@@ -20,6 +20,12 @@ import {
 } from "@/lib/seo-engine";
 import { getDefaultStoreProfile } from "@/lib/store-profile";
 import {
+  evaluateMetaTemplateCompliance,
+  generateAiCustomerServiceTemplates,
+  renderTemplatePreview,
+} from "@/lib/ai-template-generator";
+import { issueSignedLicenseKey, verifySignedLicenseKey } from "@/lib/license-crypto";
+import {
   applySuperAdminAutoFix,
   applySuperAdminTenantUpdate,
   computeSuperAdminOverview,
@@ -242,12 +248,98 @@ describe("WACRM v4.0.0 — AI Companion Voice/Text Navigation for v4 Modules", (
     expect(edTurn.navigateToTab).toBe("editions");
 
     const saTurn = processCompanionTurn({
-      userText: "Buka dashboard super admin untuk analisis kelemahan produk",
+      userText: "Buka dashboard super admin untuk aktivasi license key",
       activeTab: "inbox",
       snapshot,
       storeProfile: store,
       pendingAction: null,
     });
-    expect(saTurn.navigateToTab).toBe("super_admin");
+    expect(saTurn.navigateToTab).toBe("editions");
+
+    const tplTurn = processCompanionTurn({
+      userText: "Buatkan template balasan cepat slash untuk layanan pelanggan",
+      activeTab: "inbox",
+      snapshot,
+      storeProfile: store,
+      pendingAction: null,
+    });
+    expect(tplTurn.navigateToTab).toBe("templates");
+  });
+});
+
+describe("WACRM v4.1 — AI Customer Service Template & /slash Quick Reply Generator", () => {
+  it("generates deduplicated /slash quick replies and Meta-compliant official templates", () => {
+    const store = getDefaultStoreProfile("Toko Kopi Nusantara");
+    const res = generateAiCustomerServiceTemplates({
+      mode: "bundle",
+      prompt: "Buat balasan sopan saat barang komplain rusak dan garansi tukar baru",
+      tone: "empatik",
+      language: "id",
+      channel: "whatsapp",
+      storeProfile: store,
+      products: [sampleProduct],
+      existingShortcuts: ["komplain", "salam"],
+      existingTemplateNames: ["resolusi_komplain_garansi"],
+    });
+
+    expect(res.detectedScenario).toBe("complaint_resolution");
+    expect(res.quickReplies.length).toBeGreaterThanOrEqual(3);
+    expect(res.officialTemplates.length).toBeGreaterThanOrEqual(3);
+
+    // Must deduplicate against existing shortcuts & template names
+    expect(res.quickReplies[0].shortcut).toBe("komplain_2");
+    expect(res.officialTemplates[0].name).toBe("resolusi_komplain_garansi_v2");
+    expect(res.officialTemplates[0].compliance.status).toBe("ready");
+    expect(res.officialTemplates[0].compliance.score).toBeGreaterThanOrEqual(90);
+
+    const rendered = renderTemplatePreview(
+      res.officialTemplates[0].bodyText,
+      res.officialTemplates[0].variableSamples,
+    );
+    expect(rendered).not.toContain("{{1}}");
+    expect(rendered).toContain("Toko Kopi Nusantara");
+  });
+
+  it("flags Meta WhatsApp policy violations accurately", () => {
+    const bad = evaluateMetaTemplateCompliance({
+      name: "Promo-Invalid Name!",
+      category: "utility",
+      bodyText: "{{1}} Diskon 50% flash sale hari ini {{3}}",
+    });
+    expect(bad.status).not.toBe("ready");
+    expect(bad.issues.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("WACRM v4.1 — Cross-App Cryptographic License Verification (Publisher HQ ↔ WACRM)", () => {
+  it("issues and verifies signed license keys and rejects tampered or expired keys", () => {
+    const key = issueSignedLicenseKey({
+      editionId: "enterprise",
+      expiryYear: 2028,
+      expiryMonth: 12,
+      maxSeats: 50,
+    });
+    expect(key).toMatch(/^WACRM-ENT-2812-0050-[0-9A-F]{8}$/);
+
+    const valid = verifySignedLicenseKey(key, new Date("2026-11-26T00:00:00Z"));
+    expect(valid.valid).toBe(true);
+    expect(valid.editionId).toBe("enterprise");
+    expect(valid.maxSeats).toBe(50);
+
+    // Tampered seat count fails cryptographic signature
+    const tampered = key.replace("-0050-", "-9999-");
+    const badSig = verifySignedLicenseKey(tampered, new Date("2026-11-26T00:00:00Z"));
+    expect(badSig.valid).toBe(false);
+
+    // Expired license key is rejected
+    const expiredKey = issueSignedLicenseKey({
+      editionId: "pro",
+      expiryYear: 2025,
+      expiryMonth: 1,
+      maxSeats: 15,
+    });
+    const exp = verifySignedLicenseKey(expiredKey, new Date("2026-11-26T00:00:00Z"));
+    expect(exp.valid).toBe(false);
+    expect(exp.isExpired).toBe(true);
   });
 });

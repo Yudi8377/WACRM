@@ -385,22 +385,36 @@ export function processCompanionTurn(input: CompanionTurnInput): CompanionTurnRe
     };
   }
 
-  // 8e. Super Admin Command Center
-  if (/(super\s*admin|semua\s*pengguna|swot|kelemahan|keunggulan|mrr|tenant)/i.test(lower)) {
+  // 8e. AI Generator Balasan Cepat (/slash) & Template Resmi
+  if (/(template|balasan\s*cepat|slash|quick\s*repl|generate\s*pesan|balas\s*otomatis)/i.test(lower)) {
     const text =
-      "Dashboard Super Admin melacak seluruh tenant/pengguna aplikasi, status langganan, MRR, analisis otomatis Keunggulan & Kelemahan produk (SWOT), serta tombol Auto-Fix 1-klik. Saya arahkan ke Super Admin Command Center sekarang.";
+      "Di menu Balasan Cepat & Template Pesan, sekarang tersedia AI Generator yang otomatis membuat pintasan /slash dan template resmi siap approve Meta lengkap dengan pratinjau variabel. Saya bukakan sekarang.";
     return {
       replyText: text,
       speechText: text,
       shouldEndSession: false,
       nextPendingAction: null,
       executeAction: null,
-      navigateToTab: "super_admin",
+      navigateToTab: "templates",
+    };
+  }
+
+  // 8f. Super Admin & License Management (Separated to Publisher HQ App)
+  if (/(super\s*admin|license\s*key|lisensi|aktivasi\s*lisensi|publisher)/i.test(lower)) {
+    const text =
+      "Dashboard Super Admin adalah aplikasi terpisah milik perusahaan penerbit WACRM (WACRM Publisher HQ — berisi License Management, Master Data, ERP, CRM & Akuntansi penerbit). Untuk mengaktifkan atau memverifikasi License Key resmi workspace ini, saya arahkan ke menu Edisi & Lisensi sekarang.";
+    return {
+      replyText: text,
+      speechText: text,
+      shouldEndSession: false,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: "editions",
     };
   }
 
   // 9. Navigation & Screen-Specific Companion Guide
-  if (/(buka|pindah|ke\s*menu)\s*(master\s*data|pos|kasir|invoice|erp|gudang|akuntansi|inbox|kotak\s*masuk|kontak|kanal|pengaturan|ai|seo|edisi|paket|super\s*admin)/i.test(lower)) {
+  if (/(buka|pindah|ke\s*menu)\s*(master\s*data|pos|kasir|invoice|erp|gudang|akuntansi|inbox|kotak\s*masuk|kontak|kanal|pengaturan|ai|seo|edisi|paket|lisensi|template)/i.test(lower)) {
     let target = "inbox";
     let label = "Kotak Masuk AI";
     if (/master/i.test(lower)) {
@@ -421,18 +435,18 @@ export function processCompanionTurn(input: CompanionTurnInput): CompanionTurnRe
     } else if (/kanal/i.test(lower)) {
       target = "channels";
       label = "Kanal Omnichannel";
+    } else if (/template/i.test(lower)) {
+      target = "templates";
+      label = "Balasan Cepat & Template AI";
     } else if (/pengaturan/i.test(lower)) {
       target = "settings";
       label = "Pengaturan Profil Toko";
     } else if (/seo/i.test(lower)) {
       target = "seo_growth";
       label = "SEO & Growth AI";
-    } else if (/edisi|paket/i.test(lower)) {
+    } else if (/edisi|paket|lisensi/i.test(lower)) {
       target = "editions";
-      label = "Edisi & Paket";
-    } else if (/super\s*admin/i.test(lower)) {
-      target = "super_admin";
-      label = "Super Admin";
+      label = "Edisi & Lisensi";
     } else if (/\bai\b/i.test(lower)) {
       target = "ai";
       label = "Pusat Multi-Agent AI";
@@ -459,11 +473,11 @@ export function processCompanionTurn(input: CompanionTurnInput): CompanionTurnRe
     accounting:
       "Anda sedang di Akuntansi. Saya bisa membacakan ringkasan laba rugi, kas, dan memeriksa keseimbangan neraca Anda.",
     seo_growth:
-      "Anda sedang di SEO & Omnichannel Growth AI. Klik produk mana saja untuk audit skor SEO + paket konten siap tempel untuk Google, WhatsApp, Instagram, TikTok, YouTube & Facebook.",
+      "Anda sedang di SEO & Katalog Publik AI. Klik produk mana saja untuk audit skor SEO katalog & konten akuisisi klik-ke-WhatsApp.",
+    templates:
+      "Anda sedang di Balasan Cepat & Template Pesan. Gunakan AI Generator di bagian atas untuk menghasilkan pintasan /slash dan template resmi siap approve Meta dalam satu klik.",
     editions:
-      "Anda sedang di Edisi & Paket Produk. Bandingkan 4 edisi (Starter, Growth Pro, Enterprise AI, Sovereign Corporate) dan aktifkan fitur lanjutan.",
-    super_admin:
-      "Anda sedang di Super Admin Command Center. Pantau semua tenant, MRR, analisis Keunggulan & Kelemahan (SWOT), dan jalankan perbaikan otomatis 1-klik.",
+      "Anda sedang di Edisi & Lisensi. Masukkan License Key resmi dari aplikasi WACRM Publisher HQ untuk mengaktifkan edisi & kuota workspace Anda.",
     settings:
       "Anda sedang di Pengaturan Usaha. Ubah Nama Toko, Alamat, No. Telp, dan Footer di sini agar seluruh Invoice, Label Pengiriman QR, dan Laporan tercetak atas nama usaha Anda sendiri.",
   };

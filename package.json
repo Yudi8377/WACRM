@@ -4,11 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:publisher": "next dev apps/publisher-admin -H 0.0.0.0 -p 3001",
     "build": "node scripts/vercel-migrate.mjs && next build",
+    "build:publisher": "next build apps/publisher-admin",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "typecheck:publisher": "tsc --noEmit -p apps/publisher-admin/tsconfig.json",
     "test": "vitest run",
+    "test:publisher": "vitest run --config apps/publisher-admin/vitest.config.ts",
     "db:migrate": "node scripts/migrate-neon.mjs",
     "db:verify": "node scripts/migrate-neon.mjs --verify",
     "worker:webhooks": "node scripts/webhook-worker.mjs"

@@ -844,32 +844,53 @@ export function InboxView({
 
             {/* Composer */}
             <div className="relative border-t border-slate-200 bg-white p-3">
-              {showQuickReplies && quickReplies.length > 0 && (
-                <div className="absolute bottom-full left-3 right-3 mb-2 max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
-                  <div className="mb-1 flex items-center justify-between px-2 py-1">
-                    <span className="text-xs font-bold text-slate-700">Balasan Cepat</span>
-                    <button type="button" onClick={() => setShowQuickReplies(false)} className="text-slate-400 hover:text-slate-600">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  {quickReplies.map((qr) => (
-                    <button
-                      key={qr.id}
-                      type="button"
-                      onClick={() => {
-                        setDraft(qr.bodyText);
-                        setShowQuickReplies(false);
-                      }}
-                      className="flex w-full flex-col rounded-xl px-2.5 py-2 text-left hover:bg-emerald-50"
-                    >
-                      <span className="text-xs font-semibold text-emerald-700">
-                        /{qr.shortcut} · {qr.title}
+              {showQuickReplies && quickReplies.length > 0 && (() => {
+                const slashQuery = draft.startsWith("/")
+                  ? draft.slice(1).trim().toLowerCase()
+                  : "";
+                const filteredQuickReplies = slashQuery
+                  ? quickReplies.filter(
+                      (qr) =>
+                        qr.shortcut.toLowerCase().includes(slashQuery) ||
+                        qr.title.toLowerCase().includes(slashQuery) ||
+                        qr.category.toLowerCase().includes(slashQuery),
+                    )
+                  : quickReplies;
+                return (
+                  <div className="absolute bottom-full left-3 right-3 mb-2 max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+                    <div className="mb-1 flex items-center justify-between px-2 py-1">
+                      <span className="text-xs font-bold text-slate-700">
+                        Balasan Cepat {slashQuery ? `(/${slashQuery})` : ""}
                       </span>
-                      <span className="line-clamp-1 text-xs text-slate-500">{qr.bodyText}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+                      <button type="button" onClick={() => setShowQuickReplies(false)} className="text-slate-400 hover:text-slate-600">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    {filteredQuickReplies.length === 0 ? (
+                      <div className="px-2.5 py-2 text-xs text-slate-400">
+                        Tidak ada pintasan cocok dengan <code className="font-mono">/{slashQuery}</code>. Buat otomatis lewat AI di tab Template &amp; Cepat.
+                      </div>
+                    ) : (
+                      filteredQuickReplies.map((qr) => (
+                        <button
+                          key={qr.id}
+                          type="button"
+                          onClick={() => {
+                            setDraft(qr.bodyText);
+                            setShowQuickReplies(false);
+                          }}
+                          className="flex w-full flex-col rounded-xl px-2.5 py-2 text-left hover:bg-emerald-50"
+                        >
+                          <span className="text-xs font-semibold text-emerald-700">
+                            /{qr.shortcut} · {qr.title}
+                          </span>
+                          <span className="line-clamp-1 text-xs text-slate-500">{qr.bodyText}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                );
+              })()}
 
               <div className="mb-2 flex items-center gap-2">
                 <button
@@ -910,7 +931,13 @@ export function InboxView({
                   onChange={(e) => {
                     const val = e.target.value;
                     setDraft(val);
-                    if (val === "/" && composerMode === "reply") setShowQuickReplies(true);
+                    if (composerMode === "reply") {
+                      if (val.startsWith("/") && !val.includes("\n") && val.length <= 32) {
+                        setShowQuickReplies(true);
+                      } else if (showQuickReplies && !val.startsWith("/")) {
+                        setShowQuickReplies(false);
+                      }
+                    }
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
