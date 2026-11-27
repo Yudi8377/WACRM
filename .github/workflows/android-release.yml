@@ -81,7 +81,19 @@ jobs:
         run: |
           TAG="android-v4.0.0"
           TITLE="WACRM Android v4.0.0 — USB-C/Micro-USB OTG Printing, SEO Multi-Agent AI, Multi-Edition & Super Admin"
-          NOTES="Aplikasi Android native Kotlin WACRM v4.0.0 (package \`com.wacrm.android\`, versionCode 5) terhubung ke https://wacrm-seven-dusky.vercel.app.\n\nFitur baru v4.0.0:\n- Cetak Universal Native USB-C & Micro-USB OTG (`UsbManager` ESC/POS bulk transfer) untuk Thermal, Label QR & EDC + Inkjet/LaserJet/Mopria/Bluetooth/WiFi/PDF\n- Agen #9 SEO & Omnichannel Growth AI (Google JSON-LD/Sitemap/Katalog Publik, WhatsApp, Instagram, TikTok, YouTube & Facebook)\n- Arsitektur Multi-Edition Berjenjang (Starter UMKM, Growth Pro, Enterprise AI Suite, Sovereign Corporate)\n- Super Admin Command Center untuk pelacakan seluruh tenant/user, MRR, SWOT otomatis & Auto-Fix 1-klik\n\n- **wacrm-android.apk**: APK siap pasang langsung di ponsel Android.\n- **wacrm-android-release-unsigned.apk**: APK release R8-minified untuk penandatanganan keystore Play Store."
+          NOTES=$(cat <<'EOF'
+          Aplikasi Android native Kotlin WACRM v4.0.0 (package `com.wacrm.android`, versionCode 5) terhubung ke https://wacrm-seven-dusky.vercel.app.
+
+          Fitur baru v4.0.0:
+          - Cetak Universal Native USB-C & Micro-USB OTG (`UsbManager` ESC/POS bulk transfer) untuk Thermal, Label QR & EDC + Inkjet/LaserJet/Mopria/Bluetooth/WiFi/PDF
+          - Agen #9 SEO & Omnichannel Growth AI (Google JSON-LD/Sitemap/Katalog Publik, WhatsApp, Instagram, TikTok, YouTube & Facebook)
+          - Arsitektur Multi-Edition Berjenjang (Starter UMKM, Growth Pro, Enterprise AI Suite, Sovereign Corporate)
+          - Super Admin Command Center untuk pelacakan seluruh tenant/user, MRR, SWOT otomatis & Auto-Fix 1-klik
+
+          - **wacrm-android.apk**: APK siap pasang langsung di ponsel Android.
+          - **wacrm-android-release-unsigned.apk**: APK release R8-minified untuk penandatanganan keystore Play Store.
+          EOF
+          )
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/wacrm-android.apk dist/wacrm-android-release-unsigned.apk --clobber
             gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --latest
