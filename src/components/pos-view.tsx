@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { CrudToolbar, PaginationBar } from "@/components/crud-toolbar";
+import { UniversalPrintPanel } from "@/components/universal-print-panel";
 import {
   formatIdr,
   PAYMENT_METHOD_LABELS,
@@ -27,6 +28,7 @@ import {
   type StoreBusinessProfile,
 } from "@/lib/crm-types";
 import {
+  buildEscPosEdcCompact,
   buildEscPosReceipt,
   buildEscPosShippingLabel,
   printViaBluetooth,
@@ -814,25 +816,58 @@ export function PosView({
               )}
             </div>
 
-            {/* Print Actions */}
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {/* Universal Multi-Transport Print Studio (USB-C/Micro-USB OTG, Inkjet, LaserJet, Thermal, EDC, Bluetooth, WiFi, AirPrint, PDF) */}
+            <div className="mt-4">
+              <UniversalPrintPanel
+                key={`${studioOrder.id}-${studioTab}`}
+                documentLabel={
+                  studioTab === "label"
+                    ? `Label Pesanan & Pengiriman QR (${studioOrder.invoiceNumber})`
+                    : `Invoice Resmi TAGIHAN (${studioOrder.invoiceNumber})`
+                }
+                jobTitle={
+                  studioTab === "label"
+                    ? `Label Pengiriman ${studioOrder.invoiceNumber}`
+                    : `Invoice ${studioOrder.invoiceNumber}`
+                }
+                filenameBase={`${studioTab === "label" ? "label-qr" : "invoice"}-${studioOrder.invoiceNumber.toLowerCase()}`}
+                defaultPaper={studioTab === "label" ? "label100" : "a4"}
+                buildHtml={async () => {
+                  const qr = qrDataUrl || (await generateQrDataUrl(studioOrder.qrPayload, 260));
+                  return studioTab === "label"
+                    ? renderShippingLabelPrintHtml(studioOrder, storeProfile, qr)
+                    : renderInvoicePrintHtml(studioOrder, storeProfile, qr);
+                }}
+                buildEscPos={() =>
+                  studioTab === "label"
+                    ? buildEscPosShippingLabel(studioOrder, storeProfile)
+                    : buildEscPosReceipt(studioOrder, storeProfile)
+                }
+                buildEdcEscPos={() => buildEscPosEdcCompact(studioOrder, storeProfile)}
+                onResult={(res) => onToast(res.message, res.ok ? "ok" : "error")}
+                compact
+              />
+            </div>
+
+            {/* Quick Legacy BT/WiFi Shortcut Strip */}
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <button
                 type="button"
                 disabled={printingMode !== null}
                 onClick={() => void handlePrint(studioOrder, studioTab, "bluetooth")}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-400 disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-50"
               >
-                <Bluetooth className="h-4 w-4" />
-                {studioTab === "label" ? "Cetak Label QR (Bluetooth)" : "Cetak Struk Invoice (Bluetooth)"}
+                <Bluetooth className="h-3.5 w-3.5" />
+                Cepat: {studioTab === "label" ? "Label QR (Bluetooth)" : "Struk Invoice (Bluetooth)"}
               </button>
               <button
                 type="button"
                 disabled={printingMode !== null}
                 onClick={() => void handlePrint(studioOrder, studioTab, "wifi")}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-bold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/25 disabled:opacity-50"
               >
-                <Wifi className="h-4 w-4" />
-                {studioTab === "label" ? "Cetak Label Pengiriman (WiFi)" : "Cetak Invoice Resmi (WiFi)"}
+                <Wifi className="h-3.5 w-3.5" />
+                Cepat: {studioTab === "label" ? "Label Pengiriman (WiFi)" : "Invoice Resmi (WiFi)"}
               </button>
             </div>
           </div>

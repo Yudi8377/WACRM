@@ -4,12 +4,20 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.DownloadManager
+import android.app.PendingIntent
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.hardware.usb.UsbConstants
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbEndpoint
+import android.hardware.usb.UsbInterface
+import android.hardware.usb.UsbManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -57,9 +65,37 @@ class MainActivity : AppCompatActivity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var printWebView: WebView? = null
     private var pendingBluetoothPrint: Pair<String, String>? = null
+    private var pendingUsbPrint: Pair<ByteArray, String>? = null
+    private var usbReceiverRegistered: Boolean = false
     private var textToSpeech: TextToSpeech? = null
     private var ttsReady: Boolean = false
     private var pendingSpeech: Pair<String, String>? = null
+
+    private val usbPermissionAction = "com.wacrm.android.USB_PRINTER_PERMISSION"
+
+    private val usbPermissionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != usbPermissionAction) return
+            val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+            val device: UsbDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+            }
+            val job = pendingUsbPrint
+            pendingUsbPrint = null
+            if (granted && device != null && job != null) {
+                sendBytesToUsbDevice(device, job.first, job.second)
+            } else if (!granted) {
+                Toast.makeText(
+                    this@MainActivity,
+                    "Izin perangkat USB OTG ditolak. Sambungkan ulang kabel USB-C / Micro-USB lalu izinkan akses printer.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
 
     private val voiceRecognizerLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -133,6 +169,14 @@ class MainActivity : AppCompatActivity() {
         configureWebView()
         configureSwipeRefresh()
         configureBackNavigation()
+
+        ContextCompat.registerReceiver(
+            this,
+            usbPermissionReceiver,
+            IntentFilter(usbPermissionAction),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        usbReceiverRegistered = true
 
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState)
@@ -438,6 +482,142 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    /**
+     * Direct USB-C / Micro-USB OTG ESC/POS Printing via Android UsbManager.
+     * Supports Thermal 58mm/80mm, Label QR printers, and EDC USB printers.
+     */
+    fun printUsbEscPos(base64Payload: String, jobName: String) {
+        val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager
+        if (usbManager == null) {
+            Toast.makeText(this, "Layanan USB Host OTG tidak tersedia di perangkat ini.", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val devices = usbManager.deviceList?.values?.toList() ?: emptyList()
+        if (devices.isEmpty()) {
+            Toast.makeText(
+                this,
+                "Tidak ada printer USB terdeteksi. Pastikan kabel USB-C / Micro-USB OTG tersambung & OTG aktif di Pengaturan HP.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        val bytes = try {
+            Base64.decode(base64Payload, Base64.DEFAULT)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Data cetak ESC/POS USB tidak valid.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Prioritize USB Printer Class (0x07), otherwise pick first device with bulk OUT endpoint
+        val targetDevice = devices.firstOrNull { findUsbPrinterEndpoint(it) != null }
+        if (targetDevice == null) {
+            Toast.makeText(
+                this,
+                "Perangkat USB terdeteksi tetapi bukan printer ESC/POS. Untuk printer Inkjet/LaserJet USB, gunakan tombol 'Inkjet / LaserJet / AirPrint'.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        if (usbManager.hasPermission(targetDevice)) {
+            sendBytesToUsbDevice(targetDevice, bytes, jobName)
+            return
+        }
+
+        pendingUsbPrint = Pair(bytes, jobName)
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        val permissionIntent = PendingIntent.getBroadcast(
+            this,
+            0,
+            Intent(usbPermissionAction).setPackage(packageName),
+            flags
+        )
+        usbManager.requestPermission(targetDevice, permissionIntent)
+    }
+
+    private fun findUsbPrinterEndpoint(device: UsbDevice): Pair<UsbInterface, UsbEndpoint>? {
+        var fallback: Pair<UsbInterface, UsbEndpoint>? = null
+        for (i in 0 until device.interfaceCount) {
+            val usbInterface = device.getInterface(i)
+            for (e in 0 until usbInterface.endpointCount) {
+                val ep = usbInterface.getEndpoint(e)
+                if (ep.type == UsbConstants.USB_ENDPOINT_XFER_BULK && ep.direction == UsbConstants.USB_DIR_OUT) {
+                    if (usbInterface.interfaceClass == UsbConstants.USB_CLASS_PRINTER) {
+                        return Pair(usbInterface, ep)
+                    }
+                    if (fallback == null) {
+                        fallback = Pair(usbInterface, ep)
+                    }
+                }
+            }
+        }
+        return fallback
+    }
+
+    private fun sendBytesToUsbDevice(device: UsbDevice, bytes: ByteArray, jobName: String) {
+        val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return
+        val pair = findUsbPrinterEndpoint(device)
+        if (pair == null) {
+            Toast.makeText(this, "Endpoint cetak USB OTG tidak ditemukan.", Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(this, "Mencetak $jobName melalui kabel USB OTG...", Toast.LENGTH_SHORT).show()
+        Thread {
+            val (usbInterface, outEndpoint) = pair
+            val connection = usbManager.openDevice(device)
+            if (connection == null) {
+                runOnUiThread {
+                    Toast.makeText(this, "Gagal membuka koneksi printer USB OTG.", Toast.LENGTH_LONG).show()
+                }
+                return@Thread
+            }
+            try {
+                if (!connection.claimInterface(usbInterface, true)) {
+                    throw IllegalStateException("Interface printer USB sedang digunakan.")
+                }
+                val chunkSize = 4096
+                var offset = 0
+                while (offset < bytes.size) {
+                    val len = minOf(chunkSize, bytes.size - offset)
+                    val chunk = bytes.copyOfRange(offset, offset + len)
+                    val written = connection.bulkTransfer(outEndpoint, chunk, chunk.size, 5000)
+                    if (written < 0) {
+                        throw IllegalStateException("Transfer USB OTG terputus pada byte $offset.")
+                    }
+                    offset += len
+                }
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Cetak USB-C / Micro-USB OTG berhasil ($jobName).",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } catch (err: Exception) {
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Gagal cetak USB OTG: ${err.localizedMessage ?: "Periksa kabel & daya printer"}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } finally {
+                try {
+                    connection.releaseInterface(usbInterface)
+                    connection.close()
+                } catch (_: Exception) {
+                    // ignore close error
+                }
+            }
+        }.start()
+    }
+
     fun showServerSettingsDialog() {
         val input = EditText(this).apply {
             setText(getBaseUrl())
@@ -520,6 +700,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        if (usbReceiverRegistered) {
+            try {
+                unregisterReceiver(usbPermissionReceiver)
+            } catch (_: Exception) {
+                // ignore
+            }
+            usbReceiverRegistered = false
+        }
         textToSpeech?.stop()
         textToSpeech?.shutdown()
         textToSpeech = null

@@ -60,6 +60,16 @@ class WacrmJsBridge(
     }
 
     @JavascriptInterface
+    fun printUsbEscPos(base64EscPos: String?, jobName: String?) {
+        val payload = base64EscPos?.trim() ?: return
+        if (payload.isEmpty()) return
+        val safeJob = jobName?.trim()?.take(80)?.ifEmpty { "WACRM USB OTG Print" } ?: "WACRM USB OTG Print"
+        activity.runOnUiThread {
+            activity.printUsbEscPos(payload, safeJob)
+        }
+    }
+
+    @JavascriptInterface
     fun hapticFeedback() {
         activity.runOnUiThread {
             activity.window.decorView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)

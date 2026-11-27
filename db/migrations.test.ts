@@ -27,6 +27,7 @@ describe("Neon PostgreSQL migrations and RLS integrity", () => {
       "db/migrations/0006_whatsapp_send_idempotency.sql",
       "db/migrations/0007_crm_workspace_features.sql",
       "db/migrations/0008_ai_pos_erp_accounting.sql",
+      "db/migrations/0009_editions_seo_superadmin.sql",
     ];
 
     for (const file of files) {
@@ -67,6 +68,8 @@ describe("Neon PostgreSQL migrations and RLS integrity", () => {
         "pos_orders",
         "pos_order_items",
         "accounting_entries",
+        "tenant_subscriptions",
+        "seo_campaigns",
         "webhook_events",
         "webhook_inbox",
         "audit_logs",
@@ -99,6 +102,8 @@ describe("Neon PostgreSQL migrations and RLS integrity", () => {
       "pos_orders",
       "pos_order_items",
       "accounting_entries",
+      "tenant_subscriptions",
+      "seo_campaigns",
       "webhook_events",
       "webhook_inbox",
       "audit_logs",
@@ -130,6 +135,12 @@ describe("Neon PostgreSQL migrations and RLS integrity", () => {
         VALUES ('${tenantA}'::uuid, 'whatsapp', 'konfirmasi_pesanan', 'utility', 'id', 'Pesanan Anda sedang diproses.', 'approved');
       INSERT INTO ai_agents (tenant_id, agent_key, name, role_description)
         VALUES ('${tenantA}'::uuid, 'cs_sales', 'CS & Sales Autonomous Agent', 'Balas otomatis dan konversi pesanan');
+      INSERT INTO ai_agents (tenant_id, agent_key, name, role_description)
+        VALUES ('${tenantA}'::uuid, 'seo_growth', 'Agen SEO & Omnichannel Growth AI', 'Optimasi produk Google, WA, IG, TikTok, YouTube & FB');
+      INSERT INTO tenant_subscriptions (tenant_id, edition_id, status, monthly_price_idr)
+        VALUES ('${tenantA}'::uuid, 'enterprise', 'active', 699000);
+      INSERT INTO seo_campaigns (tenant_id, product_sku, product_name, seo_score, slug, meta_title, meta_description, keywords)
+        VALUES ('${tenantA}'::uuid, 'KOPI-01', 'Kopi Arabika Gayo 1Kg', 92, 'kopi-arabika-gayo-1kg', 'Jual Kopi Arabika Gayo 1Kg', 'Kopi specialty asli Gayo.', ARRAY['kopi','gayo']);
       INSERT INTO erp_products (tenant_id, sku, name, category, unit_price, cost_price, stock_qty)
         VALUES ('${tenantA}'::uuid, 'KOPI-01', 'Kopi Arabika Gayo 1Kg', 'Minuman', 185000, 110000, 50);
       INSERT INTO pos_orders (tenant_id, invoice_number, customer_name, shipping_address, subtotal, total_amount, qr_payload, ai_generated)

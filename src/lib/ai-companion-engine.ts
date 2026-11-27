@@ -316,7 +316,7 @@ export function processCompanionTurn(input: CompanionTurnInput): CompanionTurnRe
   }
 
   // 7. Financial / Revenue / Profit / Accounting Briefing
-  if (/(omzet|omset|laba|profit|keuangan|kas|neraca|akuntansi|laporan|pendapatan)/i.test(lower)) {
+  if (/(omzet|omset|laba|profit|keuangan|\bkas\b|neraca|akuntansi|laporan|pendapatan)/i.test(lower)) {
     const r = input.snapshot.financialReport;
     const text = `Ringkasan keuangan ${storeName} saat ini: Total pendapatan ${formatIdr(r.totalRevenue)}, HPP ${formatIdr(r.totalCogs)}, beban operasional ${formatIdr(r.totalExpenses)}, sehingga laba bersih mencapai ${formatIdr(r.netProfit)} (margin ${r.profitMarginPct.toFixed(1)}%). Saldo kas & bank ${formatIdr(r.cashBalance)}, dan neraca dalam status ${r.isBalanced ? "100% SEIMBANG" : "perlu rekonsiliasi"}. Apakah Anda ingin saya buka halaman Akuntansi atau jalankan audit keamanan & neraca?`;
     return {
@@ -343,8 +343,64 @@ export function processCompanionTurn(input: CompanionTurnInput): CompanionTurnRe
     };
   }
 
+  // 8b. SEO & Omnichannel Product Growth AI
+  if (/(seo|google|tiktok|instagram|youtube|facebook|katalog\s*publik|promosi\s*produk|optimasi\s*produk)/i.test(lower)) {
+    const prodCount = input.snapshot.products.filter((p) => p.isActive).length;
+    const text = `Agen SEO & Omnichannel Growth AI siap mengoptimalkan seluruh ${prodCount} produk aktif ${storeName}! Saya bisa mengaudit skor SEO produk, menyusun JSON-LD Google Search, serta menghasilkan naskah promo siap posting untuk WhatsApp Katalog, Instagram Reels, TikTok FYP, YouTube Shorts, dan Facebook. Saya buka menu SEO & Growth AI untuk Anda sekarang ya.`;
+    return {
+      replyText: text,
+      speechText: text,
+      shouldEndSession: false,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: "seo_growth",
+    };
+  }
+
+  // 8c. Universal Printing Guide (USB-C / Micro-USB OTG, Inkjet, LaserJet, Thermal, EDC, AirPrint)
+  if (/(printer|cetak|usb|otg|inkjet|laserjet|edc|airprint|mopria|kabel)/i.test(lower)) {
+    const text =
+      "Sekarang di WACRM v4.0 Anda bisa mencetak Invoice Resmi dan Label Pengiriman QR melalui SEMUA jalur printer: Kabel Micro-USB / USB-C OTG langsung (Thermal, Label & EDC), Printer Inkjet & LaserJet (A4 via USB/WiFi/AirPrint iOS/Mopria Android), Printer Bluetooth Thermal, WiFi Jaringan, serta Share/Ekspor PDF siap cetak untuk HP iPhone & Android. Saya buka menu POS & Studio Cetak Universal ya.";
+    return {
+      replyText: text,
+      speechText: text,
+      shouldEndSession: false,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: "pos",
+    };
+  }
+
+  // 8d. Editions & Tiered Licensing
+  if (/(edisi|paket\s*aplikasi|tier|upgrade|langganan|versi\s*aplikasi|sovereign|enterprise)/i.test(lower)) {
+    const text =
+      "WACRM kini hadir dalam 4 edisi berjenjang: Starter UMKM, Growth Pro, Enterprise AI Suite, dan Sovereign Corporate. Anda bisa membandingkan fitur lengkap dan mencoba pergantian edisi di menu Edisi & Paket. Saya buka sekarang ya.";
+    return {
+      replyText: text,
+      speechText: text,
+      shouldEndSession: false,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: "editions",
+    };
+  }
+
+  // 8e. Super Admin Command Center
+  if (/(super\s*admin|semua\s*pengguna|swot|kelemahan|keunggulan|mrr|tenant)/i.test(lower)) {
+    const text =
+      "Dashboard Super Admin melacak seluruh tenant/pengguna aplikasi, status langganan, MRR, analisis otomatis Keunggulan & Kelemahan produk (SWOT), serta tombol Auto-Fix 1-klik. Saya arahkan ke Super Admin Command Center sekarang.";
+    return {
+      replyText: text,
+      speechText: text,
+      shouldEndSession: false,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: "super_admin",
+    };
+  }
+
   // 9. Navigation & Screen-Specific Companion Guide
-  if (/(buka|pindah|ke\s*menu)\s*(master\s*data|pos|kasir|invoice|erp|gudang|akuntansi|inbox|kotak\s*masuk|kontak|kanal|pengaturan|ai)/i.test(lower)) {
+  if (/(buka|pindah|ke\s*menu)\s*(master\s*data|pos|kasir|invoice|erp|gudang|akuntansi|inbox|kotak\s*masuk|kontak|kanal|pengaturan|ai|seo|edisi|paket|super\s*admin)/i.test(lower)) {
     let target = "inbox";
     let label = "Kotak Masuk AI";
     if (/master/i.test(lower)) {
@@ -368,6 +424,15 @@ export function processCompanionTurn(input: CompanionTurnInput): CompanionTurnRe
     } else if (/pengaturan/i.test(lower)) {
       target = "settings";
       label = "Pengaturan Profil Toko";
+    } else if (/seo/i.test(lower)) {
+      target = "seo_growth";
+      label = "SEO & Growth AI";
+    } else if (/edisi|paket/i.test(lower)) {
+      target = "editions";
+      label = "Edisi & Paket";
+    } else if (/super\s*admin/i.test(lower)) {
+      target = "super_admin";
+      label = "Super Admin";
     } else if (/\bai\b/i.test(lower)) {
       target = "ai";
       label = "Pusat Multi-Agent AI";
@@ -387,12 +452,18 @@ export function processCompanionTurn(input: CompanionTurnInput): CompanionTurnRe
   const screenTips: Record<string, string> = {
     channels:
       "Anda sedang di menu Kanal Omnichannel. Saya bisa memandu pengisian WABA ID, Phone Number ID, dan System User Access Token untuk Meta WhatsApp Cloud API langkah demi langkah.",
-    pos: "Anda sedang di POS & Invoice QR. Klik 'Tambah Baru' untuk membuat order, klik 'Konfirmasi Lunas' untuk menerbitkan invoice otomatis, lalu cetak Invoice atau Label Pengiriman QR via Bluetooth maupun WiFi.",
+    pos: "Anda sedang di POS & Studio Cetak Universal. Cetak Invoice & Label QR melalui USB-C/Micro-USB OTG, Inkjet/LaserJet A4, Thermal, EDC, Bluetooth, WiFi, AirPrint, atau PDF.",
     master:
       "Anda sedang di Master Data. Anda dapat mengelola Master Barang, Supplier, Pelanggan, Kategori/Satuan, Kurir Ekspedisi, dan Rekening Pembayaran lengkap dengan tombol Tambah Baru, Ubah, Hapus, Next & Back.",
     erp: "Anda sedang di ERP & Gudang. Saya bisa memeriksa barang yang hampir habis dan membantu restok cepat.",
     accounting:
       "Anda sedang di Akuntansi. Saya bisa membacakan ringkasan laba rugi, kas, dan memeriksa keseimbangan neraca Anda.",
+    seo_growth:
+      "Anda sedang di SEO & Omnichannel Growth AI. Klik produk mana saja untuk audit skor SEO + paket konten siap tempel untuk Google, WhatsApp, Instagram, TikTok, YouTube & Facebook.",
+    editions:
+      "Anda sedang di Edisi & Paket Produk. Bandingkan 4 edisi (Starter, Growth Pro, Enterprise AI, Sovereign Corporate) dan aktifkan fitur lanjutan.",
+    super_admin:
+      "Anda sedang di Super Admin Command Center. Pantau semua tenant, MRR, analisis Keunggulan & Kelemahan (SWOT), dan jalankan perbaikan otomatis 1-klik.",
     settings:
       "Anda sedang di Pengaturan Usaha. Ubah Nama Toko, Alamat, No. Telp, dan Footer di sini agar seluruh Invoice, Label Pengiriman QR, dan Laporan tercetak atas nama usaha Anda sendiri.",
   };

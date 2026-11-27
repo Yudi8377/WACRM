@@ -70,7 +70,8 @@ async function main() {
           'verification','conversation_notes','quick_replies','message_templates','api_keys',
           'ai_agents','ai_knowledge_items','ai_security_incidents',
           'erp_products','erp_suppliers','erp_stock_movements',
-          'pos_orders','pos_order_items','accounting_entries'
+          'pos_orders','pos_order_items','accounting_entries',
+          'tenant_subscriptions','seo_campaigns'
         ))::int AS tables_count,
         count(*) FILTER (WHERE rowsecurity = true)::int AS rls_count
       FROM pg_tables
@@ -80,8 +81,8 @@ async function main() {
     const tablesCount = check.rows[0]?.tables_count ?? 0;
     const rlsCount = check.rows[0]?.rls_count ?? 0;
 
-    if (tablesCount >= 28 && rlsCount >= 24 && process.env.FORCE_MIGRATE !== "true") {
-      // Idempotently upgrade ai_agents CHECK constraint to v3.0.0 8-agent roles if needed
+    if (tablesCount >= 30 && rlsCount >= 26 && process.env.FORCE_MIGRATE !== "true") {
+      // Idempotently upgrade ai_agents CHECK constraint to v4.0.0 9-agent roles if needed
       await client.query(`
         DO $$
         BEGIN
@@ -89,23 +90,23 @@ async function main() {
             SELECT 1 FROM pg_constraint
             WHERE conrelid = 'ai_agents'::regclass
               AND conname = 'ai_agents_agent_key_check'
-              AND pg_get_constraintdef(oid) NOT LIKE '%companion_guide%'
+              AND pg_get_constraintdef(oid) NOT LIKE '%seo_growth%'
           ) THEN
             ALTER TABLE ai_agents DROP CONSTRAINT ai_agents_agent_key_check;
             ALTER TABLE ai_agents ADD CONSTRAINT ai_agents_agent_key_check CHECK (
               agent_key IN (
                 'cs_sales','order_pos','knowledge_learner','fraud_sentinel',
-                'system_guardian','companion_guide','followup_hunter','procurement_forecast'
+                'system_guardian','companion_guide','followup_hunter','procurement_forecast','seo_growth'
               )
             );
           END IF;
         END $$;
       `);
-      console.log(`[wacrm-migrate] Neon schema up-to-date (${tablesCount} tables, ${rlsCount} RLS tables, v3.0.0 8-agent constraint verified).`);
+      console.log(`[wacrm-migrate] Neon schema up-to-date (${tablesCount} tables, ${rlsCount} RLS tables, v4.0.0 9-agent constraint verified).`);
       return;
     }
 
-    console.log(`[wacrm-migrate] Applying idempotent Neon schema (found ${tablesCount}/28 tables)...`);
+    console.log(`[wacrm-migrate] Applying idempotent Neon schema (found ${tablesCount}/30 tables)...`);
     const sql = fs.readFileSync(sqlPath, "utf8");
     await client.query(sql);
 
