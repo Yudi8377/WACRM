@@ -7,18 +7,26 @@ import {
   type AiKnowledgeItemRecord,
   type AiSecurityIncidentRecord,
   type ChannelType,
+  type CourierServiceTier,
   type ErpProductRecord,
   type FinancialReportSummary,
+  type MasterCourierRecord,
+  type MessageRecord,
   type PaymentMethod,
   type PosOrderItemRecord,
   type PosOrderRecord,
 } from "@/lib/crm-types";
 import { buildInvoiceQrPayload, generateInvoiceNumber } from "@/lib/qr-generator";
+import { getDefaultMasterData } from "@/lib/store-profile";
 
 export interface ExtractedOrderDraft {
   customerName: string;
   customerPhone: string | null;
   shippingAddress: string;
+  shippingCourier: string;
+  shippingService: string | null;
+  shippingCost: number;
+  shippingWeightKg: number;
   paymentMethod: PaymentMethod;
   items: Array<{
     product: ErpProductRecord;
@@ -27,6 +35,17 @@ export interface ExtractedOrderDraft {
   subtotal: number;
   taxAmount: number;
   totalAmount: number;
+}
+
+export interface ExtractedShippingUpdate {
+  orderId: string;
+  customerName?: string;
+  customerPhone?: string | null;
+  shippingAddress: string;
+  shippingCourier: string;
+  shippingService: string | null;
+  shippingCost: number;
+  paymentMethod?: PaymentMethod;
 }
 
 export interface FraudEvaluation {
@@ -43,6 +62,9 @@ export interface MultiAgentReplyPlan {
     | "fraud_blocked"
     | "human_escalation"
     | "order_checkout"
+    | "checkout_address_update"
+    | "checkout_abandon_cross_sell"
+    | "shipping_inquiry"
     | "greeting"
     | "gratitude_closing"
     | "app_multiuser_faq"
@@ -53,7 +75,10 @@ export interface MultiAgentReplyPlan {
     | "clarification";
   escalationRequired: boolean;
   escalationReason: string | null;
+  followUpStage?: "idle_nudge" | "abandon_cross_sell" | null;
+  suggestedProducts?: ErpProductRecord[];
   extractedOrder: ExtractedOrderDraft | null;
+  shippingUpdate?: ExtractedShippingUpdate | null;
   fraud: FraudEvaluation;
   learnedKnowledgeCandidate: {
     title: string;
@@ -66,6 +91,13 @@ export interface MultiAgentReplyPlan {
     action: string;
     status: "ok" | "warning" | "blocked" | "healed";
   }>;
+}
+
+export interface ProactiveFollowUpPlan {
+  replyText: string;
+  stage: "idle_nudge" | "abandon_cross_sell";
+  suggestedProducts: ErpProductRecord[];
+  agentTrace: MultiAgentReplyPlan["agentTrace"];
 }
 
 const INDONESIAN_NUMBERS: Record<string, number> = {
@@ -93,21 +125,189 @@ function tokenize(text: string): string[] {
     .filter((w) => w.length >= 2);
 }
 
+function resolveActiveCouriers(couriers?: MasterCourierRecord[]): MasterCourierRecord[] {
+  const list = couriers && couriers.length > 0 ? couriers : getDefaultMasterData().couriers;
+  return list.filter((c) => c.isActive);
+}
+
+function getCourierTiers(courier: MasterCourierRecord): CourierServiceTier[] {
+  if (courier.serviceTiers && courier.serviceTiers.length > 0) {
+    return courier.serviceTiers;
+  }
+  return [
+    {
+      id: `${courier.id}-default`,
+      serviceName: `${courier.name} ${courier.serviceType || "Reguler"}`,
+      ratePerKg: courier.baseRate || 15000,
+      minWeightKg: 1,
+      maxWeightKg: 30,
+      estimatedDays: courier.estimatedDays || "2-3 hari",
+      coverageZones: "Seluruh Indonesia",
+      codSupported: Boolean(courier.codSupported ?? true),
+      codFeePct: 2,
+      insuranceAvailable: Boolean(courier.insuranceSupported ?? true),
+      insuranceFeePct: 0.5,
+    },
+  ];
+}
+
+export function matchCourierAndComputeShipping(params: {
+  message: string;
+  couriers?: MasterCourierRecord[];
+  weightKg?: number;
+  preferCod?: boolean;
+}): {
+  courier: MasterCourierRecord;
+  tier: CourierServiceTier;
+  shippingCost: number;
+  weightKg: number;
+  explicitlyMatched: boolean;
+} {
+  const activeCouriers = resolveActiveCouriers(params.couriers);
+  const lower = params.message.toLowerCase();
+  const weightKg = Math.max(1, Math.ceil(params.weightKg ?? 1));
+
+  // Try matching explicit courier/service mention in message
+  let matchedCourier: MasterCourierRecord | null = null;
+  let matchedTier: CourierServiceTier | null = null;
+
+  for (const courier of activeCouriers) {
+    const tiers = getCourierTiers(courier);
+    const codeMatch = lower.includes(courier.code.toLowerCase());
+    const nameMatch =
+      lower.includes(courier.name.toLowerCase()) ||
+      (courier.code.toLowerCase() === "jnt" && /j\s*&\s*t|jnt/i.test(lower)) ||
+      (courier.code.toLowerCase() === "sicepat" && /si\s*cepat/i.test(lower)) ||
+      (courier.code.toLowerCase() === "sameday" && /same\s*-?\s*day|kurir\s*toko|instant/i.test(lower));
+
+    const courierOwnTokens = new Set([
+      ...tokenize(courier.code),
+      ...tokenize(courier.name),
+      "ekspedisi",
+      "kurir",
+      "paket",
+      "hemat",
+      "cepat",
+      "besok",
+      "sampai",
+      "yakin",
+      "esok",
+    ]);
+
+    let bestTier: CourierServiceTier | null = null;
+    let bestTierScore = 0;
+
+    for (const tier of tiers) {
+      const distinctiveTokens = tokenize(tier.serviceName).filter(
+        (t) => t.length >= 2 && !courierOwnTokens.has(t),
+      );
+      let score = 0;
+      for (const tok of distinctiveTokens) {
+        const boundaryRe = new RegExp(`\\b${tok.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+        if (boundaryRe.test(lower)) {
+          score += tok.length >= 3 ? 2 : 1;
+        }
+      }
+      if (
+        score > bestTierScore &&
+        (codeMatch ||
+          nameMatch ||
+          /(yes|jtr|halu|best|gokil|kargo|cargo|instant|same\s*-?\s*day|super)/i.test(lower))
+      ) {
+        bestTierScore = score;
+        bestTier = tier;
+      }
+    }
+
+    if (bestTier) {
+      matchedCourier = courier;
+      matchedTier = bestTier;
+      break;
+    }
+    if (codeMatch || nameMatch) {
+      matchedCourier = courier;
+      matchedTier =
+        (params.preferCod ? tiers.find((t) => t.codSupported) : null) ??
+        (weightKg >= 10 ? tiers.find((t) => t.minWeightKg >= 10) : null) ??
+        tiers[0];
+      break;
+    }
+  }
+
+  // Fallback intelligent recommendation if user asked for fastest/cheapest/kargo/COD
+  if (!matchedCourier) {
+    const allOptions = activeCouriers.flatMap((c) => getCourierTiers(c).map((t) => ({ courier: c, tier: t })));
+    if (/(kargo|cargo|grosir|partai\s*besar)/i.test(lower) || weightKg >= 10) {
+      const cargo = allOptions
+        .filter((o) => o.tier.minWeightKg >= 10 || /kargo|cargo|jtr|gokil/i.test(o.tier.serviceName))
+        .sort((a, b) => a.tier.ratePerKg - b.tier.ratePerKg)[0];
+      if (cargo) {
+        matchedCourier = cargo.courier;
+        matchedTier = cargo.tier;
+      }
+    } else if (/(tercepat|kilat|besok\s*sampai|urgent|express|cepat)/i.test(lower)) {
+      const fast = allOptions.find((o) => /1\s*hari|jam|same/i.test(o.tier.estimatedDays));
+      if (fast) {
+        matchedCourier = fast.courier;
+        matchedTier = fast.tier;
+      }
+    } else if (params.preferCod) {
+      const codOpt = allOptions
+        .filter((o) => o.tier.codSupported)
+        .sort((a, b) => a.tier.ratePerKg - b.tier.ratePerKg)[0];
+      if (codOpt) {
+        matchedCourier = codOpt.courier;
+        matchedTier = codOpt.tier;
+      }
+    }
+  }
+
+  const explicitlyMatched = Boolean(matchedCourier);
+  const chosenCourier = matchedCourier ?? activeCouriers[0];
+  const chosenTier = matchedTier ?? getCourierTiers(chosenCourier)[0];
+  const billableWeight = Math.max(chosenTier.minWeightKg || 1, weightKg);
+  const shippingCost = chosenTier.ratePerKg * billableWeight;
+
+  return {
+    courier: chosenCourier,
+    tier: chosenTier,
+    shippingCost,
+    weightKg: billableWeight,
+    explicitlyMatched,
+  };
+}
+
+function extractAddressCandidate(message: string): string | null {
+  const addrMatch = message.match(
+    /(?:alamat\s*(?:pengiriman|kirim|lengkap)?\s*[:=-]?\s*|kirim\s*ke\s*[:=-]?\s*|di\s+(?=jl\.?|jalan\s+|perum|gang|gg\.?|komplek)|(?:jl\.?|jalan)\s+)([^\n;]{5,180}?)(?=\s*(?:,\s*)?(?:bayar|pakai\s*(?:jne|j&t|jnt|sicepat|kurir|qris|transfer|cod)|via\s*(?:jne|j&t|jnt|sicepat|qris|transfer|cod)|ekspedisi|kurir|pembayaran|qris|transfer|cod|tunai|no\s*hp|hp\s*[:=]|wa\s*[:=]|atas\s*nama|$))/i,
+  );
+  if (!addrMatch) return null;
+  const full = addrMatch[0].match(/^(?:jl\.?|jalan)\s+/i)
+    ? `${addrMatch[0].match(/^(?:jl\.?|jalan)\s+/i)?.[0] ?? ""}${addrMatch[1]}`
+    : addrMatch[1];
+  const cleaned = full.trim().replace(/[,!?\s]+$/, "");
+  return cleaned.length >= 5 ? cleaned : null;
+}
+
 /**
  * Intelligent Indonesian NLP Order Extractor:
- * Automatically detects customer name, phone number, shipping address, payment preference,
- * and matched ERP products + quantities from natural WhatsApp/IG/TikTok chat messages.
+ * Automatically detects customer name, phone number, shipping address, courier service + rate,
+ * payment preference, and matched ERP products + quantities from natural chat messages.
  */
 export function extractOrderFromChat(
   message: string,
   products: ErpProductRecord[],
   fallbackName: string,
   fallbackPhone: string | null,
+  couriers?: MasterCourierRecord[],
 ): ExtractedOrderDraft | null {
   const lower = message.toLowerCase();
   const hasOrderIntent =
-    /(pesan|order|beli|checkout|ambil|mau|kirim|butuh|borong|tambah|invoice|nota|bayar)/i.test(lower);
+    /(pesan|order|beli|checkout|check\s*out|ambil|mau|kirim|butuh|borong|tambah|invoice|nota|bayar)/i.test(lower);
   if (!hasOrderIntent) return null;
+
+  // Never extract an order if the customer explicitly cancels/declines checkout!
+  if (detectCheckoutAbandonment(message).abandoned) return null;
 
   const activeProducts = products.filter((p) => p.isActive);
   const matchedItems: Array<{ product: ErpProductRecord; quantity: number }> = [];
@@ -120,7 +320,6 @@ export function extractOrderFromChat(
     const matchRatio = nameTokens.length > 0 ? matchingTokens.length / nameTokens.length : 0;
 
     if (matchesSku || matchingTokens.length >= 2 || (nameTokens.length === 1 && matchRatio === 1)) {
-      // Try to extract quantity right before or after matched keyword
       const keyword = matchesSku ? skuLower : matchingTokens[0];
       const escapedKw = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const qtyBefore = lower.match(new RegExp(`(\\d+|satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh)\\s*(?:x|pcs|karton|paket|box|unit|kg|botol|buah)?\\s*(?:[a-z0-9\\s]{0,18})${escapedKw}`, "i"));
@@ -134,20 +333,17 @@ export function extractOrderFromChat(
 
   if (matchedItems.length === 0) return null;
 
-  // Extract customer name (explicit name prefixes only — never match intent verbs like "saya mau pesan")
+  // Extract customer name (explicit name prefixes only — never match intent verbs)
   const nameMatch = message.match(
-    /(?:nama\s*(?:saya|pemesan)?\s*[:=-]?\s*|atas\s*nama\s*[:=-]?\s*|a\/n\s*[:=-]?\s*)([A-Za-z][a-zA-Z.'\s]{2,40}?)(?=,|\.|alamat|kirim|hp|wa|telp|mau|pesan|order|beli|\n|$)/i,
+    /(?:nama\s*(?:saya|pemesan|penerima)?\s*[:=-]?\s*|atas\s*nama\s*[:=-]?\s*|penerima\s*[:=-]?\s*|a\/n\s*[:=-]?\s*)([A-Za-z][a-zA-Z.'\s]{2,40}?)(?=,|\.|alamat|kirim|hp|wa|telp|mau|pesan|order|beli|\n|$)/i,
   );
   const rawCandidate = nameMatch?.[1]?.trim() ?? "";
   const isVerb = /^(mau|ingin|pesan|order|beli|butuh|minta|cari|tanya)$/i.test(rawCandidate);
   const customerName = rawCandidate && !isVerb ? rawCandidate : fallbackName || "Pelanggan WACRM";
 
-  // Extract shipping address (supports abbreviations like "Jl." / "No.")
-  const addrMatch = message.match(
-    /(?:alamat\s*(?:pengiriman|kirim)?\s*[:=-]?\s*|kirim\s*ke\s*[:=-]?\s*|di\s+(?=jl\.?|jalan\s+))([^\n;]{5,140}?)(?=\s*(?:,\s*)?(?:bayar|pakai|via|pembayaran|qris|transfer|cod|tunai|no\s*hp|wa\s*[:=]|$))/i,
-  );
-  const shippingAddress =
-    addrMatch?.[1]?.trim().replace(/[,!?\s]+$/, "") || "Alamat menyusul (konfirmasi WhatsApp)";
+  // Extract shipping address
+  const extractedAddr = extractAddressCandidate(message);
+  const shippingAddress = extractedAddr || "Alamat menyusul (konfirmasi WhatsApp)";
 
   // Extract phone
   const phoneMatch = message.match(/(\+62\d{8,13}|08\d{8,12})/);
@@ -164,20 +360,332 @@ export function extractOrderFromChat(
   else if (/(tunai|cash)/i.test(lower)) paymentMethod = "cash";
   else if (/(tempo|kredit|net\s*\d+)/i.test(lower)) paymentMethod = "credit";
 
+  // Calculate estimated shipment weight & match courier shipping rate from Master Data
+  const totalGrams = matchedItems.reduce(
+    (sum, i) => sum + (i.product.weightGrams ?? 1000) * i.quantity,
+    0,
+  );
+  const estimatedWeightKg = Math.max(1, Math.ceil(totalGrams / 1000));
+  const courierMatch = matchCourierAndComputeShipping({
+    message,
+    couriers,
+    weightKg: estimatedWeightKg,
+    preferCod: paymentMethod === "cod",
+  });
+
   const subtotal = matchedItems.reduce((sum, i) => sum + i.product.unitPrice * i.quantity, 0);
   const taxAmount = Math.round(subtotal * 0.11);
-  const totalAmount = subtotal + taxAmount;
+  // Apply computed shippingCost when courier is explicitly chosen OR full address was provided
+  const shippingCost = courierMatch.explicitlyMatched || Boolean(extractedAddr) ? courierMatch.shippingCost : 0;
+  const totalAmount = subtotal + taxAmount + shippingCost;
 
   return {
     customerName,
     customerPhone,
     shippingAddress,
+    shippingCourier: courierMatch.courier.name,
+    shippingService: courierMatch.tier.serviceName,
+    shippingCost,
+    shippingWeightKg: courierMatch.weightKg,
     paymentMethod,
     items: matchedItems,
     subtotal,
     taxAmount,
     totalAmount,
   };
+}
+
+/**
+ * Multi-Turn Checkout Completion Extractor:
+ * When a customer already created an order (e.g. awaiting shipping address) and replies
+ * with their recipient name, full address, phone, or preferred courier, automatically
+ * extracts those fields so POS & Cetak QR updates immediately without admin re-typing!
+ */
+export function extractShippingUpdateFromChat(
+  message: string,
+  existingOrder: PosOrderRecord | null | undefined,
+  couriers?: MasterCourierRecord[],
+): ExtractedShippingUpdate | null {
+  if (!existingOrder) return null;
+  const extractedAddr = extractAddressCandidate(message);
+  const lower = message.toLowerCase();
+  const courierCheck = matchCourierAndComputeShipping({
+    message,
+    couriers,
+    weightKg: existingOrder.shippingWeightKg ?? Math.max(1, existingOrder.items.reduce((s, i) => s + i.quantity, 0)),
+    preferCod: /(cod|bayar di tempat)/i.test(lower),
+  });
+
+  if (!extractedAddr && !courierCheck.explicitlyMatched) return null;
+
+  const phoneMatch = message.match(/(\+62\d{8,13}|08\d{8,12})/);
+  const customerPhone = phoneMatch
+    ? phoneMatch[1].startsWith("0")
+      ? `+62${phoneMatch[1].slice(1)}`
+      : phoneMatch[1]
+    : existingOrder.customerPhone;
+
+  const nameMatch = message.match(
+    /(?:nama\s*(?:saya|pemesan|penerima)?\s*[:=-]?\s*|atas\s*nama\s*[:=-]?\s*|penerima\s*[:=-]?\s*|a\/n\s*[:=-]?\s*)([A-Za-z][a-zA-Z.'\s]{2,40}?)(?=,|\.|alamat|kirim|hp|wa|telp|\n|$)/i,
+  );
+  const customerName = nameMatch?.[1]?.trim() || existingOrder.customerName;
+
+  let paymentMethod: PaymentMethod | undefined;
+  if (/(transfer|bca|mandiri|bri|bni|bank)/i.test(lower)) paymentMethod = "bank_transfer";
+  else if (/(cod|bayar di tempat)/i.test(lower)) paymentMethod = "cod";
+  else if (/(qris)/i.test(lower)) paymentMethod = "qris";
+  else if (/(tunai|cash)/i.test(lower)) paymentMethod = "cash";
+
+  return {
+    orderId: existingOrder.id,
+    customerName,
+    customerPhone,
+    shippingAddress: extractedAddr || existingOrder.shippingAddress,
+    shippingCourier: courierCheck.courier.name,
+    shippingService: courierCheck.tier.serviceName,
+    shippingCost: courierCheck.shippingCost,
+    paymentMethod,
+  };
+}
+
+/**
+ * Detects checkout abandonment, cancellation, or budget/price hesitation so the
+ * Polite-Aggressive Sales AI can immediately offer alternative products from admin's catalog.
+ */
+export function detectCheckoutAbandonment(message: string): {
+  abandoned: boolean;
+  priceObjection: boolean;
+  reason: string | null;
+} {
+  const lower = message.toLowerCase();
+  const priceObjection =
+    /(mahal|kemahalan|budget\s*(?:kurang|terbatas|minim|pas)|lebih\s*murah|terlalu\s*tinggi|harganya\s*tinggi)/i.test(
+      lower,
+    );
+  const explicitDecline =
+    /(tidak\s*jadi|tak\s*jadi|nggak\s*jadi|gak\s*jadi|ga\s*jadi|belum\s*jadi|batal\s*(?:pesan|order|beli|checkout|dulu)?|cancel\s*(?:order|dulu|ya|kak)?|nanti\s*(?:dulu|aja|saja)|pikir[\s-]*pikir\s*dulu|skip\s*dulu|tunda\s*dulu|belum\s*cocok|lain\s*kali\s*(?:ya|aja|saja))/i.test(
+      lower,
+    );
+  if (!explicitDecline && !priceObjection) {
+    return { abandoned: false, priceObjection: false, reason: null };
+  }
+  return {
+    abandoned: true,
+    priceObjection,
+    reason: priceObjection
+      ? "Pelanggan ragu karena harga/budget — AI menawarkan produk alternatif lebih hemat."
+      : "Pelanggan menunda/tidak jadi checkout — AI melakukan cross-sell sopan dengan katalog produk lain.",
+  };
+}
+
+/**
+ * Selects up to 3 active, in-stock alternative products from the admin's catalog
+ * (prioritizing lower price options if the prospect hesitated on price, plus best-sellers).
+ */
+export function selectAlternativeProducts(
+  products: ErpProductRecord[],
+  options?: { excludeIds?: string[]; preferCheaper?: boolean; referencePrice?: number; limit?: number },
+): ErpProductRecord[] {
+  const exclude = new Set(options?.excludeIds ?? []);
+  const available = products.filter((p) => p.isActive && p.stockQty > 0 && !exclude.has(p.id));
+  const pool = available.length > 0 ? available : products.filter((p) => p.isActive && p.stockQty > 0);
+  const sorted = [...pool].sort((a, b) => {
+    if (options?.preferCheaper) {
+      return a.unitPrice - b.unitPrice;
+    }
+    if (options?.referencePrice && a.unitPrice <= options.referencePrice && b.unitPrice > options.referencePrice) {
+      return -1;
+    }
+    return b.stockQty - a.stockQty;
+  });
+  return sorted.slice(0, options?.limit ?? 3);
+}
+
+/**
+ * Proactive Polite-Aggressive AI Follow-Up Generator for idle prospects:
+ * - Attempt 1 ("idle_nudge"): Clarifies whether the prospect is still interested in the inquired product,
+ *   mentions live stock availability & courier cut-off window.
+ * - Attempt 2+ ("abandon_cross_sell"): Respectfully pivots to pitch 3 alternative products from admin's catalog!
+ */
+export function buildProactiveFollowUpReply(params: {
+  customerName: string;
+  workspaceName: string;
+  products: ErpProductRecord[];
+  couriers?: MasterCourierRecord[];
+  lastTopic?: string | null;
+  attemptNumber: 1 | 2;
+  preferCheaper?: boolean;
+}): ProactiveFollowUpPlan {
+  const storeName = params.workspaceName.trim() || "Toko Kami";
+  const activeCouriers = resolveActiveCouriers(params.couriers);
+  const cutoffHint = activeCouriers[0]?.cutoffTime
+    ? `Pengiriman hari ini masih bisa dikejar sebelum batas cut-off ${activeCouriers[0].cutoffTime}.`
+    : "Pesanan yang dikonfirmasi hari ini langsung kami prioritaskan pengirimannya.";
+
+  // Match product previously mentioned in lastTopic if any
+  const topicLower = (params.lastTopic ?? "").toLowerCase();
+  const mentionedProduct = params.products.find(
+    (p) =>
+      p.isActive &&
+      (topicLower.includes(p.sku.toLowerCase()) ||
+        tokenize(p.name)
+          .filter((t) => t.length >= 4)
+          .some((t) => topicLower.includes(t))),
+  );
+
+  if (params.attemptNumber === 1) {
+    const productFocus = mentionedProduct
+      ? `produk **${mentionedProduct.name}** (${formatIdr(mentionedProduct.unitPrice)}/${mentionedProduct.unit}, stok aman ${mentionedProduct.stockQty} ${mentionedProduct.unit})`
+      : "produk yang sempat Kakak tanyakan sebelumnya";
+
+    const replyText = [
+      `Halo kembali Kak ${params.customerName}! Mohon izin menyapa dengan ramah dari ${storeName} 😊`,
+      "",
+      `Kami ingin memastikan apakah Kakak masih berminat melanjutkan pesanan untuk ${productFocus}? ${cutoffHint}`,
+      "",
+      `Jika Kakak masih mempertimbangkan ukuran/jumlah atau butuh estimasi ongkir termurah (JNE, J&T COD, SiCepat, atau Kurir Toko Same-Day), kami siap hitungkan sekarang tanpa ribet.`,
+      `Cukup balas *"YA"* untuk langsung kami siapkan Invoice & Label QR, atau balas *"PRODUK LAIN"* kalau Kakak mau kami rekomendasikan alternatif yang lebih pas di budget!`,
+    ].join("\n");
+
+    return {
+      replyText,
+      stage: "idle_nudge",
+      suggestedProducts: mentionedProduct ? [mentionedProduct] : [],
+      agentTrace: [
+        {
+          agentKey: "followup_hunter",
+          agentName: "Agen Follow-Up & Retensi Prospek",
+          action: "Mendeteksi calon pelanggan belum merespon → mengirim chat klarifikasi minat sopan (Tahap 1/2).",
+          status: "ok",
+        },
+        {
+          agentKey: "cs_sales",
+          agentName: "CS & Sales Autonomous Agent",
+          action: "Menyisipkan info stok real-time & jam cut-off pengiriman untuk mendorong keputusan checkout.",
+          status: "ok",
+        },
+      ],
+    };
+  }
+
+  // Attempt 2: Prospect still hasn't checked out -> Polite-Aggressive Cross-Sell of other admin products
+  const alternatives = selectAlternativeProducts(params.products, {
+    excludeIds: mentionedProduct ? [mentionedProduct.id] : [],
+    preferCheaper: params.preferCheaper ?? true,
+    referencePrice: mentionedProduct?.unitPrice,
+    limit: 3,
+  });
+
+  const altLines = alternatives
+    .map(
+      (p, idx) =>
+        `${idx + 1}. ${p.name} (${p.sku}) — ${formatIdr(p.unitPrice)}/${p.unit} · Stok ready ${p.stockQty} ${p.unit}`,
+    )
+    .join("\n");
+
+  const replyText = [
+    `Halo Kak ${params.customerName}, terima kasih ya sudah mampir ke ${storeName} 🙏`,
+    "",
+    `Tidak masalah sama sekali jika Kakak belum jadi checkout pesanan sebelumnya — barangkali Kakak sedang mencari opsi lain yang lebih hemat atau cocok untuk kebutuhan lain, berikut 3 rekomendasi produk unggulan kami yang sedang paling diminati:`,
+    "",
+    altLines || "• Silakan tanyakan kategori produk yang Kakak cari agar kami bantu carikan stok terbaik.",
+    "",
+    `Tersedia pengiriman ekonomis, express, hingga bayar di tempat (COD). Kalau ada yang menarik perhatian Kakak, cukup balas nomor *1, 2, atau 3* saja ya Kak — kami bantu cek ongkir & stoknya dengan senang hati!`,
+  ].join("\n");
+
+  return {
+    replyText,
+    stage: "abandon_cross_sell",
+    suggestedProducts: alternatives,
+    agentTrace: [
+      {
+        agentKey: "followup_hunter",
+        agentName: "Agen Follow-Up & Retensi Prospek",
+        action: `Prospek belum checkout → meluncurkan penawaran silang (cross-sell sopan) ${alternatives.length} produk alternatif dari katalog admin.`,
+        status: "healed",
+      },
+      {
+        agentKey: "cs_sales",
+        agentName: "CS & Sales Autonomous Agent",
+        action: "Menyusun rekomendasi produk alternatif ramah tanpa memaksa dengan CTA balas cepat 1/2/3.",
+        status: "ok",
+      },
+    ],
+  };
+}
+
+/**
+ * Generates an expert multi-courier shipping quote & policy explanation using ALL
+ * shipping data configured in Master Data -> Kurir Ekspedisi.
+ */
+export function buildShippingKnowledgeReply(params: {
+  message: string;
+  customerName: string;
+  workspaceName: string;
+  couriers?: MasterCourierRecord[];
+  greetingSalutation: string;
+}): string {
+  const activeCouriers = resolveActiveCouriers(params.couriers);
+  const storeName = params.workspaceName.trim() || "Toko Kami";
+  const weightMatch = params.message.match(/(\d+)\s*(?:kg|kilo)/i);
+  const weightKg = weightMatch ? Math.max(1, Number.parseInt(weightMatch[1], 10)) : 1;
+  const lower = params.message.toLowerCase();
+  const wantsCod = /\bcod\b|bayar\s*di\s*tempat/i.test(lower);
+
+  const allTiers = activeCouriers.flatMap((c) =>
+    getCourierTiers(c).map((t) => ({
+      courier: c,
+      tier: t,
+      totalCost: t.ratePerKg * Math.max(t.minWeightKg || 1, weightKg),
+    })),
+  );
+
+  const filtered = wantsCod ? allTiers.filter((x) => x.tier.codSupported) : allTiers;
+  const displayList = (filtered.length > 0 ? filtered : allTiers)
+    .sort((a, b) => a.totalCost - b.totalCost)
+    .slice(0, 6);
+
+  const cheapest = displayList[0];
+  const fastest = [...allTiers].find((x) => /jam|1\s*hari|same/i.test(x.tier.estimatedDays)) ?? displayList[0];
+
+  const lines = displayList.map((item) => {
+    const codTag = item.tier.codSupported
+      ? `Bisa COD${item.tier.codFeePct > 0 ? ` (+${item.tier.codFeePct}%)` : " (Gratis biaya COD)"}`
+      : "Non-COD";
+    const insTag = item.tier.insuranceAvailable
+      ? `Asuransi ${item.tier.insuranceFeePct}%`
+      : "Tanpa Asuransi";
+    return `• ${item.tier.serviceName}: ${formatIdr(item.totalCost)} (${formatIdr(item.tier.ratePerKg)}/kg, est. ${item.tier.estimatedDays}) · ${codTag} · ${insTag} · Zona: ${item.tier.coverageZones}`;
+  });
+
+  const highlights: string[] = [];
+  if (cheapest) {
+    highlights.push(`Paling Hemat: ${cheapest.tier.serviceName} (${formatIdr(cheapest.totalCost)})`);
+  }
+  if (fastest && fastest.tier.id !== cheapest?.tier.id) {
+    highlights.push(`Paling Cepat: ${fastest.tier.serviceName} (${fastest.tier.estimatedDays})`);
+  }
+
+  const cutoffLines = activeCouriers
+    .filter((c) => c.cutoffTime || c.pickupSchedule)
+    .slice(0, 3)
+    .map((c) => `• ${c.name}: Cut-off ${c.cutoffTime || "-"} | Pickup ${c.pickupSchedule || "-"}`);
+
+  const packingNote = activeCouriers.find((c) => c.packagingNotes)?.packagingNotes;
+  const claimNote = activeCouriers.find((c) => c.claimPolicy)?.claimPolicy;
+
+  return [
+    `${params.greetingSalutation} Berikut pilihan biaya & informasi lengkap pengiriman dari ${storeName} (estimasi berat ${weightKg} kg${wantsCod ? ", khusus layanan COD" : ""}):`,
+    "",
+    ...lines,
+    "",
+    ...(highlights.length > 0 ? [`Rekomendasi AI: ${highlights.join(" | ")}`] : []),
+    ...(cutoffLines.length > 0 ? ["", "Jadwal Pickup & Cut-Off Kirim Hari Ini:", ...cutoffLines] : []),
+    ...(packingNote ? [`\nPacking & Proteksi: ${packingNote}`] : []),
+    ...(claimNote ? [`Kebijakan Klaim: ${claimNote}`] : []),
+    "",
+    `Untuk langsung checkout otomatis ke POS & cetak Label QR, Kakak tinggal kirim: Nama Penerima, Alamat Lengkap + Kode Pos, Pilihan Kurir, dan Produk yang dipesan ya Kak!`,
+  ].join("\n");
 }
 
 /**
@@ -346,6 +854,9 @@ export function orchestrateMultiAgentReply(params: {
   products: ErpProductRecord[];
   knowledgeItems: AiKnowledgeItemRecord[];
   agents: AiAgentRecord[];
+  couriers?: MasterCourierRecord[];
+  existingConversationOrder?: PosOrderRecord | null;
+  recentMessages?: MessageRecord[];
 }): MultiAgentReplyPlan {
   const trace: MultiAgentReplyPlan["agentTrace"] = [];
   const rawMsg = params.incomingMessage.trim();
@@ -358,6 +869,7 @@ export function orchestrateMultiAgentReply(params: {
     params.products,
     params.customerName,
     params.customerPhone,
+    params.couriers,
   );
   const fraud = evaluateFraudRisk({
     message: rawMsg,
@@ -444,6 +956,14 @@ export function orchestrateMultiAgentReply(params: {
   let confidence = 0.9;
   let detectedIntent: MultiAgentReplyPlan["detectedIntent"] = "clarification";
   let extractedOrder: ExtractedOrderDraft | null = null;
+  let shippingUpdate: ExtractedShippingUpdate | null = null;
+  let followUpStage: "idle_nudge" | "abandon_cross_sell" | null = null;
+  let suggestedProducts: ErpProductRecord[] = [];
+
+  const abandonment = detectCheckoutAbandonment(rawMsg);
+  const shippingUpdateCandidate = !extractedOrderCandidate
+    ? extractShippingUpdateFromChat(rawMsg, params.existingConversationOrder, params.couriers)
+    : null;
 
   const isPureGreeting =
     /^(?:ass?alam\w*|selamat\s*(?:pagi|siang|sore|malam)|pagi|siang|sore|malam|halo|hai|hello|hi|permisi|p|tes|test)[\s!.,?kakminbupak]*$/i.test(
@@ -459,8 +979,12 @@ export function orchestrateMultiAgentReply(params: {
     /(?:(?:aplikasi|sistem|android|web|crm).*(?:bersamaan|bareng|multi|beberapa|agen|cs|admin|staff|user))|(?:(?:\d+|banyak|beberapa)\s*(?:agen|cs|admin|kasir|user|orang).*(?:bersamaan|bareng|sekaligus|login|pakai))|(?:bisa\s*dipakai.*(?:\d+|banyak|beberapa)\s*(?:agen|admin|cs|orang))/i.test(
       lower,
     );
+  const isShippingInquiry =
+    /(ongkir|biaya\s*kirim|tarif\s*(?:kirim|ekspedisi|kurir)|ekspedisi|kurir|pengiriman|kargo|cargo|same\s*-?\s*day|bisa\s*cod|biaya\s*cod|asuransi\s*(?:kirim|paket)|cut[\s-]*off|jadwal\s*pickup|klaim\s*(?:paket|ekspedisi)|estimasi\s*(?:kirim|sampai))/i.test(
+      lower,
+    );
   const isOperationalFaq =
-    /(jam\s*(?:buka|operasional|kerja)|buka\s*jam|lokasi|alamat\s*toko|ongkir|ekspedisi|kurir|pengiriman|metode\s*bayar|pembayaran|cara\s*(?:pesan|order|beli)|garansi|bisa\s*cod|hari\s*minggu)/i.test(
+    /(jam\s*(?:buka|operasional|kerja)|buka\s*jam|lokasi|alamat\s*toko|metode\s*bayar|pembayaran|cara\s*(?:pesan|order|beli)|garansi|hari\s*minggu)/i.test(
       lower,
     );
   const isOrderTracking =
@@ -468,7 +992,7 @@ export function orchestrateMultiAgentReply(params: {
       lower,
     );
   const isExplicitCatalogInquiry =
-    /(harga|katalog|daftar\s*(?:produk|barang|harga)|produk\s*apa|ready\s*stok|stok\s*(?:masih|ada|berapa)|jual\s*apa|promo|diskon\s*grosir)/i.test(
+    /(harga|katalog|daftar\s*(?:produk|barang|harga)|produk\s*apa|produk\s*lain|ready\s*stok|stok\s*(?:masih|ada|berapa)|jual\s*apa|promo|diskon\s*grosir)/i.test(
       lower,
     );
 
@@ -485,9 +1009,50 @@ export function orchestrateMultiAgentReply(params: {
             ? `Selamat malam Kak ${params.customerName}!`
             : `Halo Kak ${params.customerName}!`;
 
-  if (isPureGreeting) {
+  if (abandonment.abandoned) {
+    detectedIntent = "checkout_abandon_cross_sell";
+    followUpStage = "abandon_cross_sell";
+    const priorProductIds = params.existingConversationOrder?.items
+      .map((i) => i.productId)
+      .filter((id): id is string => Boolean(id)) ?? [];
+    const altProducts = selectAlternativeProducts(params.products, {
+      excludeIds: priorProductIds,
+      preferCheaper: abandonment.priceObjection,
+      limit: 3,
+    });
+    suggestedProducts = altProducts;
+
+    const altLines = altProducts
+      .map(
+        (p, idx) =>
+          `${idx + 1}. ${p.name} (${p.sku}) — ${formatIdr(p.unitPrice)}/${p.unit} (Stok ready: ${p.stockQty} ${p.unit})`,
+      )
+      .join("\n");
+
+    const empathyLead = abandonment.priceObjection
+      ? `Baik Kak ${params.customerName}, kami sangat memahami pertimbangan budget Kakak! Tidak masalah sama sekali jika produk sebelumnya belum pas di anggaran saat ini.`
+      : `Baik Kak ${params.customerName}, tidak masalah sama sekali ya jika belum jadi checkout hari ini! Keputusan Kakak selalu menjadi prioritas kami.`;
+
+    replyText = [
+      `${empathyLead}`,
+      "",
+      `Sebagai alternatif yang mungkin lebih sesuai kebutuhan atau lebih hemat, berikut rekomendasi produk unggulan lain dari ${storeName} yang saat ini ready stock:`,
+      "",
+      altLines || "• Silakan beri tahu kisaran budget atau kebutuhan Kakak agar kami pilihkan opsi terbaik.",
+      "",
+      `Tersedia pilihan ekspedisi hemat hingga bayar di tempat (COD). Jika Kakak tertarik melihat detail salah satu produk di atas, cukup balas angka *1, 2, atau 3* saja ya Kak — bebas tanya-tanya tanpa komitmen!`,
+    ].join("\n");
+    confidence = 0.95;
+
+    trace.push({
+      agentKey: "followup_hunter",
+      agentName: "Agen Follow-Up & Cross-Sell AI",
+      action: `${abandonment.reason} Menawarkan ${altProducts.length} produk alternatif dari katalog admin.`,
+      status: "healed",
+    });
+  } else if (isPureGreeting) {
     detectedIntent = "greeting";
-    replyText = `${greetingSalutation} Selamat datang di ${storeName}. Ada yang bisa kami bantu hari ini? Kakak bisa menanyakan info produk & stok, cek pengiriman, atau langsung kirim detail pesanan agar segera kami proses.`;
+    replyText = `${greetingSalutation} Selamat datang di ${storeName}. Ada yang bisa kami bantu hari ini? Kakak bisa menanyakan info produk & stok, cek pilihan ongkir & kurir, atau langsung kirim detail pesanan agar segera kami proses ke POS & Label QR.`;
     confidence = 0.96;
   } else if (isGratitudeClosing) {
     detectedIntent = "gratitude_closing";
@@ -512,25 +1077,78 @@ export function orchestrateMultiAgentReply(params: {
     const itemLines = extractedOrder.items
       .map((i) => `• ${i.product.name} (${i.quantity} ${i.product.unit}) = ${formatIdr(i.product.unitPrice * i.quantity)}`)
       .join("\n");
+    const shippingLine =
+      extractedOrder.shippingCost > 0
+        ? `Ongkir (${extractedOrder.shippingService || extractedOrder.shippingCourier}, ${extractedOrder.shippingWeightKg} kg): ${formatIdr(extractedOrder.shippingCost)}`
+        : `Ekspedisi Pilihan: ${extractedOrder.shippingService || extractedOrder.shippingCourier}`;
+
     trace.push({
       agentKey: "order_pos",
       agentName: "POS, Invoice & QR Agent",
-      action: `Mengekstrak pesanan ${extractedOrder.customerName} (${extractedOrder.items.length} item, Total ${formatIdr(extractedOrder.totalAmount)}) → Invoice & Label QR otomatis siap.`,
+      action: `Mengekstrak checkout ${extractedOrder.customerName} (${extractedOrder.items.length} item + ${extractedOrder.shippingService || extractedOrder.shippingCourier}, Total ${formatIdr(extractedOrder.totalAmount)}) → Otomatis mengisi POS & Label QR.`,
       status: "ok",
     });
 
     replyText = [
-      `${greetingSalutation} Pesanan Kakak sudah langsung kami catat secara otomatis di sistem ${storeName}:`,
+      `${greetingSalutation} Pesanan & data pengiriman Kakak sudah otomatis kami isikan ke sistem POS & Cetak QR ${storeName}:`,
       "",
       itemLines,
       `PPN 11%: ${formatIdr(extractedOrder.taxAmount)}`,
+      shippingLine,
       `Total Tagihan: ${formatIdr(extractedOrder.totalAmount)}`,
+      `Penerima: ${extractedOrder.customerName}${extractedOrder.customerPhone ? ` (${extractedOrder.customerPhone})` : ""}`,
       `Alamat Kirim: ${extractedOrder.shippingAddress}`,
       `Metode Bayar: ${PAYMENT_METHOD_LABELS[extractedOrder.paymentMethod]}`,
       "",
-      `Invoice resmi & Label QR pesanan otomatis sudah dibuat dan stok barang telah kami amankan. Setelah pembayaran masuk, invoice lunas & resi QR pengiriman langsung terbit otomatis!`,
+      extractedOrder.shippingAddress.startsWith("Alamat menyusul")
+        ? `Invoice & Label QR draft sudah siap! Silakan kirimkan alamat pengiriman lengkap beserta pilihan kurir (JNE / J&T / SiCepat / Kurir Toko) agar POS & Label QR langsung terupdate otomatis.`
+        : `Invoice resmi & Label Pengiriman QR otomatis sudah terisi lengkap di POS dan stok barang telah kami amankan. Setelah pembayaran masuk, invoice lunas & resi QR langsung siap dicetak!`,
+    ].join("\n");
+    confidence = 0.96;
+  } else if (shippingUpdateCandidate) {
+    detectedIntent = "checkout_address_update";
+    shippingUpdate = shippingUpdateCandidate;
+    const baseOrd = params.existingConversationOrder!;
+    const nextTotal =
+      Math.max(0, baseOrd.subtotal - baseOrd.discountAmount) +
+      baseOrd.taxAmount +
+      shippingUpdate.shippingCost;
+
+    trace.push({
+      agentKey: "order_pos",
+      agentName: "POS, Invoice & QR Agent",
+      action: `Memperbarui otomatis data alamat & ongkir (${shippingUpdate.shippingService || shippingUpdate.shippingCourier} = ${formatIdr(shippingUpdate.shippingCost)}) pada POS Order ${baseOrd.invoiceNumber} + regenerasi QR.`,
+      status: "healed",
+    });
+
+    replyText = [
+      `${greetingSalutation} Data pengiriman Kakak sudah otomatis kami lengkapi pada POS & Label QR untuk pesanan ${baseOrd.invoiceNumber}:`,
+      "",
+      `• Penerima: ${shippingUpdate.customerName || baseOrd.customerName}${shippingUpdate.customerPhone ? ` (${shippingUpdate.customerPhone})` : ""}`,
+      `• Alamat Kirim: ${shippingUpdate.shippingAddress}`,
+      `• Ekspedisi: ${shippingUpdate.shippingService || shippingUpdate.shippingCourier} (Ongkir: ${formatIdr(shippingUpdate.shippingCost)})`,
+      `• Metode Bayar: ${PAYMENT_METHOD_LABELS[shippingUpdate.paymentMethod || baseOrd.paymentMethod]}`,
+      `• Total Tagihan Terbaru (termasuk PPN & Ongkir): ${formatIdr(nextTotal)}`,
+      "",
+      `Kode QR pengiriman & formulir POS sudah langsung diperbarui otomatis dan siap diproses!`,
     ].join("\n");
     confidence = 0.95;
+  } else if (isShippingInquiry) {
+    detectedIntent = "shipping_inquiry";
+    replyText = buildShippingKnowledgeReply({
+      message: rawMsg,
+      customerName: params.customerName,
+      workspaceName: storeName,
+      couriers: params.couriers,
+      greetingSalutation,
+    });
+    confidence = 0.95;
+    trace.push({
+      agentKey: "knowledge_learner",
+      agentName: "Logistics & Courier Knowledge Agent",
+      action: `Menyajikan pilihan biaya pengiriman, COD, asuransi & cut-off dari ${resolveActiveCouriers(params.couriers).length} kurir aktif di Master Data.`,
+      status: "ok",
+    });
   } else if (isOrderTracking) {
     detectedIntent = "order_tracking";
     replyText = `${greetingSalutation} Untuk pengecekan status pesanan atau nomor resi, Kakak bisa kirimkan nomor Invoice (contoh: INV-2026...) atau scan kode QR pada label pesanan Kakak. Tim kami & sistem ${storeName} siap membantu memastikan pengiriman Kakak aman sampai tujuan!`;
@@ -545,7 +1163,7 @@ export function orchestrateMultiAgentReply(params: {
       "",
       list,
       "",
-      `Untuk langsung memesan, Kakak cukup balas dengan menyebutkan jumlah & nama barang, alamat pengiriman, serta metode pembayaran (QRIS / Transfer Bank / COD).`,
+      `Untuk langsung memesan (otomatis terisi ke POS & Label QR), Kakak cukup balas dengan: jumlah & nama barang, alamat pengiriman lengkap, pilihan kurir (JNE/J&T/SiCepat/Kurir Toko), serta metode pembayaran (QRIS / Transfer / COD).`,
     ].join("\n");
     confidence = 0.94;
   } else if (isOperationalFaq) {
@@ -555,11 +1173,11 @@ export function orchestrateMultiAgentReply(params: {
       ? `${greetingSalutation} ${sopHint}\n\nAda informasi lain yang masih perlu kami bantu jelaskan, Kak?`
       : [
           `${greetingSalutation} Berikut informasi layanan ${storeName}:`,
-          `• Layanan Chat & Order Otomatis aktif 24/7 (pengiriman same-day untuk order terkonfirmasi sebelum pukul 15.00 WIB).`,
-          `• Ekspedisi tersedia: JNE, J&T, SiCepat, dan Kurir Toko Same-Day.`,
-          `• Pembayaran: QRIS, Transfer Bank (BCA/Mandiri), Tunai, dan COD (sesuai ketentuan wilayah).`,
+          `• Layanan Chat & Order Otomatis aktif 24/7 (pengiriman same-day untuk order terkonfirmasi sebelum pukul 16.00 WIB).`,
+          `• Ekspedisi tersedia: JNE, J&T Express (bisa COD), SiCepat, dan Kurir Toko Same-Day.`,
+          `• Pembayaran: QRIS, Transfer Bank (BCA/Mandiri), Tunai, dan COD.`,
           "",
-          `Apakah Kakak ingin mengecek ongkir ke kota tujuan atau langsung membuat pesanan?`,
+          `Apakah Kakak ingin mengecek pilihan ongkir ke kota tujuan atau langsung membuat pesanan?`,
         ].join("\n");
     confidence = 0.93;
   } else if (matchedKnowledge.length > 0) {
@@ -570,8 +1188,8 @@ export function orchestrateMultiAgentReply(params: {
   } else {
     detectedIntent = "clarification";
     replyText = isGreetingPrefix
-      ? `${greetingSalutation} Terima kasih sudah menghubungi ${storeName}. Supaya kami bisa membantu dengan tepat, apakah Kakak ingin menanyakan info produk/stok, status pesanan, penggunaan layanan, atau ingin berbicara dengan Admin kami?`
-      : `Halo Kak ${params.customerName}, terima kasih sudah menghubungi ${storeName}. Supaya jawaban kami tepat sesuai kebutuhan Kakak, boleh dijelaskan sedikit apakah ini terkait informasi produk/harga, pengiriman pesanan, atau bantuan teknis? Jika butuh penanganan khusus dari Admin, cukup ketik "Hubungkan ke Admin" ya Kak.`;
+      ? `${greetingSalutation} Terima kasih sudah menghubungi ${storeName}. Supaya kami bisa membantu dengan tepat, apakah Kakak ingin menanyakan info produk/stok, pilihan ongkir ekspedisi, status pesanan, atau ingin berbicara dengan Admin kami?`
+      : `Halo Kak ${params.customerName}, terima kasih sudah menghubungi ${storeName}. Supaya jawaban kami tepat sesuai kebutuhan Kakak, boleh dijelaskan sedikit apakah ini terkait informasi produk/harga, pilihan ongkir & pengiriman, atau bantuan teknis? Jika butuh penanganan khusus dari Admin, cukup ketik "Hubungkan ke Admin" ya Kak.`;
     confidence = 0.85;
   }
 
@@ -614,7 +1232,10 @@ export function orchestrateMultiAgentReply(params: {
     detectedIntent,
     escalationRequired: false,
     escalationReason: null,
+    followUpStage,
+    suggestedProducts,
     extractedOrder,
+    shippingUpdate,
     fraud,
     learnedKnowledgeCandidate,
     agentTrace: trace,
@@ -738,6 +1359,23 @@ export function buildDoubleEntryForOrder(order: PosOrderRecord): Array<Omit<Acco
     });
   }
 
+  const shippingFee = Math.max(0, order.shippingCost ?? 0);
+  if (shippingFee > 0) {
+    lines.push({
+      entryNumber,
+      entryDate,
+      accountCode: "4200",
+      accountName: "Pendapatan Pengiriman / Ongkir",
+      accountType: "revenue",
+      debit: 0,
+      credit: shippingFee,
+      referenceType: "pos_order",
+      referenceId: order.id,
+      description: `Ongkir ${order.shippingService || order.shippingCourier || "Ekspedisi"} — ${order.invoiceNumber}`,
+      aiVerified: true,
+    });
+  }
+
   if (totalCogs > 0) {
     lines.push(
       {
@@ -782,6 +1420,9 @@ export function buildOrderRecord(params: {
   customerPhone: string | null;
   shippingAddress: string;
   shippingCourier?: string | null;
+  shippingService?: string | null;
+  shippingCost?: number;
+  shippingWeightKg?: number;
   channel: ChannelType;
   paymentMethod: PaymentMethod;
   paymentStatus?: PosOrderRecord["paymentStatus"];
@@ -813,7 +1454,8 @@ export function buildOrderRecord(params: {
   const taxable = Math.max(0, subtotal - discountAmount);
   const taxRate = params.taxRate ?? 0.11;
   const taxAmount = Math.round(taxable * taxRate);
-  const totalAmount = taxable + taxAmount;
+  const shippingCost = Math.max(0, params.shippingCost ?? 0);
+  const totalAmount = taxable + taxAmount + shippingCost;
   const qrPayload = buildInvoiceQrPayload({
     invoiceNumber,
     customerName: params.customerName,
@@ -845,7 +1487,10 @@ export function buildOrderRecord(params: {
     qrPayload,
     aiGenerated: params.aiGenerated,
     fraudRiskScore: params.fraudRiskScore ?? 5,
-    shippingCourier: params.shippingCourier ?? "JNE Reguler",
+    shippingCourier: params.shippingCourier ?? "JNE Express",
+    shippingService: params.shippingService ?? null,
+    shippingCost,
+    shippingWeightKg: params.shippingWeightKg ?? Math.max(1, orderItems.reduce((s, i) => s + i.quantity, 0)),
     trackingCode,
     paidAt: paymentStatus === "paid" ? now : null,
     notes: params.notes ?? null,

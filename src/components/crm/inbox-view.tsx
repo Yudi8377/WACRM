@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowLeft,
+  BellRing,
   Bot,
   Check,
   CheckCheck,
@@ -18,6 +19,7 @@ import {
   StickyNote,
   Tag,
   Trash2,
+  Truck,
   UserCheck,
   X,
   Zap,
@@ -51,7 +53,7 @@ interface InboxViewProps {
   members: TeamMemberRecord[];
   initialConversationId?: string | null;
   onRefresh: () => Promise<void>;
-  onOpenPos?: () => void;
+  onOpenPos?: (orderId?: string) => void;
   onToast: (message: string, tone?: "success" | "error") => void;
 }
 
@@ -115,9 +117,13 @@ export function InboxView({
 
   const [newTagInput, setNewTagInput] = useState("");
   const [aiAutoReplyOn, setAiAutoReplyOn] = useState(true);
+  const [aiAutoFollowUpOn, setAiAutoFollowUpOn] = useState(true);
+  const [idleThresholdSec, setIdleThresholdSec] = useState<number>(1800); // default 30 menit (or 15 detik in demo test)
   const [runningAi, setRunningAi] = useState(false);
+  const [runningFollowUp, setRunningFollowUp] = useState(false);
   const [simCustomerMsg, setSimCustomerMsg] = useState("");
   const [showAiSim, setShowAiSim] = useState(false);
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const [lastAiResult, setLastAiResult] = useState<{
     agentTrace: Array<{
       agentName: string;
@@ -126,12 +132,16 @@ export function InboxView({
     }>;
     fraudRiskScore: number;
     createdOrder: PosOrderRecord | null;
+    updatedOrder?: PosOrderRecord | null;
     escalationRequired?: boolean;
     escalationReason?: string | null;
     detectedIntent?: string;
+    followUpStage?: "idle_nudge" | "abandon_cross_sell" | null;
+    suggestedProductsCount?: number;
   } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoHandledMsgIdsRef = useRef<Set<string>>(new Set());
+  const autoFollowUpHandledRef = useRef<Map<string, number>>(new Map());
   const autoRunInFlightRef = useRef<boolean>(false);
 
   useEffect(() => {
@@ -166,6 +176,90 @@ export function InboxView({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentDetail?.messages.length]);
 
+  async function reloadSelected() {
+    if (!selectedId) return;
+    const res = await adapter.loadConversationDetail(selectedId);
+    setDetail(res);
+    setLoadedDetailId(selectedId);
+  }
+
+  async function handleRunProactiveFollowUp(attemptNumber: 1 | 2, isAuto = false) {
+    if (!selectedId || runningFollowUp || !adapter.runAiProactiveFollowUp) return;
+    setRunningFollowUp(true);
+    try {
+      const res = await adapter.runAiProactiveFollowUp(selectedId, attemptNumber);
+      setLastAiResult({
+        agentTrace: res.agentTrace,
+        fraudRiskScore: res.fraudRiskScore,
+        createdOrder: res.createdOrder,
+        updatedOrder: res.updatedOrder,
+        detectedIntent: res.detectedIntent,
+        followUpStage: res.followUpStage,
+        suggestedProductsCount: res.suggestedProducts?.length ?? 0,
+      });
+      await Promise.all([reloadSelected(), onRefresh()]);
+      onToast(
+        attemptNumber === 1
+          ? `${isAuto ? "[Auto] " : ""}AI mengirim follow-up sopan menanyakan ketertarikan pelanggan terhadap produk.`
+          : `${isAuto ? "[Auto] " : ""}AI menawarkan ${res.suggestedProducts?.length ?? 3} produk alternatif dari katalog admin.`,
+      );
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : "Gagal menjalankan follow-up AI.", "error");
+    } finally {
+      setRunningFollowUp(false);
+    }
+  }
+
+  async function handleRunAiAutoReply(simulatedInbound?: string) {
+    if (!selectedId || runningAi) return;
+    setRunningAi(true);
+    try {
+      const res = await adapter.runAiAutoReply(selectedId, simulatedInbound);
+      setLastAiResult({
+        agentTrace: res.agentTrace,
+        fraudRiskScore: res.fraudRiskScore,
+        createdOrder: res.createdOrder,
+        updatedOrder: res.updatedOrder ?? null,
+        escalationRequired: res.escalationRequired,
+        escalationReason: res.escalationReason,
+        detectedIntent: res.detectedIntent,
+        followUpStage: res.followUpStage ?? null,
+        suggestedProductsCount: res.suggestedProducts?.length ?? 0,
+      });
+      setSimCustomerMsg("");
+      await Promise.all([reloadSelected(), onRefresh()]);
+      if (res.createdOrder) {
+        onToast(
+          `AI mengisi otomatis POS & QR (${res.createdOrder.invoiceNumber} · ${res.createdOrder.shippingService || res.createdOrder.shippingCourier})!`,
+        );
+      } else if (res.updatedOrder) {
+        onToast(
+          `AI memperbarui otomatis Alamat & Ongkir pada POS ${res.updatedOrder.invoiceNumber} + Label QR terbaru!`,
+        );
+      } else if (res.followUpStage === "abandon_cross_sell") {
+        onToast(
+          `AI Sales sopan menangkap batal checkout & menawarkan ${res.suggestedProducts?.length ?? 3} produk alternatif dari katalog admin.`,
+        );
+      } else if (res.escalationRequired) {
+        onToast(
+          `Eskalasi Admin: ${res.escalationReason || "Pesan memerlukan keputusan admin manusia."}`,
+          "error",
+        );
+      } else if (res.securityIncident) {
+        onToast(
+          `Fraud Sentinel memblokir/menandai risiko (${res.fraudRiskScore}/100) & mengirim proteksi otomatis.`,
+          "error",
+        );
+      } else {
+        onToast("AI menjawab otomatis sesuai konteks percakapan.");
+      }
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : "Gagal menjalankan Multi-Agent AI.", "error");
+    } finally {
+      setRunningAi(false);
+    }
+  }
+
   // ZERO-CLICK AUTOMATIC AI AUTO-REPLY:
   // When AI Auto-Reply is ON and the latest message in the active conversation is an
   // unanswered customer inbound message (and not already escalated to human admin),
@@ -195,6 +289,54 @@ export function InboxView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiAutoReplyOn, currentDetail?.conversation.id, currentDetail?.messages.length]);
 
+  // Periodic timer for real-time idle detection & automated proactive follow-up sweep
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setNowTick(Date.now());
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  // AUTOMATIC PROACTIVE FOLLOW-UP & CROSS-SELL SWEEP:
+  // When a prospective customer is slow to reply after admin/AI sent an outbound response,
+  // AI automatically sends a polite clarification follow-up (attempt 1) and, if still unresponsive,
+  // offers alternative products from the admin's catalog (attempt 2, capped at max 2x anti-spam).
+  useEffect(() => {
+    if (
+      !aiAutoFollowUpOn ||
+      !currentDetail ||
+      runningAi ||
+      runningFollowUp ||
+      !adapter.runAiProactiveFollowUp
+    ) {
+      return;
+    }
+    const conv = currentDetail.conversation;
+    if (conv.status === "resolved" || conv.tags.includes("perlu-admin")) return;
+    const msgs = currentDetail.messages;
+    if (msgs.length === 0) return;
+
+    const lastMsg = msgs[msgs.length - 1];
+    if (lastMsg.direction !== "outbound") return;
+
+    const lastTs = Date.parse(lastMsg.providerTimestamp || lastMsg.createdAt);
+    if (Number.isNaN(lastTs)) return;
+    const elapsedSec = (nowTick - lastTs) / 1000;
+    if (elapsedSec < idleThresholdSec) return;
+
+    const alreadyAttempt1 = conv.tags.includes("ai-followup-1");
+    const alreadyAttempt2 = conv.tags.includes("ai-cross-sell");
+    if (alreadyAttempt2) return; // Anti-spam cap: max 2 follow-ups
+
+    const nextAttempt: 1 | 2 = alreadyAttempt1 ? 2 : 1;
+    const guardKey = `${conv.id}:${lastMsg.id}:${nextAttempt}`;
+    if (autoFollowUpHandledRef.current.has(guardKey)) return;
+
+    autoFollowUpHandledRef.current.set(guardKey, Date.now());
+    void handleRunProactiveFollowUp(nextAttempt, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiAutoFollowUpOn, idleThresholdSec, nowTick, currentDetail?.conversation.id, currentDetail?.messages.length]);
+
   const filtered = conversations.filter((conv) => {
     if (statusFilter !== "all" && conv.status !== statusFilter) return false;
     if (channelFilter !== "all" && conv.channel !== channelFilter) return false;
@@ -209,52 +351,6 @@ export function InboxView({
     (listPage - 1) * LIST_PAGE_SIZE,
     listPage * LIST_PAGE_SIZE,
   );
-
-  async function reloadSelected() {
-    if (!selectedId) return;
-    const res = await adapter.loadConversationDetail(selectedId);
-    setDetail(res);
-    setLoadedDetailId(selectedId);
-  }
-
-  async function handleRunAiAutoReply(simulatedInbound?: string) {
-    if (!selectedId || runningAi) return;
-    setRunningAi(true);
-    try {
-      const res = await adapter.runAiAutoReply(selectedId, simulatedInbound);
-      setLastAiResult({
-        agentTrace: res.agentTrace,
-        fraudRiskScore: res.fraudRiskScore,
-        createdOrder: res.createdOrder,
-        escalationRequired: res.escalationRequired,
-        escalationReason: res.escalationReason,
-        detectedIntent: res.detectedIntent,
-      });
-      setSimCustomerMsg("");
-      await Promise.all([reloadSelected(), onRefresh()]);
-      if (res.createdOrder) {
-        onToast(
-          `AI membalas otomatis + membuat Invoice POS ${res.createdOrder.invoiceNumber} & Label Pengiriman QR!`,
-        );
-      } else if (res.escalationRequired) {
-        onToast(
-          `Eskalasi Admin: ${res.escalationReason || "Pesan memerlukan keputusan admin manusia."}`,
-          "error",
-        );
-      } else if (res.securityIncident) {
-        onToast(
-          `Fraud Sentinel memblokir/menandai risiko (${res.fraudRiskScore}/100) & mengirim proteksi otomatis.`,
-          "error",
-        );
-      } else {
-        onToast("AI menjawab otomatis sesuai konteks percakapan.");
-      }
-    } catch (err) {
-      onToast(err instanceof Error ? err.message : "Gagal menjalankan Multi-Agent AI.", "error");
-    } finally {
-      setRunningAi(false);
-    }
-  }
 
   async function handleSend(e: FormEvent) {
     e.preventDefault();
@@ -491,6 +587,15 @@ export function InboxView({
                           Perlu Admin
                         </span>
                       )}
+                      {conv.tags.includes("ai-cross-sell") ? (
+                        <span className="inline-flex rounded bg-violet-100 px-1.5 py-0.2 text-[10px] font-bold text-violet-800">
+                          Cross-Sell AI
+                        </span>
+                      ) : conv.tags.includes("ai-followup-1") ? (
+                        <span className="inline-flex rounded bg-cyan-100 px-1.5 py-0.2 text-[10px] font-bold text-cyan-800">
+                          Follow-Up #1
+                        </span>
+                      ) : null}
                     </div>
                     <p className="mt-1 truncate text-xs text-slate-600">
                       {conv.lastMessageText || conv.subject || "Belum ada pesan"}
@@ -635,7 +740,7 @@ export function InboxView({
               )}
 
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => setAiAutoReplyOn((v) => !v)}
@@ -646,14 +751,64 @@ export function InboxView({
                     }`}
                   >
                     <Bot className="h-3.5 w-3.5" />
-                    {aiAutoReplyOn ? "AI Auto-Reply Otomatis AKTIF (Tanpa Klik)" : "AI Auto-Reply Dijeda"}
+                    {aiAutoReplyOn ? "AI Auto-Reply AKTIF" : "AI Auto-Reply Dijeda"}
                   </button>
-                  <span className="hidden text-[11px] text-slate-600 lg:inline">
-                    Chat masuk dibalas AI otomatis sesuai konteks. Topik kredensial/refund otomatis dieskalasi ke Admin.
-                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => setAiAutoFollowUpOn((v) => !v)}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold transition ${
+                      aiAutoFollowUpOn
+                        ? "bg-indigo-600 text-white shadow-xs"
+                        : "bg-slate-200 text-slate-600"
+                    }`}
+                    title="Jika calon pelanggan lambat membalas, AI otomatis mengirim follow-up klarifikasi & menawarkan produk lain jika batal checkout (maks 2x anti-spam)"
+                  >
+                    <BellRing className="h-3.5 w-3.5" />
+                    {aiAutoFollowUpOn ? "Auto Follow-Up & Cross-Sell ON" : "Auto Follow-Up OFF"}
+                  </button>
+
+                  {aiAutoFollowUpOn && (
+                    <select
+                      aria-label="Jeda tunggu respon pelanggan"
+                      value={idleThresholdSec}
+                      onChange={(e) => setIdleThresholdSec(Number(e.target.value))}
+                      className="rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-indigo-800 outline-none"
+                    >
+                      <option value={15}>Jeda Uji: 15 dtk</option>
+                      <option value={900}>Jeda Idle: 15 mnt</option>
+                      <option value={1800}>Jeda Idle: 30 mnt</option>
+                      <option value={3600}>Jeda Idle: 1 jam</option>
+                      <option value={7200}>Jeda Idle: 2 jam</option>
+                    </select>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5">
+                  {adapter.runAiProactiveFollowUp && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={runningFollowUp || runningAi}
+                        onClick={() => void handleRunProactiveFollowUp(1, false)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-[11px] font-bold text-indigo-800 hover:bg-indigo-100 disabled:opacity-50"
+                        title="Kirim pesan follow-up sopan menanyakan apakah pelanggan masih tertarik"
+                      >
+                        <BellRing className="h-3.5 w-3.5" />
+                        Follow-Up Idle
+                      </button>
+                      <button
+                        type="button"
+                        disabled={runningFollowUp || runningAi}
+                        onClick={() => void handleRunProactiveFollowUp(2, false)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-bold text-violet-800 hover:bg-violet-100 disabled:opacity-50"
+                        title="Tawarkan produk alternatif dari katalog admin jika pelanggan ragu/batal checkout"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Cross-Sell Produk
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     disabled={runningAi}
@@ -661,7 +816,7 @@ export function InboxView({
                     className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 shadow-xs transition hover:bg-emerald-50 disabled:opacity-50"
                   >
                     <Sparkles className={`h-3.5 w-3.5 ${runningAi ? "animate-spin" : ""}`} />
-                    {runningAi ? "AI Menganalisis..." : "Jalankan AI Ulang"}
+                    {runningAi ? "AI Menganalisis..." : "Jalankan AI"}
                   </button>
                   <button
                     type="button"
@@ -669,7 +824,7 @@ export function InboxView({
                     className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-slate-800"
                   >
                     <QrCode className="h-3.5 w-3.5" />
-                    Simulasi Chat Masuk
+                    Simulasi Chat
                   </button>
                 </div>
               </div>
@@ -683,31 +838,56 @@ export function InboxView({
                       onClick={() => void handleRunAiAutoReply("selamat pagi..")}
                       className="rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-800 hover:bg-slate-200"
                     >
-                      Uji Sapaan (&ldquo;selamat pagi..&rdquo;)
+                      Sapaan (&ldquo;selamat pagi..&rdquo;)
                     </button>
                     <button
                       type="button"
                       disabled={runningAi}
                       onClick={() =>
                         void handleRunAiAutoReply(
-                          "Kak, apakah aplikasi Android WACRM bisa dipakai bersamaan oleh 5 agen CS?",
+                          "Kak, ongkir pakai JNE, J&T COD, atau SiCepat berapa per kg? Cut-off pickup jam berapa & ada asuransi?",
                         )
                       }
-                      className="rounded-lg bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold text-cyan-800 hover:bg-cyan-100"
+                      className="rounded-lg bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-800 hover:bg-sky-100"
                     >
-                      Uji Multi-Agen Android (5 CS)
+                      <Truck className="mr-1 inline h-3 w-3" />
+                      Uji Tanya Ongkir & Kurir
                     </button>
                     <button
                       type="button"
                       disabled={runningAi}
                       onClick={() =>
                         void handleRunAiAutoReply(
-                          "Halo kak, saya mau pesan 2 Kopi Arabika Gayo, kirim ke Jl. Dhoho No. 12 Kota Kediri, bayar QRIS ya!",
+                          "Halo kak, saya mau pesan 2 Kopi Arabika Gayo, kirim ke Jl. Dhoho No. 12 Kota Kediri pakai J&T Express, bayar QRIS ya!",
                         )
                       }
                       className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100"
                     >
-                      Uji Order + Label QR
+                      Checkout + Alamat &rarr; Auto POS & QR
+                    </button>
+                    <button
+                      type="button"
+                      disabled={runningAi}
+                      onClick={() =>
+                        void handleRunAiAutoReply(
+                          "Alamat kirim: Jl. Brawijaya No. 45, Mojoroto, Kota Kediri, pakai SiCepat Best, bayar QRIS",
+                        )
+                      }
+                      className="rounded-lg bg-teal-50 px-2.5 py-1 text-[11px] font-semibold text-teal-800 hover:bg-teal-100"
+                    >
+                      Kirim Alamat Susulan &rarr; Update POS & QR
+                    </button>
+                    <button
+                      type="button"
+                      disabled={runningAi}
+                      onClick={() =>
+                        void handleRunAiAutoReply(
+                          "Maaf kak, kayaknya belum jadi checkout dulu ya, budgetnya belum pas buat sekarang.",
+                        )
+                      }
+                      className="rounded-lg bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-800 hover:bg-violet-100"
+                    >
+                      Batal Checkout &rarr; AI Cross-Sell Produk Lain
                     </button>
                     <button
                       type="button"
@@ -719,14 +899,14 @@ export function InboxView({
                       }
                       className="rounded-lg bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
                     >
-                      Uji Eskalasi ke Admin
+                      Uji Eskalasi Admin
                     </button>
                   </div>
                   <div className="flex gap-1.5">
                     <input
                       value={simCustomerMsg}
                       onChange={(e) => setSimCustomerMsg(e.target.value)}
-                      placeholder="Ketik pesan masuk pelanggan apa saja — AI langsung menganalisis & membalas otomatis..."
+                      placeholder="Ketik pesan masuk pelanggan apa saja — AI langsung menganalisis, membalas, atau mengisi POS & QR otomatis..."
                       className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-900"
                     />
                     <button
@@ -747,6 +927,14 @@ export function InboxView({
                     <span className="font-bold text-emerald-700">
                       Jejak Swarm: {lastAiResult.agentTrace.length} agen
                     </span>
+                    {lastAiResult.followUpStage && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 font-semibold text-violet-800">
+                        <BellRing className="h-3 w-3" />
+                        {lastAiResult.followUpStage === "abandon_cross_sell"
+                          ? `Cross-Sell (${lastAiResult.suggestedProductsCount ?? 3} produk alternatif)`
+                          : "Follow-Up Klarifikasi Idle"}
+                      </span>
+                    )}
                     <span
                       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold ${
                         lastAiResult.fraudRiskScore >= 50
@@ -758,14 +946,17 @@ export function InboxView({
                       Risiko Fraud: {lastAiResult.fraudRiskScore}/100
                     </span>
                   </div>
-                  {lastAiResult.createdOrder && onOpenPos && (
+                  {(lastAiResult.createdOrder || lastAiResult.updatedOrder) && onOpenPos && (
                     <button
                       type="button"
-                      onClick={onOpenPos}
+                      onClick={() =>
+                        onOpenPos((lastAiResult.createdOrder ?? lastAiResult.updatedOrder)?.id)
+                      }
                       className="inline-flex items-center gap-1 rounded-lg bg-cyan-600 px-2.5 py-1 font-bold text-white hover:bg-cyan-700"
                     >
                       <QrCode className="h-3 w-3" />
-                      Lihat QR {lastAiResult.createdOrder.invoiceNumber}
+                      {lastAiResult.updatedOrder ? "POS & QR Terupdate: " : "Buka POS & QR: "}
+                      {(lastAiResult.createdOrder ?? lastAiResult.updatedOrder)?.invoiceNumber}
                     </button>
                   )}
                 </div>

@@ -393,6 +393,20 @@ export interface MasterUnitRecord {
   name: string;
 }
 
+export interface CourierServiceTier {
+  id: string;
+  serviceName: string;
+  ratePerKg: number;
+  minWeightKg: number;
+  maxWeightKg: number;
+  estimatedDays: string;
+  coverageZones: string;
+  codSupported: boolean;
+  codFeePct: number;
+  insuranceAvailable: boolean;
+  insuranceFeePct: number;
+}
+
 export interface MasterCourierRecord {
   id: string;
   code: string;
@@ -401,6 +415,16 @@ export interface MasterCourierRecord {
   baseRate: number;
   estimatedDays: string;
   isActive: boolean;
+  serviceTiers?: CourierServiceTier[];
+  pickupSchedule?: string;
+  cutoffTime?: string;
+  codSupported?: boolean;
+  insuranceSupported?: boolean;
+  packagingNotes?: string;
+  claimPolicy?: string;
+  trackingUrlTemplate?: string;
+  maxDimensionsCm?: string;
+  aiShippingNotes?: string;
 }
 
 export interface MasterPaymentAccountRecord {
@@ -485,6 +509,8 @@ export interface ErpProductRecord {
   stockQty: number;
   minStock: number;
   isActive: boolean;
+  imageUrl?: string | null;
+  weightGrams?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -549,6 +575,9 @@ export interface PosOrderRecord {
   aiGenerated: boolean;
   fraudRiskScore: number;
   shippingCourier?: string | null;
+  shippingService?: string | null;
+  shippingCost?: number;
+  shippingWeightKg?: number;
   trackingCode?: string | null;
   paidAt?: string | null;
   notes: string | null;
@@ -606,7 +635,10 @@ export interface AiAutoReplyExecutionResult {
   detectedIntent?: string;
   escalationRequired?: boolean;
   escalationReason?: string | null;
+  followUpStage?: "idle_nudge" | "abandon_cross_sell" | null;
+  suggestedProducts?: ErpProductRecord[];
   createdOrder: PosOrderRecord | null;
+  updatedOrder?: PosOrderRecord | null;
   learnedKnowledge: AiKnowledgeItemRecord | null;
   securityIncident: AiSecurityIncidentRecord | null;
 }

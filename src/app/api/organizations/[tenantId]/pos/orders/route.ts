@@ -17,6 +17,10 @@ const createOrderSchema = z.object({
   paymentStatus: z.enum(["unpaid", "paid", "refunded", "flagged"]).optional(),
   discountAmount: z.number().min(0).default(0),
   taxRate: z.number().min(0).max(0.3).default(0.11),
+  shippingCourier: z.string().trim().max(120).optional().nullable(),
+  shippingService: z.string().trim().max(120).optional().nullable(),
+  shippingCost: z.number().min(0).default(0),
+  shippingWeightKg: z.number().min(0).max(500).default(1),
   aiGenerated: z.boolean().default(false),
   conversationId: z.string().uuid().optional().nullable(),
   contactId: z.string().uuid().optional().nullable(),
@@ -129,7 +133,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
         const discountAmount = Math.min(subtotal, Math.max(0, input.discountAmount));
         const taxable = Math.max(0, subtotal - discountAmount);
         const taxAmount = Math.round(taxable * input.taxRate);
-        const totalAmount = taxable + taxAmount;
+        const shippingCost = Math.max(0, Math.round(input.shippingCost ?? 0));
+        const totalAmount = taxable + taxAmount + shippingCost;
+        const shippingCourier = input.shippingCourier ?? undefined;
+        const shippingService = input.shippingService ?? undefined;
+        const shippingWeightKg = input.shippingWeightKg ?? 1;
 
         const fraud = evaluateFraudRisk({
           message: `${input.customerName} ${input.notes ?? ""}`,
@@ -147,7 +155,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
           totalAmount,
           paymentMethod: input.paymentMethod,
           workspaceName,
+          shippingCourier,
+          shippingService,
+          shippingCost,
         });
+
+        const shippingNoteTag =
+          shippingCourier || shippingService || shippingCost > 0
+            ? `[Kurir: ${shippingCourier || "-"} ${shippingService || ""} | Ongkir: Rp ${shippingCost.toLocaleString("id-ID")} | ${shippingWeightKg} kg]`
+            : "";
+        const mergedNotes = [input.notes ?? "", shippingNoteTag].filter(Boolean).join(" ").trim() || null;
 
         const orderRes = await client.query(
           `INSERT INTO pos_orders
@@ -174,7 +191,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
             qrPayload,
             input.aiGenerated,
             fraud.riskScore,
-            input.notes ?? null,
+            mergedNotes,
           ],
         );
         const row = orderRes.rows[0];
@@ -238,6 +255,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
           subtotal,
           discountAmount,
           taxAmount,
+          shippingCourier,
+          shippingService,
+          shippingCost,
+          shippingWeightKg,
           totalAmount,
           paymentMethod: input.paymentMethod,
           paymentStatus,
@@ -245,7 +266,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
           qrPayload,
           aiGenerated: input.aiGenerated,
           fraudRiskScore: fraud.riskScore,
-          notes: input.notes ?? null,
+          notes: mergedNotes,
           items: insertedItems,
           createdAt: new Date(String(row.created_at)).toISOString(),
           updatedAt: new Date(String(row.updated_at)).toISOString(),

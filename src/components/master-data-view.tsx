@@ -1,12 +1,28 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
+  Bot,
   Boxes,
   Building2,
+  Calendar,
+  CheckCircle2,
   CreditCard,
+  Eye,
+  ImagePlus,
   Layers,
+  LayoutGrid,
+  List,
+  Mail,
+  MapPin,
+  Phone,
+  Plus,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
   Truck,
+  Upload,
+  User,
   Users,
   X,
 } from "lucide-react";
@@ -16,6 +32,7 @@ import {
   LIFECYCLE_LABELS,
   PAYMENT_METHOD_LABELS,
   type ContactRecord,
+  type CourierServiceTier,
   type ErpProductRecord,
   type ErpSupplierRecord,
   type LifecycleStage,
@@ -25,7 +42,9 @@ import {
   type MasterUnitRecord,
   type PaymentMethod,
 } from "@/lib/crm-types";
+import { sanitizeImageUrl, sanitizePhoneDigits, sanitizeTrackingUrl } from "@/lib/security";
 import {
+  buildCourierKnowledgeSummary,
   loadLocalMasterData,
   saveLocalMasterData,
   type LocalMasterDataState,
@@ -43,7 +62,54 @@ interface MasterDataViewProps {
 
 type MasterSubTab = "products" | "suppliers" | "customers" | "categories" | "couriers" | "payments";
 
-const PAGE_SIZE = 5;
+const PAGE_SIZE = 6;
+
+async function compressImageFileToDataUrl(file: File): Promise<string> {
+  if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)) {
+    throw new Error("Format foto tidak didukung. Gunakan PNG, JPG, atau WebP.");
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error("Ukuran foto maksimal 5 MB.");
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Gagal membaca file gambar."));
+    reader.onload = () => {
+      const rawUrl = String(reader.result ?? "");
+      const img = new Image();
+      img.onerror = () => reject(new Error("File bukan gambar yang valid."));
+      img.onload = () => {
+        const maxDim = 640;
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          const ratio = Math.min(maxDim / width, maxDim / height);
+          width = Math.max(1, Math.round(width * ratio));
+          height = Math.max(1, Math.round(height * ratio));
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(rawUrl);
+          return;
+        }
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL("image/jpeg", 0.82);
+        const safe = sanitizeImageUrl(compressed);
+        if (!safe) {
+          reject(new Error("URL foto ditolak oleh filter keamanan."));
+          return;
+        }
+        resolve(safe);
+      };
+      img.src = rawUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 export function MasterDataView({
   adapter,
@@ -54,6 +120,7 @@ export function MasterDataView({
   onToast,
 }: MasterDataViewProps) {
   const [subTab, setSubTab] = useState<MasterSubTab>("products");
+  const [productLayout, setProductLayout] = useState<"cards" | "table">("cards");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -61,11 +128,15 @@ export function MasterDataView({
     loadLocalMasterData(adapter.tenantId),
   );
 
-  // Modal state ("none" | "create" | "edit")
+  // Modal states
   const [modalMode, setModalMode] = useState<"none" | "create" | "edit">("none");
+  const [viewSupplier, setViewSupplier] = useState<ErpSupplierRecord | null>(null);
+  const [viewCourier, setViewCourier] = useState<MasterCourierRecord | null>(null);
   const [saving, setSaving] = useState(false);
+  const [syncingCourierAi, setSyncingCourierAi] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Form states for Product
+  // Form states for Product (+ Card Picture & Weight)
   const [pSku, setPSku] = useState("");
   const [pName, setPName] = useState("");
   const [pCategory, setPCategory] = useState("Umum");
@@ -74,7 +145,10 @@ export function MasterDataView({
   const [pCost, setPCost] = useState("0");
   const [pStock, setPStock] = useState("10");
   const [pMinStock, setPMinStock] = useState("5");
+  const [pWeightGrams, setPWeightGrams] = useState("500");
+  const [pImageUrl, setPImageUrl] = useState<string>("");
   const [pDesc, setPDesc] = useState("");
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   // Form states for Supplier
   const [sName, setSName] = useState("");
@@ -98,12 +172,22 @@ export function MasterDataView({
   const [unitCode, setUnitCode] = useState("");
   const [unitName, setUnitName] = useState("");
 
-  // Form states for Courier
+  // Form states for Courier (Multi-tier pricing + AI logistics knowledge)
   const [curCode, setCurCode] = useState("");
   const [curName, setCurName] = useState("");
   const [curService, setCurService] = useState("Reguler");
   const [curRate, setCurRate] = useState("15000");
   const [curEta, setCurEta] = useState("2-3 hari");
+  const [curCodSupported, setCurCodSupported] = useState(true);
+  const [curInsuranceSupported, setCurInsuranceSupported] = useState(true);
+  const [curTrackingUrl, setCurTrackingUrl] = useState("https://cekresi.com/?noresi={resi}");
+  const [curPickupSchedule, setCurPickupSchedule] = useState("Senin–Sabtu 10.00 & 16.00 WIB");
+  const [curCutoff, setCurCutoff] = useState("16.00 WIB");
+  const [curPackaging, setCurPackaging] = useState("Bubble wrap 2 lapis + dus tebal; cairan wajib segel rapat.");
+  const [curMaxDimensions, setCurMaxDimensions] = useState("60x60x60 cm (volumetrik /6000)");
+  const [curClaimPolicy, setCurClaimPolicy] = useState("Klaim maksimal 2x24 jam setelah paket diterima disertai video unboxing.");
+  const [curAiNotes, setCurAiNotes] = useState("");
+  const [curTiers, setCurTiers] = useState<CourierServiceTier[]>([]);
 
   // Form states for Payment Account
   const [payMethod, setPayMethod] = useState<PaymentMethod>("bank_transfer");
@@ -123,13 +207,50 @@ export function MasterDataView({
     setModalMode("none");
   }
 
+  async function handlePhotoUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPhoto(true);
+    try {
+      const dataUrl = await compressImageFileToDataUrl(file);
+      setPImageUrl(dataUrl);
+      onToast("Card Picture berhasil dimuat & dioptimasi.");
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : "Gagal memuat gambar.", "error");
+    } finally {
+      setUploadingPhoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function syncCouriersToAiKnowledge(couriersToSync = localMaster.couriers) {
+    setSyncingCourierAi(true);
+    try {
+      const activeCouriers = couriersToSync.filter((c) => c.isActive);
+      const summary = buildCourierKnowledgeSummary(activeCouriers);
+      await adapter.addAiKnowledge({
+        sourceType: "sop",
+        title: `Pengetahuan Kurir & Tarif Pengiriman (${activeCouriers.length} Ekspedisi Aktif)`,
+        content: summary,
+        tags: ["kurir", "ekspedisi", "ongkir", "pengiriman", "cod", "asuransi"],
+      });
+      await adapter.runAiKnowledgeSync();
+      await onRefresh();
+      onToast(`Pengetahuan ${activeCouriers.length} kurir & tarif ongkir berhasil disinkronkan ke Multi-Agent AI!`);
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : "Gagal menyinkronkan pengetahuan kurir ke AI.", "error");
+    } finally {
+      setSyncingCourierAi(false);
+    }
+  }
+
   const q = search.trim().toLowerCase();
 
   const filteredProducts = products.filter(
     (p) => !q || `${p.sku} ${p.name} ${p.category}`.toLowerCase().includes(q),
   );
   const filteredSuppliers = suppliers.filter(
-    (s) => !q || `${s.name} ${s.contactPerson ?? ""} ${s.phone ?? ""}`.toLowerCase().includes(q),
+    (s) => !q || `${s.name} ${s.contactPerson ?? ""} ${s.phone ?? ""} ${s.address ?? ""}`.toLowerCase().includes(q),
   );
   const filteredContacts = contacts.filter(
     (c) => !q || `${c.displayName} ${c.phoneE164 ?? ""} ${c.company ?? ""}`.toLowerCase().includes(q),
@@ -138,7 +259,11 @@ export function MasterDataView({
     (c) => !q || `${c.name} ${c.description}`.toLowerCase().includes(q),
   );
   const filteredCouriers = localMaster.couriers.filter(
-    (c) => !q || `${c.code} ${c.name} ${c.serviceType}`.toLowerCase().includes(q),
+    (c) =>
+      !q ||
+      `${c.code} ${c.name} ${c.serviceType} ${c.pickupSchedule ?? ""} ${(c.serviceTiers ?? []).map((t) => `${t.serviceName} ${t.coverageZones}`).join(" ")}`
+        .toLowerCase()
+        .includes(q),
   );
   const filteredPayments = localMaster.paymentAccounts.filter(
     (p) => !q || `${p.providerName} ${p.accountNumber} ${p.accountHolder}`.toLowerCase().includes(q),
@@ -168,6 +293,8 @@ export function MasterDataView({
     setPCost("");
     setPStock("20");
     setPMinStock("5");
+    setPWeightGrams("500");
+    setPImageUrl("");
     setPDesc("");
 
     setSName("");
@@ -191,9 +318,46 @@ export function MasterDataView({
 
     setCurCode("");
     setCurName("");
-    setCurService("Reguler");
+    setCurService("Reguler & Express");
     setCurRate("18000");
     setCurEta("2-3 hari");
+    setCurCodSupported(true);
+    setCurInsuranceSupported(true);
+    setCurTrackingUrl("https://cekresi.com/?noresi={resi}");
+    setCurPickupSchedule("Senin–Sabtu 10.00 & 16.00 WIB");
+    setCurCutoff("16.00 WIB");
+    setCurPackaging("Bubble wrap 2 lapis + dus kuat; barang pecah belah wajib packing kayu.");
+    setCurMaxDimensions("60x60x60 cm (volumetrik /6000)");
+    setCurClaimPolicy("Klaim maksimal 2x24 jam disertai foto resi & video unboxing.");
+    setCurAiNotes("");
+    setCurTiers([
+      {
+        id: `tier-${Date.now()}-1`,
+        serviceName: "Reguler",
+        ratePerKg: 18000,
+        minWeightKg: 1,
+        maxWeightKg: 50,
+        estimatedDays: "2-3 hari",
+        coverageZones: "Seluruh Indonesia",
+        codSupported: true,
+        codFeePct: 3,
+        insuranceAvailable: true,
+        insuranceFeePct: 0.2,
+      },
+      {
+        id: `tier-${Date.now()}-2`,
+        serviceName: "Express / Kilat",
+        ratePerKg: 30000,
+        minWeightKg: 1,
+        maxWeightKg: 30,
+        estimatedDays: "1 hari",
+        coverageZones: "Kota besar Jawa, Bali & Sumatera",
+        codSupported: false,
+        codFeePct: 0,
+        insuranceAvailable: true,
+        insuranceFeePct: 0.2,
+      },
+    ]);
 
     setPayMethod("bank_transfer");
     setPayProvider("");
@@ -219,6 +383,8 @@ export function MasterDataView({
       setPCost(String(p.costPrice));
       setPStock(String(p.stockQty));
       setPMinStock(String(p.minStock));
+      setPWeightGrams(String(p.weightGrams ?? 500));
+      setPImageUrl(p.imageUrl ?? "");
       setPDesc(p.description);
     } else if (subTab === "suppliers") {
       const s = suppliers.find((x) => x.id === id);
@@ -251,6 +417,34 @@ export function MasterDataView({
       setCurService(cur.serviceType);
       setCurRate(String(cur.baseRate));
       setCurEta(cur.estimatedDays);
+      setCurCodSupported(Boolean(cur.codSupported));
+      setCurInsuranceSupported(Boolean(cur.insuranceSupported ?? true));
+      setCurTrackingUrl(cur.trackingUrlTemplate ?? "https://cekresi.com/?noresi={resi}");
+      setCurPickupSchedule(cur.pickupSchedule ?? "");
+      setCurCutoff(cur.cutoffTime ?? "");
+      setCurPackaging(cur.packagingNotes ?? "");
+      setCurMaxDimensions(cur.maxDimensionsCm ?? "");
+      setCurClaimPolicy(cur.claimPolicy ?? "");
+      setCurAiNotes(cur.aiShippingNotes ?? "");
+      setCurTiers(
+        cur.serviceTiers && cur.serviceTiers.length > 0
+          ? cur.serviceTiers
+          : [
+              {
+                id: `${cur.id}-default`,
+                serviceName: cur.serviceType || "Reguler",
+                ratePerKg: cur.baseRate,
+                minWeightKg: 1,
+                maxWeightKg: 50,
+                estimatedDays: cur.estimatedDays,
+                coverageZones: "Seluruh Indonesia",
+                codSupported: Boolean(cur.codSupported),
+                codFeePct: cur.codSupported ? 3 : 0,
+                insuranceAvailable: Boolean(cur.insuranceSupported ?? true),
+                insuranceFeePct: 0.2,
+              },
+            ],
+      );
     } else if (subTab === "payments") {
       const pay = localMaster.paymentAccounts.find((x) => x.id === id);
       if (!pay) return;
@@ -261,6 +455,33 @@ export function MasterDataView({
     }
 
     setModalMode("edit");
+  }
+
+  function addCourierTier() {
+    setCurTiers((prev) => [
+      ...prev,
+      {
+        id: `tier-${Date.now()}-${prev.length + 1}`,
+        serviceName: "Paket Baru",
+        ratePerKg: Number(curRate) || 15000,
+        minWeightKg: 1,
+        maxWeightKg: 50,
+        estimatedDays: "2-3 hari",
+        coverageZones: "Seluruh Indonesia",
+        codSupported: curCodSupported,
+        codFeePct: curCodSupported ? 3 : 0,
+        insuranceAvailable: curInsuranceSupported,
+        insuranceFeePct: 0.2,
+      },
+    ]);
+  }
+
+  function updateCourierTier(tierId: string, patch: Partial<CourierServiceTier>) {
+    setCurTiers((prev) => prev.map((t) => (t.id === tierId ? { ...t, ...patch } : t)));
+  }
+
+  function removeCourierTier(tierId: string) {
+    setCurTiers((prev) => prev.filter((t) => t.id !== tierId));
   }
 
   async function handleDelete(overrideId?: string) {
@@ -311,6 +532,12 @@ export function MasterDataView({
     setSaving(true);
     try {
       if (subTab === "products") {
+        const sanitizedPhoto = pImageUrl.trim() ? sanitizeImageUrl(pImageUrl.trim()) : null;
+        if (pImageUrl.trim() && !sanitizedPhoto) {
+          onToast("URL Card Picture tidak valid atau tidak aman (gunakan HTTPS atau upload gambar).", "error");
+          setSaving(false);
+          return;
+        }
         if (modalMode === "create") {
           await adapter.createProduct({
             sku: pSku.trim().toUpperCase(),
@@ -321,9 +548,11 @@ export function MasterDataView({
             costPrice: Number(pCost) || 0,
             stockQty: Number(pStock) || 0,
             minStock: Number(pMinStock) || 5,
+            weightGrams: Math.max(10, Number(pWeightGrams) || 500),
+            imageUrl: sanitizedPhoto,
             description: pDesc.trim(),
           });
-          onToast("Master Barang baru ditambahkan & disinkronkan ke POS + AI.");
+          onToast("Master Barang + Card Picture berhasil ditambahkan & disinkronkan ke POS + AI.");
         } else if (selectedId) {
           await adapter.updateProduct(selectedId, {
             name: pName.trim(),
@@ -333,9 +562,11 @@ export function MasterDataView({
             costPrice: Number(pCost) || 0,
             stockQty: Number(pStock) || 0,
             minStock: Number(pMinStock) || 5,
+            weightGrams: Math.max(10, Number(pWeightGrams) || 500),
+            imageUrl: sanitizedPhoto,
             description: pDesc.trim(),
           });
-          onToast("Master Barang diperbarui.");
+          onToast("Master Barang & Card Picture diperbarui.");
         }
         await onRefresh();
       } else if (subTab === "suppliers") {
@@ -405,21 +636,51 @@ export function MasterDataView({
         commitLocal({ ...localMaster, categories: nextCats, units: nextUnits });
         onToast("Master Kategori & Satuan disimpan.");
       } else if (subTab === "couriers") {
+        const cleanedTiers = curTiers.filter((t) => t.serviceName.trim().length > 0);
+        const lowestTierRate =
+          cleanedTiers.length > 0
+            ? Math.min(...cleanedTiers.map((t) => Math.max(0, Number(t.ratePerKg) || 0)))
+            : Math.max(0, Number(curRate) || 0);
+        const safeTrack =
+          sanitizeTrackingUrl(curTrackingUrl, "SAMPLE123")
+            ? curTrackingUrl.trim()
+            : "https://cekresi.com/?noresi={resi}";
         const record: MasterCourierRecord = {
           id: modalMode === "edit" && selectedId ? selectedId : `cur-${Date.now()}`,
           code: curCode.trim().toUpperCase(),
           name: curName.trim(),
-          serviceType: curService.trim() || "Reguler",
-          baseRate: Number(curRate) || 0,
-          estimatedDays: curEta.trim() || "2-3 hari",
+          serviceType:
+            cleanedTiers.length > 0
+              ? cleanedTiers.map((t) => t.serviceName).join(" / ")
+              : curService.trim() || "Reguler",
+          baseRate: lowestTierRate,
+          estimatedDays: cleanedTiers[0]?.estimatedDays || curEta.trim() || "2-3 hari",
+          codSupported: curCodSupported || cleanedTiers.some((t) => t.codSupported),
+          insuranceSupported: curInsuranceSupported || cleanedTiers.some((t) => t.insuranceAvailable),
+          trackingUrlTemplate: safeTrack,
           isActive: true,
+          serviceTiers: cleanedTiers,
+          pickupSchedule: curPickupSchedule.trim() || undefined,
+          cutoffTime: curCutoff.trim() || undefined,
+          packagingNotes: curPackaging.trim() || undefined,
+          maxDimensionsCm: curMaxDimensions.trim() || undefined,
+          claimPolicy: curClaimPolicy.trim() || undefined,
+          aiShippingNotes: curAiNotes.trim() || undefined,
         };
-        const next =
+        const nextCouriers =
           modalMode === "edit"
             ? localMaster.couriers.map((c) => (c.id === record.id ? record : c))
             : [record, ...localMaster.couriers];
-        commitLocal({ ...localMaster, couriers: next });
-        onToast("Master Kurir & Ekspedisi disimpan.");
+        commitLocal({ ...localMaster, couriers: nextCouriers });
+        // Automatically enrich Multi-Agent AI knowledge with updated courier tariffs & rules
+        await adapter.addAiKnowledge({
+          sourceType: "sop",
+          title: `Kurir ${record.name} (${record.code}) — Tarif & Kebijakan Pengiriman`,
+          content: buildCourierKnowledgeSummary([record]),
+          tags: ["kurir", record.code.toLowerCase(), record.name.toLowerCase(), "ongkir", "pengiriman"],
+        });
+        await onRefresh();
+        onToast(`Master Kurir ${record.name} disimpan & otomatis memperkaya kecerdasan Multi-Agent AI!`);
       } else if (subTab === "payments") {
         const record: MasterPaymentAccountRecord = {
           id: modalMode === "edit" && selectedId ? selectedId : `pay-${Date.now()}`,
@@ -446,11 +707,42 @@ export function MasterDataView({
 
   return (
     <div className="space-y-4 p-4 md:p-6">
-      <div>
-        <h2 className="text-xl font-bold text-white">Master Data Usaha</h2>
-        <p className="text-xs text-slate-400">
-          Kelola seluruh data induk (Barang, Supplier, Pelanggan, Kategori/Satuan, Kurir Ekspedisi &amp; Rekening Pembayaran) dengan operasi standar Tambah Baru, Ubah, Hapus, Back &amp; Next.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-white">Master Data Usaha</h2>
+          <p className="text-xs text-slate-400">
+            Kelola data induk Barang (+ Card Picture), Supplier (+ View Detail), Pelanggan, Kategori/Satuan, Kurir Ekspedisi (+ Pilihan Ongkir &amp; Pengetahuan AI), serta Rekening Bayar.
+          </p>
+        </div>
+
+        {subTab === "products" && (
+          <div className="inline-flex rounded-xl border border-slate-800 bg-slate-900 p-1 text-xs">
+            <button
+              type="button"
+              onClick={() => setProductLayout("cards")}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-semibold transition ${
+                productLayout === "cards"
+                  ? "bg-emerald-500/20 text-emerald-300"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              Card Picture
+            </button>
+            <button
+              type="button"
+              onClick={() => setProductLayout("table")}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-semibold transition ${
+                productLayout === "table"
+                  ? "bg-emerald-500/20 text-emerald-300"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              <List className="h-3.5 w-3.5" />
+              Tabel
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Sub-module Tabs */}
@@ -483,6 +775,34 @@ export function MasterDataView({
         })}
       </div>
 
+      {/* Courier AI Knowledge Enrichment Banner */}
+      {subTab === "couriers" && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-500/30 bg-gradient-to-r from-cyan-950/60 via-slate-900 to-emerald-950/50 p-4">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-300">
+              <Bot className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-white">
+                Pengetahuan Logistik &amp; Pilihan Biaya Kirim Terhubung ke Multi-Agent AI
+              </h3>
+              <p className="mt-0.5 max-w-2xl text-xs text-slate-300">
+                Setiap tarif layanan per kg, kebijakan COD, cut-off pickup, asuransi, volumetrik, dan batas gratis ongkir di sini otomatis dipakai oleh AI CS saat menjawab pertanyaan ongkir pelanggan &amp; menghitung ongkir pada POS/QR otomatis.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={syncingCourierAi}
+            onClick={() => void syncCouriersToAiKnowledge()}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-500 px-3.5 py-2 text-xs font-bold text-slate-950 shadow-sm transition hover:bg-cyan-400 disabled:opacity-50"
+          >
+            <Sparkles className={`h-3.5 w-3.5 ${syncingCourierAi ? "animate-spin" : ""}`} />
+            {syncingCourierAi ? "Menyinkronkan..." : "Sinkronkan ke Pengetahuan AI"}
+          </button>
+        </div>
+      )}
+
       {/* Standard Business CRUD Toolbar */}
       <CrudToolbar
         dark
@@ -500,41 +820,86 @@ export function MasterDataView({
         onRefresh={() => void onRefresh()}
       />
 
-      {/* Data Table per Sub-Module */}
-      <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/80">
-        {subTab === "products" && (
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-800 bg-slate-950/70 text-slate-400">
-              <tr>
-                <th className="px-4 py-3">SKU</th>
-                <th className="px-4 py-3">Nama Barang</th>
-                <th className="px-4 py-3">Kategori</th>
-                <th className="px-4 py-3 text-right">Harga Jual</th>
-                <th className="px-4 py-3 text-right">HPP</th>
-                <th className="px-4 py-3 text-right">Stok</th>
-                <th className="px-4 py-3 text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/80">
-              {filteredProducts.slice(startIdx, startIdx + PAGE_SIZE).map((p) => (
-                <tr
-                  key={p.id}
-                  onClick={() => setSelectedId(p.id)}
-                  className={`cursor-pointer transition ${
-                    selectedId === p.id ? "bg-emerald-500/15" : "hover:bg-slate-800/50"
-                  }`}
-                >
-                  <td className="px-4 py-3 font-mono font-bold text-cyan-400">{p.sku}</td>
-                  <td className="px-4 py-3 font-semibold text-white">{p.name}</td>
-                  <td className="px-4 py-3 text-slate-300">{p.category}</td>
-                  <td className="px-4 py-3 text-right font-bold text-emerald-400">{formatIdr(p.unitPrice)}</td>
-                  <td className="px-4 py-3 text-right text-slate-400">{formatIdr(p.costPrice)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="rounded-full bg-slate-800 px-2 py-0.5 font-bold text-white">
-                      {p.stockQty} {p.unit}
+      {/* PRODUCTS: CARD PICTURE GRID OR TABLE */}
+      {subTab === "products" && productLayout === "cards" && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredProducts.slice(startIdx, startIdx + PAGE_SIZE).map((p) => {
+            const safeImg = sanitizeImageUrl(p.imageUrl);
+            const lowStock = p.stockQty <= p.minStock;
+            const marginPct =
+              p.unitPrice > 0 ? Math.round(((p.unitPrice - p.costPrice) / p.unitPrice) * 100) : 0;
+            return (
+              <div
+                key={p.id}
+                onClick={() => setSelectedId(p.id)}
+                className={`group cursor-pointer overflow-hidden rounded-2xl border transition ${
+                  selectedId === p.id
+                    ? "border-emerald-400 bg-slate-900 ring-2 ring-emerald-500/30"
+                    : "border-slate-800 bg-slate-900/90 hover:border-slate-700"
+                }`}
+              >
+                {/* Card Picture Area */}
+                <div className="relative aspect-[16/10] w-full overflow-hidden bg-slate-950">
+                  {safeImg ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={safeImg}
+                      alt={p.name}
+                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-950 to-emerald-950/40 p-4 text-center">
+                      <ImagePlus className="h-8 w-8 text-slate-600" />
+                      <span className="mt-1.5 text-[11px] font-medium text-slate-500">
+                        Belum ada Card Picture
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditModal(p.id);
+                        }}
+                        className="mt-2 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-cyan-300 hover:bg-slate-800"
+                      >
+                        + Unggah Foto Produk
+                      </button>
+                    </div>
+                  )}
+                  <div className="absolute left-2.5 top-2.5 flex items-center gap-1.5">
+                    <span className="rounded-lg bg-slate-950/85 px-2 py-0.5 font-mono text-[10px] font-bold text-cyan-300 backdrop-blur-xs">
+                      {p.sku}
                     </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
+                    <span className="rounded-lg bg-slate-950/85 px-2 py-0.5 text-[10px] font-semibold text-slate-200 backdrop-blur-xs">
+                      {p.category}
+                    </span>
+                  </div>
+                  <span
+                    className={`absolute right-2.5 top-2.5 rounded-lg px-2 py-0.5 text-[10px] font-bold backdrop-blur-xs ${
+                      lowStock
+                        ? "bg-rose-600/90 text-white"
+                        : "bg-emerald-600/90 text-white"
+                    }`}
+                  >
+                    Stok: {p.stockQty} {p.unit}
+                  </span>
+                </div>
+
+                {/* Card Content */}
+                <div className="p-4">
+                  <h3 className="truncate text-sm font-bold text-white">{p.name}</h3>
+                  <p className="mt-1 line-clamp-2 min-h-[32px] text-[11px] text-slate-400">
+                    {p.description || "Produk aktif tersinkronisasi otomatis ke POS & Katalog AI."}
+                  </p>
+                  <div className="mt-3 flex items-end justify-between border-t border-slate-800 pt-3">
+                    <div>
+                      <div className="text-[10px] text-slate-500">
+                        HPP {formatIdr(p.costPrice)} · Margin {marginPct}% · {p.weightGrams ?? 500}g
+                      </div>
+                      <div className="text-base font-extrabold text-emerald-400">
+                        {formatIdr(p.unitPrice)}
+                        <span className="text-[11px] font-normal text-slate-400">/{p.unit}</span>
+                      </div>
+                    </div>
                     <div className="inline-flex gap-1.5" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
@@ -551,231 +916,376 @@ export function MasterDataView({
                         Hapus
                       </button>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {filteredProducts.length === 0 && (
+            <div className="col-span-full rounded-2xl border border-slate-800 bg-slate-900/60 p-8 text-center text-xs text-slate-400">
+              Tidak ada barang yang cocok dengan pencarian Anda.
+            </div>
+          )}
+        </div>
+      )}
 
-        {subTab === "suppliers" && (
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-800 bg-slate-950/70 text-slate-400">
-              <tr>
-                <th className="px-4 py-3">Nama Supplier</th>
-                <th className="px-4 py-3">PIC</th>
-                <th className="px-4 py-3">Telepon / Email</th>
-                <th className="px-4 py-3">Termin</th>
-                <th className="px-4 py-3 text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/80">
-              {filteredSuppliers.slice(startIdx, startIdx + PAGE_SIZE).map((s) => (
-                <tr
-                  key={s.id}
-                  onClick={() => setSelectedId(s.id)}
-                  className={`cursor-pointer transition ${
-                    selectedId === s.id ? "bg-emerald-500/15" : "hover:bg-slate-800/50"
-                  }`}
-                >
-                  <td className="px-4 py-3 font-bold text-white">
-                    {s.name}
-                    <div className="text-[11px] font-normal text-slate-400">{s.address ?? "-"}</div>
-                  </td>
-                  <td className="px-4 py-3 text-slate-300">{s.contactPerson ?? "-"}</td>
-                  <td className="px-4 py-3 text-slate-300">
-                    <div>{s.phone ?? "-"}</div>
-                    <div className="text-[11px] text-slate-400">{s.email ?? "-"}</div>
-                  </td>
-                  <td className="px-4 py-3 font-semibold text-emerald-300">{s.paymentTerms}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex gap-1.5" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(s.id)}
-                        className="rounded-lg bg-cyan-500/15 px-2.5 py-1 text-[11px] font-semibold text-cyan-300"
-                      >
-                        Ubah
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDelete(s.id)}
-                        className="rounded-lg bg-rose-500/15 px-2.5 py-1 text-[11px] font-semibold text-rose-300"
-                      >
-                        Hapus
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {subTab === "customers" && (
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-800 bg-slate-950/70 text-slate-400">
-              <tr>
-                <th className="px-4 py-3">Nama Pelanggan</th>
-                <th className="px-4 py-3">Telepon / WA</th>
-                <th className="px-4 py-3">Perusahaan / Toko</th>
-                <th className="px-4 py-3">Tahap</th>
-                <th className="px-4 py-3 text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/80">
-              {filteredContacts.slice(startIdx, startIdx + PAGE_SIZE).map((c) => (
-                <tr
-                  key={c.id}
-                  onClick={() => setSelectedId(c.id)}
-                  className={`cursor-pointer transition ${
-                    selectedId === c.id ? "bg-emerald-500/15" : "hover:bg-slate-800/50"
-                  }`}
-                >
-                  <td className="px-4 py-3 font-bold text-white">{c.displayName}</td>
-                  <td className="px-4 py-3 font-mono text-slate-300">{c.phoneE164 ?? "-"}</td>
-                  <td className="px-4 py-3 text-slate-300">{c.company ?? "-"}</td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-300">
-                      {LIFECYCLE_LABELS[c.lifecycleStage].label}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex gap-1.5" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(c.id)}
-                        className="rounded-lg bg-cyan-500/15 px-2.5 py-1 text-[11px] font-semibold text-cyan-300"
-                      >
-                        Ubah
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleDelete(c.id)}
-                        className="rounded-lg bg-rose-500/15 px-2.5 py-1 text-[11px] font-semibold text-rose-300"
-                      >
-                        Hapus
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {subTab === "categories" && (
-          <div className="divide-y divide-slate-800">
+      {/* Data Table per Sub-Module */}
+      {(subTab !== "products" || productLayout === "table") && (
+        <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/80">
+          {subTab === "products" && (
             <table className="w-full text-left text-xs">
               <thead className="border-b border-slate-800 bg-slate-950/70 text-slate-400">
                 <tr>
-                  <th className="px-4 py-3">Nama Kategori</th>
-                  <th className="px-4 py-3">Deskripsi</th>
+                  <th className="px-4 py-3">Foto</th>
+                  <th className="px-4 py-3">SKU</th>
+                  <th className="px-4 py-3">Nama Barang</th>
+                  <th className="px-4 py-3">Kategori</th>
+                  <th className="px-4 py-3 text-right">Harga Jual</th>
+                  <th className="px-4 py-3 text-right">Berat</th>
+                  <th className="px-4 py-3 text-right">Stok</th>
                   <th className="px-4 py-3 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80">
-                {filteredCategories.slice(startIdx, startIdx + PAGE_SIZE).map((cat) => (
+                {filteredProducts.slice(startIdx, startIdx + PAGE_SIZE).map((p) => {
+                  const safeImg = sanitizeImageUrl(p.imageUrl);
+                  return (
+                    <tr
+                      key={p.id}
+                      onClick={() => setSelectedId(p.id)}
+                      className={`cursor-pointer transition ${
+                        selectedId === p.id ? "bg-emerald-500/15" : "hover:bg-slate-800/50"
+                      }`}
+                    >
+                      <td className="px-4 py-2.5">
+                        {safeImg ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={safeImg}
+                            alt={p.name}
+                            className="h-10 w-10 rounded-lg border border-slate-700 object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-800 bg-slate-950 text-slate-600">
+                            <ImagePlus className="h-4 w-4" />
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-mono font-bold text-cyan-400">{p.sku}</td>
+                      <td className="px-4 py-3 font-semibold text-white">{p.name}</td>
+                      <td className="px-4 py-3 text-slate-300">{p.category}</td>
+                      <td className="px-4 py-3 text-right font-bold text-emerald-400">{formatIdr(p.unitPrice)}</td>
+                      <td className="px-4 py-3 text-right text-slate-400">{p.weightGrams ?? 500} g</td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="rounded-full bg-slate-800 px-2 py-0.5 font-bold text-white">
+                          {p.stockQty} {p.unit}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="inline-flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(p.id)}
+                            className="rounded-lg bg-cyan-500/15 px-2.5 py-1 text-[11px] font-semibold text-cyan-300 hover:bg-cyan-500/25"
+                          >
+                            Ubah
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDelete(p.id)}
+                            className="rounded-lg bg-rose-500/15 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/25"
+                          >
+                            Hapus
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+
+          {subTab === "suppliers" && (
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-800 bg-slate-950/70 text-slate-400">
+                <tr>
+                  <th className="px-4 py-3">Nama Supplier</th>
+                  <th className="px-4 py-3">PIC</th>
+                  <th className="px-4 py-3">Telepon / Email</th>
+                  <th className="px-4 py-3">Termin</th>
+                  <th className="px-4 py-3 text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80">
+                {filteredSuppliers.slice(startIdx, startIdx + PAGE_SIZE).map((s) => (
                   <tr
-                    key={cat.id}
-                    onClick={() => setSelectedId(cat.id)}
-                    className={`cursor-pointer ${selectedId === cat.id ? "bg-emerald-500/15" : "hover:bg-slate-800/50"}`}
+                    key={s.id}
+                    onClick={() => setSelectedId(s.id)}
+                    className={`cursor-pointer transition ${
+                      selectedId === s.id ? "bg-emerald-500/15" : "hover:bg-slate-800/50"
+                    }`}
                   >
-                    <td className="px-4 py-3 font-bold text-white">{cat.name}</td>
-                    <td className="px-4 py-3 text-slate-300">{cat.description}</td>
+                    <td className="px-4 py-3 font-bold text-white">
+                      {s.name}
+                      <div className="text-[11px] font-normal text-slate-400">{s.address ?? "-"}</div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-300">{s.contactPerson ?? "-"}</td>
+                    <td className="px-4 py-3 text-slate-300">
+                      <div>{s.phone ?? "-"}</div>
+                      <div className="text-[11px] text-slate-400">{s.email ?? "-"}</div>
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-emerald-300">{s.paymentTerms}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex gap-1.5" onClick={(e) => e.stopPropagation()}>
-                        <button type="button" onClick={() => openEditModal(cat.id)} className="rounded-lg bg-cyan-500/15 px-2.5 py-1 text-[11px] font-semibold text-cyan-300">Ubah</button>
-                        <button type="button" onClick={() => void handleDelete(cat.id)} className="rounded-lg bg-rose-500/15 px-2.5 py-1 text-[11px] font-semibold text-rose-300">Hapus</button>
+                        <button
+                          type="button"
+                          onClick={() => setViewSupplier(s)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/25"
+                        >
+                          <Eye className="h-3 w-3" />
+                          View
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(s.id)}
+                          className="rounded-lg bg-cyan-500/15 px-2.5 py-1 text-[11px] font-semibold text-cyan-300 hover:bg-cyan-500/25"
+                        >
+                          Ubah
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(s.id)}
+                          className="rounded-lg bg-rose-500/15 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/25"
+                        >
+                          Hapus
+                        </button>
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            <div className="p-4">
-              <div className="text-xs font-bold text-slate-300">Satuan Barang Terdaftar:</div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {localMaster.units.map((u) => (
-                  <span key={u.id} className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-[11px] text-cyan-300">
-                    <strong>{u.code}</strong> · {u.name}
-                  </span>
+          )}
+
+          {subTab === "customers" && (
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-800 bg-slate-950/70 text-slate-400">
+                <tr>
+                  <th className="px-4 py-3">Nama Pelanggan</th>
+                  <th className="px-4 py-3">Telepon / WA</th>
+                  <th className="px-4 py-3">Perusahaan / Toko</th>
+                  <th className="px-4 py-3">Tahap</th>
+                  <th className="px-4 py-3 text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80">
+                {filteredContacts.slice(startIdx, startIdx + PAGE_SIZE).map((c) => (
+                  <tr
+                    key={c.id}
+                    onClick={() => setSelectedId(c.id)}
+                    className={`cursor-pointer transition ${
+                      selectedId === c.id ? "bg-emerald-500/15" : "hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <td className="px-4 py-3 font-bold text-white">{c.displayName}</td>
+                    <td className="px-4 py-3 font-mono text-slate-300">{c.phoneE164 ?? "-"}</td>
+                    <td className="px-4 py-3 text-slate-300">{c.company ?? "-"}</td>
+                    <td className="px-4 py-3">
+                      <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-300">
+                        {LIFECYCLE_LABELS[c.lifecycleStage].label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="inline-flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(c.id)}
+                          className="rounded-lg bg-cyan-500/15 px-2.5 py-1 text-[11px] font-semibold text-cyan-300"
+                        >
+                          Ubah
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDelete(c.id)}
+                          className="rounded-lg bg-rose-500/15 px-2.5 py-1 text-[11px] font-semibold text-rose-300"
+                        >
+                          Hapus
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
                 ))}
+              </tbody>
+            </table>
+          )}
+
+          {subTab === "categories" && (
+            <div className="divide-y divide-slate-800">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-slate-800 bg-slate-950/70 text-slate-400">
+                  <tr>
+                    <th className="px-4 py-3">Nama Kategori</th>
+                    <th className="px-4 py-3">Deskripsi</th>
+                    <th className="px-4 py-3 text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80">
+                  {filteredCategories.slice(startIdx, startIdx + PAGE_SIZE).map((cat) => (
+                    <tr
+                      key={cat.id}
+                      onClick={() => setSelectedId(cat.id)}
+                      className={`cursor-pointer ${selectedId === cat.id ? "bg-emerald-500/15" : "hover:bg-slate-800/50"}`}
+                    >
+                      <td className="px-4 py-3 font-bold text-white">{cat.name}</td>
+                      <td className="px-4 py-3 text-slate-300">{cat.description}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="inline-flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          <button type="button" onClick={() => openEditModal(cat.id)} className="rounded-lg bg-cyan-500/15 px-2.5 py-1 text-[11px] font-semibold text-cyan-300">Ubah</button>
+                          <button type="button" onClick={() => void handleDelete(cat.id)} className="rounded-lg bg-rose-500/15 px-2.5 py-1 text-[11px] font-semibold text-rose-300">Hapus</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="p-4">
+                <div className="text-xs font-bold text-slate-300">Satuan Barang Terdaftar:</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {localMaster.units.map((u) => (
+                    <span key={u.id} className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-[11px] text-cyan-300">
+                      <strong>{u.code}</strong> · {u.name}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {subTab === "couriers" && (
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-800 bg-slate-950/70 text-slate-400">
-              <tr>
-                <th className="px-4 py-3">Kode</th>
-                <th className="px-4 py-3">Nama Ekspedisi</th>
-                <th className="px-4 py-3">Layanan</th>
-                <th className="px-4 py-3 text-right">Tarif Dasar</th>
-                <th className="px-4 py-3">Estimasi</th>
-                <th className="px-4 py-3 text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/80">
-              {filteredCouriers.slice(startIdx, startIdx + PAGE_SIZE).map((cur) => (
-                <tr
-                  key={cur.id}
-                  onClick={() => setSelectedId(cur.id)}
-                  className={`cursor-pointer ${selectedId === cur.id ? "bg-emerald-500/15" : "hover:bg-slate-800/50"}`}
-                >
-                  <td className="px-4 py-3 font-mono font-bold text-cyan-400">{cur.code}</td>
-                  <td className="px-4 py-3 font-bold text-white">{cur.name}</td>
-                  <td className="px-4 py-3 text-slate-300">{cur.serviceType}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-emerald-400">{formatIdr(cur.baseRate)}</td>
-                  <td className="px-4 py-3 text-slate-300">{cur.estimatedDays}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex gap-1.5" onClick={(e) => e.stopPropagation()}>
-                      <button type="button" onClick={() => openEditModal(cur.id)} className="rounded-lg bg-cyan-500/15 px-2.5 py-1 text-[11px] font-semibold text-cyan-300">Ubah</button>
-                      <button type="button" onClick={() => void handleDelete(cur.id)} className="rounded-lg bg-rose-500/15 px-2.5 py-1 text-[11px] font-semibold text-rose-300">Hapus</button>
-                    </div>
-                  </td>
+          {subTab === "couriers" && (
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-800 bg-slate-950/70 text-slate-400">
+                <tr>
+                  <th className="px-4 py-3">Kode &amp; Ekspedisi</th>
+                  <th className="px-4 py-3">Pilihan Biaya Pengiriman (Multi-Layanan)</th>
+                  <th className="px-4 py-3">COD &amp; Cut-Off Pickup</th>
+                  <th className="px-4 py-3 text-right">Aksi</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+              </thead>
+              <tbody className="divide-y divide-slate-800/80">
+                {filteredCouriers.slice(startIdx, startIdx + PAGE_SIZE).map((cur) => {
+                  const tiers = cur.serviceTiers ?? [];
+                  return (
+                    <tr
+                      key={cur.id}
+                      onClick={() => setSelectedId(cur.id)}
+                      className={`cursor-pointer ${selectedId === cur.id ? "bg-emerald-500/15" : "hover:bg-slate-800/50"}`}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded bg-cyan-500/15 px-2 py-0.5 font-mono text-[11px] font-bold text-cyan-300">
+                            {cur.code}
+                          </span>
+                          <span className="font-bold text-white">{cur.name}</span>
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-400">
+                          {cur.pickupSchedule ?? "Pickup harian Senin–Sabtu"}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1.5">
+                          {tiers.length > 0 ? (
+                            tiers.map((tier) => (
+                              <span
+                                key={tier.id}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[11px]"
+                              >
+                                <span className="font-semibold text-white">{tier.serviceName}:</span>
+                                <span className="font-bold text-emerald-400">
+                                  {formatIdr(tier.ratePerKg)}/kg
+                                </span>
+                                <span className="text-slate-400">({tier.estimatedDays})</span>
+                              </span>
+                            ))
+                          ) : (
+                            <span className="font-semibold text-emerald-400">
+                              {cur.serviceType}: {formatIdr(cur.baseRate)}/kg ({cur.estimatedDays})
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">
+                        <div>
+                          {cur.codSupported ? (
+                            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                              COD Aktif
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-400">
+                              Non-COD
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-400">
+                          Cut-off: {cur.cutoffTime ?? "16.00 WIB"}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="inline-flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => setViewCourier(cur)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/25"
+                          >
+                            <Eye className="h-3 w-3" />
+                            View
+                          </button>
+                          <button type="button" onClick={() => openEditModal(cur.id)} className="rounded-lg bg-cyan-500/15 px-2.5 py-1 text-[11px] font-semibold text-cyan-300">Ubah</button>
+                          <button type="button" onClick={() => void handleDelete(cur.id)} className="rounded-lg bg-rose-500/15 px-2.5 py-1 text-[11px] font-semibold text-rose-300">Hapus</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
 
-        {subTab === "payments" && (
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-800 bg-slate-950/70 text-slate-400">
-              <tr>
-                <th className="px-4 py-3">Metode</th>
-                <th className="px-4 py-3">Bank / Penyedia</th>
-                <th className="px-4 py-3">Nomor Rekening / ID</th>
-                <th className="px-4 py-3">Atas Nama</th>
-                <th className="px-4 py-3 text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/80">
-              {filteredPayments.slice(startIdx, startIdx + PAGE_SIZE).map((pay) => (
-                <tr
-                  key={pay.id}
-                  onClick={() => setSelectedId(pay.id)}
-                  className={`cursor-pointer ${selectedId === pay.id ? "bg-emerald-500/15" : "hover:bg-slate-800/50"}`}
-                >
-                  <td className="px-4 py-3 font-semibold text-cyan-300">{PAYMENT_METHOD_LABELS[pay.method]}</td>
-                  <td className="px-4 py-3 font-bold text-white">{pay.providerName}</td>
-                  <td className="px-4 py-3 font-mono text-emerald-300">{pay.accountNumber}</td>
-                  <td className="px-4 py-3 text-slate-300">{pay.accountHolder}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex gap-1.5" onClick={(e) => e.stopPropagation()}>
-                      <button type="button" onClick={() => openEditModal(pay.id)} className="rounded-lg bg-cyan-500/15 px-2.5 py-1 text-[11px] font-semibold text-cyan-300">Ubah</button>
-                      <button type="button" onClick={() => void handleDelete(pay.id)} className="rounded-lg bg-rose-500/15 px-2.5 py-1 text-[11px] font-semibold text-rose-300">Hapus</button>
-                    </div>
-                  </td>
+          {subTab === "payments" && (
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-800 bg-slate-950/70 text-slate-400">
+                <tr>
+                  <th className="px-4 py-3">Metode</th>
+                  <th className="px-4 py-3">Bank / Penyedia</th>
+                  <th className="px-4 py-3">Nomor Rekening / ID</th>
+                  <th className="px-4 py-3">Atas Nama</th>
+                  <th className="px-4 py-3 text-right">Aksi</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80">
+                {filteredPayments.slice(startIdx, startIdx + PAGE_SIZE).map((pay) => (
+                  <tr
+                    key={pay.id}
+                    onClick={() => setSelectedId(pay.id)}
+                    className={`cursor-pointer ${selectedId === pay.id ? "bg-emerald-500/15" : "hover:bg-slate-800/50"}`}
+                  >
+                    <td className="px-4 py-3 font-semibold text-cyan-300">{PAYMENT_METHOD_LABELS[pay.method]}</td>
+                    <td className="px-4 py-3 font-bold text-white">{pay.providerName}</td>
+                    <td className="px-4 py-3 font-mono text-emerald-300">{pay.accountNumber}</td>
+                    <td className="px-4 py-3 text-slate-300">{pay.accountHolder}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="inline-flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <button type="button" onClick={() => openEditModal(pay.id)} className="rounded-lg bg-cyan-500/15 px-2.5 py-1 text-[11px] font-semibold text-cyan-300">Ubah</button>
+                        <button type="button" onClick={() => void handleDelete(pay.id)} className="rounded-lg bg-rose-500/15 px-2.5 py-1 text-[11px] font-semibold text-rose-300">Hapus</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
       {/* Back / Next Pagination */}
       <PaginationBar
@@ -786,15 +1296,290 @@ export function MasterDataView({
         onPageChange={setPage}
       />
 
+      {/* VIEW SUPPLIER DETAIL MODAL */}
+      {viewSupplier && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-xs">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-emerald-500/30 bg-slate-900 p-5 text-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
+                  <Building2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">{viewSupplier.name}</h3>
+                  <div className="mt-0.5 flex items-center gap-2 text-[11px]">
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-bold ${
+                        viewSupplier.status === "active"
+                          ? "bg-emerald-500/20 text-emerald-300"
+                          : "bg-slate-800 text-slate-400"
+                      }`}
+                    >
+                      <CheckCircle2 className="h-3 w-3" />
+                      {viewSupplier.status === "active" ? "Supplier Aktif" : "Nonaktif"}
+                    </span>
+                    <span className="rounded-full bg-cyan-500/15 px-2 py-0.5 font-semibold text-cyan-300">
+                      Termin: {viewSupplier.paymentTerms}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewSupplier(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3 text-xs">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <User className="h-3.5 w-3.5 text-cyan-400" />
+                    PIC / Kontak Utama
+                  </div>
+                  <div className="mt-1 font-semibold text-white">
+                    {viewSupplier.contactPerson || "Belum diisi"}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <Phone className="h-3.5 w-3.5 text-emerald-400" />
+                    Telepon / WhatsApp
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2 font-mono font-semibold text-white">
+                    <span>{viewSupplier.phone || "Belum diisi"}</span>
+                    {viewSupplier.phone && sanitizePhoneDigits(viewSupplier.phone) && (
+                      <a
+                        href={`https://wa.me/${sanitizePhoneDigits(viewSupplier.phone)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-md bg-emerald-600 px-2 py-0.5 font-sans text-[10px] font-bold text-white hover:bg-emerald-500"
+                      >
+                        Chat WA
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <Mail className="h-3.5 w-3.5 text-cyan-400" />
+                    Email Bisnis
+                  </div>
+                  <div className="mt-1 truncate font-semibold text-white">
+                    {viewSupplier.email ? (
+                      <a href={`mailto:${viewSupplier.email}`} className="text-cyan-300 hover:underline">
+                        {viewSupplier.email}
+                      </a>
+                    ) : (
+                      "Belum diisi"
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <Calendar className="h-3.5 w-3.5 text-amber-400" />
+                    Terdaftar Sejak
+                  </div>
+                  <div className="mt-1 font-semibold text-white">
+                    {new Date(viewSupplier.createdAt).toLocaleDateString("id-ID", {
+                      day: "2-digit",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3">
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                  <MapPin className="h-3.5 w-3.5 text-rose-400" />
+                  Alamat Gudang / Kantor Supplier
+                </div>
+                <div className="mt-1 leading-relaxed text-slate-200">
+                  {viewSupplier.address || "Belum ada alamat gudang yang dicatat."}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-[11px] text-slate-300">
+                <strong className="text-emerald-300">ID Supplier:</strong>{" "}
+                <span className="font-mono text-slate-400">{viewSupplier.id}</span>
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2 border-t border-slate-800 pt-3 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  const id = viewSupplier.id;
+                  setViewSupplier(null);
+                  openEditModal(id);
+                }}
+                className="rounded-xl bg-cyan-500/20 px-4 py-2 font-bold text-cyan-300 hover:bg-cyan-500/30"
+              >
+                Ubah Data Supplier
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewSupplier(null)}
+                className="rounded-xl bg-emerald-500 px-4 py-2 font-bold text-slate-950 hover:bg-emerald-400"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW COURIER DETAIL & AI KNOWLEDGE MODAL */}
+      {viewCourier && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-xs">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-cyan-500/30 bg-slate-900 p-5 text-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-300">
+                  <Truck className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    {viewCourier.name} ({viewCourier.code})
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    {viewCourier.pickupSchedule ?? "Pickup harian"} · Cut-off: {viewCourier.cutoffTime ?? "16.00 WIB"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewCourier(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4 text-xs">
+              <div>
+                <h4 className="mb-2 font-bold text-cyan-300">Pilihan Paket &amp; Biaya Pengiriman</h4>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {(viewCourier.serviceTiers ?? []).map((tier) => (
+                    <div
+                      key={tier.id}
+                      className="rounded-xl border border-slate-800 bg-slate-950/90 p-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-white">{tier.serviceName}</span>
+                        <span className="font-mono text-[10px] text-cyan-400">
+                          {tier.minWeightKg}–{tier.maxWeightKg} kg
+                        </span>
+                      </div>
+                      <div className="mt-1 text-base font-extrabold text-emerald-400">
+                        {formatIdr(tier.ratePerKg)}
+                        <span className="text-[11px] font-normal text-slate-400">/kg</span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-slate-300">
+                        Estimasi: {tier.estimatedDays}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
+                        <span
+                          className={`rounded px-1.5 py-0.5 font-semibold ${
+                            tier.codSupported
+                              ? "bg-emerald-500/20 text-emerald-300"
+                              : "bg-slate-800 text-slate-400"
+                          }`}
+                        >
+                          {tier.codSupported ? `COD (${tier.codFeePct}%)` : "Non-COD"}
+                        </span>
+                        {tier.insuranceAvailable && (
+                          <span className="rounded bg-cyan-500/15 px-1.5 py-0.5 font-semibold text-cyan-300">
+                            Asuransi {tier.insuranceFeePct}%
+                          </span>
+                        )}
+                        {tier.coverageZones && (
+                          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-300">
+                            {tier.coverageZones}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3">
+                  <div className="font-semibold text-slate-400">Jadwal Pickup &amp; Cut-Off</div>
+                  <div className="mt-1 text-slate-200">
+                    {viewCourier.pickupSchedule || "-"} (Cut-off: {viewCourier.cutoffTime || "-"})
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3">
+                  <div className="font-semibold text-slate-400">Standar Packing &amp; Dimensi Maks</div>
+                  <div className="mt-1 text-slate-200">
+                    {viewCourier.packagingNotes || "-"} {viewCourier.maxDimensionsCm ? `(${viewCourier.maxDimensionsCm})` : ""}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3">
+                  <div className="font-semibold text-slate-400">Dukungan COD &amp; Asuransi</div>
+                  <div className="mt-1 text-slate-200">
+                    COD: {viewCourier.codSupported ? "Tersedia" : "Tidak"} · Asuransi: {viewCourier.insuranceSupported ? "Tersedia" : "Tidak"}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-3">
+                  <div className="font-semibold text-slate-400">Kebijakan Klaim Paket</div>
+                  <div className="mt-1 text-slate-200">{viewCourier.claimPolicy || "-"}</div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/30 p-3">
+                <div className="flex items-center gap-1.5 font-bold text-emerald-300">
+                  <ShieldCheck className="h-4 w-4" />
+                  Pratinjau Pengetahuan Multi-Agent AI
+                </div>
+                <p className="mt-1.5 whitespace-pre-wrap text-[11px] leading-relaxed text-slate-200">
+                  {buildCourierKnowledgeSummary([viewCourier])}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2 border-t border-slate-800 pt-3 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  const id = viewCourier.id;
+                  setViewCourier(null);
+                  openEditModal(id);
+                }}
+                className="rounded-xl bg-cyan-500/20 px-4 py-2 font-bold text-cyan-300 hover:bg-cyan-500/30"
+              >
+                Ubah Tarif &amp; Pengetahuan Kurir
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewCourier(null)}
+                className="rounded-xl bg-emerald-500 px-4 py-2 font-bold text-slate-950 hover:bg-emerald-400"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* STANDARD SUB-MODULE FORM MODAL (Tambah Baru / Ubah) */}
       {modalMode !== "none" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-xs">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white shadow-2xl">
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold">
                 {modalMode === "create" ? "Tambah Baru" : "Ubah Data"} —{" "}
                 {subTab === "products"
-                  ? "Master Barang"
+                  ? "Master Barang & Card Picture"
                   : subTab === "suppliers"
                     ? "Master Supplier"
                     : subTab === "customers"
@@ -802,7 +1587,7 @@ export function MasterDataView({
                       : subTab === "categories"
                         ? "Master Kategori & Satuan"
                         : subTab === "couriers"
-                          ? "Master Kurir Ekspedisi"
+                          ? "Master Kurir Ekspedisi & Pengetahuan AI"
                           : "Master Rekening Pembayaran"}
               </h3>
               <button
@@ -817,6 +1602,69 @@ export function MasterDataView({
             <form onSubmit={handleSubmitModal} className="mt-4 space-y-3 text-xs">
               {subTab === "products" && (
                 <>
+                  {/* CARD PICTURE UPLOAD & LIVE PREVIEW */}
+                  <div className="rounded-2xl border border-slate-700/80 bg-slate-950/80 p-3.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-emerald-300">Card Picture (Foto Produk)</span>
+                      {pImageUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setPImageUrl("")}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-400 hover:text-rose-300"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Hapus Foto
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="mt-2.5 grid gap-3 sm:grid-cols-[160px_1fr]">
+                      <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-dashed border-slate-700 bg-slate-900">
+                        {sanitizeImageUrl(pImageUrl) ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={sanitizeImageUrl(pImageUrl)!}
+                            alt="Preview Card Picture"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="p-2 text-center text-[11px] text-slate-500">
+                            <ImagePlus className="mx-auto h-6 w-6 text-slate-600" />
+                            <span className="mt-1 block">Preview Foto</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/gif"
+                          onChange={(e) => void handlePhotoUpload(e)}
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          disabled={uploadingPhoto}
+                          onClick={() => fileInputRef.current?.click()}
+                          className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 font-bold text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-50"
+                        >
+                          <Upload className="h-3.5 w-3.5" />
+                          {uploadingPhoto ? "Mengoptimasi Gambar..." : "Unggah Foto Produk (JPG / PNG / WebP)"}
+                        </button>
+                        <label className="block text-[11px] text-slate-400">
+                          Atau tempel URL Gambar HTTPS
+                          <input
+                            value={pImageUrl.startsWith("data:") ? "" : pImageUrl}
+                            onChange={(e) => setPImageUrl(e.target.value)}
+                            placeholder="https://contoh.com/foto-produk.jpg"
+                            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-1.5 text-white"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3">
                     <label className="block">
                       Kode SKU *
@@ -857,7 +1705,7 @@ export function MasterDataView({
                       <input type="number" min={0} value={pCost} onChange={(e) => setPCost(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
                     </label>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-4 gap-2">
                     <label className="block">
                       Stok
                       <input type="number" min={0} value={pStock} onChange={(e) => setPStock(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
@@ -865,6 +1713,10 @@ export function MasterDataView({
                     <label className="block">
                       Stok Min
                       <input type="number" min={0} value={pMinStock} onChange={(e) => setPMinStock(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+                    </label>
+                    <label className="block">
+                      Berat (gram)
+                      <input type="number" min={10} value={pWeightGrams} onChange={(e) => setPWeightGrams(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
                     </label>
                     <label className="block">
                       Satuan
@@ -980,27 +1832,174 @@ export function MasterDataView({
                   <div className="grid grid-cols-2 gap-3">
                     <label className="block">
                       Kode Kurir *
-                      <input required value={curCode} onChange={(e) => setCurCode(e.target.value)} placeholder="POS-KILAT" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+                      <input required value={curCode} onChange={(e) => setCurCode(e.target.value)} placeholder="JNE / SICEPAT / POS" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
                     </label>
                     <label className="block">
                       Nama Ekspedisi *
-                      <input required value={curName} onChange={(e) => setCurName(e.target.value)} placeholder="Pos Indonesia" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+                      <input required value={curName} onChange={(e) => setCurName(e.target.value)} placeholder="JNE Express / Pos Indonesia" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
                     </label>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
+
+                  {/* MULTI-TIER SHIPPING COST OPTIONS */}
+                  <div className="rounded-2xl border border-cyan-500/30 bg-slate-950/90 p-3.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-bold text-cyan-300">Pilihan Biaya Pengiriman (Multi-Layanan)</span>
+                        <p className="text-[11px] text-slate-400">
+                          AI akan membandingkan &amp; merekomendasikan opsi ongkir ini ke calon pelanggan.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addCourierTier}
+                        className="inline-flex items-center gap-1 rounded-lg bg-cyan-500/20 px-2.5 py-1 text-[11px] font-bold text-cyan-300 hover:bg-cyan-500/30"
+                      >
+                        <Plus className="h-3 w-3" />
+                        Tambah Opsi Layanan
+                      </button>
+                    </div>
+
+                    <div className="mt-3 space-y-2.5">
+                      {curTiers.map((tier) => (
+                        <div
+                          key={tier.id}
+                          className="rounded-xl border border-slate-800 bg-slate-900 p-2.5 space-y-2"
+                        >
+                          <div className="grid grid-cols-12 gap-2">
+                            <input
+                              value={tier.serviceName}
+                              onChange={(e) => updateCourierTier(tier.id, { serviceName: e.target.value })}
+                              placeholder="Nama Paket (cth: Reguler / YES)"
+                              className="col-span-5 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-white"
+                            />
+                            <input
+                              type="number"
+                              min={0}
+                              value={tier.ratePerKg}
+                              onChange={(e) =>
+                                updateCourierTier(tier.id, { ratePerKg: Math.max(0, Number(e.target.value) || 0) })
+                              }
+                              placeholder="Tarif/kg"
+                              className="col-span-3 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 font-semibold text-emerald-300"
+                            />
+                            <input
+                              value={tier.estimatedDays}
+                              onChange={(e) => updateCourierTier(tier.id, { estimatedDays: e.target.value })}
+                              placeholder="Estimasi"
+                              className="col-span-3 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeCourierTier(tier.id)}
+                              className="col-span-1 flex items-center justify-center rounded-lg bg-rose-500/15 text-rose-300 hover:bg-rose-500/25"
+                              title="Hapus layanan"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-3 text-[11px]">
+                            <label className="inline-flex items-center gap-1.5 text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={tier.codSupported}
+                                onChange={(e) => updateCourierTier(tier.id, { codSupported: e.target.checked })}
+                              />
+                              COD ({tier.codFeePct}%)
+                            </label>
+                            <label className="inline-flex items-center gap-1.5 text-slate-300">
+                              <input
+                                type="checkbox"
+                                checked={tier.insuranceAvailable}
+                                onChange={(e) => updateCourierTier(tier.id, { insuranceAvailable: e.target.checked })}
+                              />
+                              Asuransi
+                            </label>
+                            <label className="inline-flex items-center gap-1 text-slate-400">
+                              Min Kg:
+                              <input
+                                type="number"
+                                min={1}
+                                value={tier.minWeightKg ?? 1}
+                                onChange={(e) =>
+                                  updateCourierTier(tier.id, { minWeightKg: Math.max(1, Number(e.target.value) || 1) })
+                                }
+                                className="w-12 rounded border border-slate-700 bg-slate-950 px-1.5 py-0.5 text-white"
+                              />
+                            </label>
+                            <input
+                              value={tier.coverageZones ?? ""}
+                              onChange={(e) => updateCourierTier(tier.id, { coverageZones: e.target.value })}
+                              placeholder="Cakupan area (cth: Jawa-Bali / Seluruh RI)"
+                              className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-0.5 text-slate-200"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* DETAILED LOGISTICS POLICIES FOR AI INTELLIGENCE */}
+                  <div className="grid grid-cols-2 gap-3">
                     <label className="block">
-                      Layanan
-                      <input value={curService} onChange={(e) => setCurService(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+                      Jadwal Pickup Harian
+                      <input value={curPickupSchedule} onChange={(e) => setCurPickupSchedule(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
                     </label>
                     <label className="block">
-                      Tarif Dasar (Rp)
-                      <input type="number" min={0} value={curRate} onChange={(e) => setCurRate(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
-                    </label>
-                    <label className="block">
-                      Estimasi
-                      <input value={curEta} onChange={(e) => setCurEta(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+                      Jam Cut-Off Pengiriman Hari Sama
+                      <input value={curCutoff} onChange={(e) => setCurCutoff(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
                     </label>
                   </div>
+
+                  <div className="flex flex-wrap items-center gap-4 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2">
+                    <label className="inline-flex items-center gap-2 text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={curCodSupported}
+                        onChange={(e) => setCurCodSupported(e.target.checked)}
+                      />
+                      Mendukung Bayar di Tempat (COD)
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-slate-200">
+                      <input
+                        type="checkbox"
+                        checked={curInsuranceSupported}
+                        onChange={(e) => setCurInsuranceSupported(e.target.checked)}
+                      />
+                      Mendukung Asuransi Pengiriman
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block">
+                      Aturan Packing Aman
+                      <textarea rows={2} value={curPackaging} onChange={(e) => setCurPackaging(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+                    </label>
+                    <label className="block">
+                      Dimensi Maks &amp; Volumetrik
+                      <textarea rows={2} value={curMaxDimensions} onChange={(e) => setCurMaxDimensions(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+                    </label>
+                  </div>
+
+                  <label className="block">
+                    Kebijakan Klaim Kerusakan / Kehilangan Paket
+                    <input value={curClaimPolicy} onChange={(e) => setCurClaimPolicy(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+                  </label>
+
+                  <label className="block">
+                    Template URL Lacak Resi (HTTPS)
+                    <input value={curTrackingUrl} onChange={(e) => setCurTrackingUrl(e.target.value)} placeholder="https://cekresi.com/?noresi={resi}" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+                  </label>
+
+                  <label className="block">
+                    Catatan Khusus untuk Kecerdasan Multi-Agent AI
+                    <textarea
+                      rows={2}
+                      value={curAiNotes}
+                      onChange={(e) => setCurAiNotes(e.target.value)}
+                      placeholder="Contoh: Sarankan paket Kargo jika pesanan > 5 kg atau tujuan luar Jawa untuk hemat ongkir."
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+                    />
+                  </label>
                 </>
               )}
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   BarChart3,
   BookOpenCheck,
@@ -11,16 +12,27 @@ import {
   Database,
   FileText,
   Inbox,
+  KeyRound,
   Layers,
   Link2,
+  Lock,
   LogIn,
+  LogOut,
   Mic,
   Receipt,
   RefreshCw,
   Settings,
+  ShieldCheck,
   TrendingUp,
   Users,
 } from "lucide-react";
+import {
+  evaluateEditionQuota,
+  evaluateTabAccess,
+  type CommercialUserSession,
+  type WorkspaceTabId,
+} from "@/lib/access-control";
+import { authClient } from "@/lib/auth-client";
 import type { AppEditionId, ContactRecord, StoreBusinessProfile } from "@/lib/crm-types";
 import { getEditionById, loadTenantEdition, saveTenantEdition } from "@/lib/editions";
 import { loadStoreProfile, saveStoreProfile } from "@/lib/store-profile";
@@ -41,20 +53,7 @@ import { TemplatesView } from "./templates-view";
 import { AnalyticsView } from "./analytics-view";
 import { SettingsView } from "./settings-view";
 
-type TabId =
-  | "inbox"
-  | "master"
-  | "pos"
-  | "erp"
-  | "accounting"
-  | "ai"
-  | "seo_growth"
-  | "contacts"
-  | "channels"
-  | "templates"
-  | "analytics"
-  | "editions"
-  | "settings";
+type TabId = WorkspaceTabId;
 
 const NAV_ITEMS: Array<{
   id: TabId;
@@ -78,7 +77,16 @@ const NAV_ITEMS: Array<{
   { id: "settings", label: "Pengaturan", shortLabel: "Atur", icon: Settings, group: "platform" },
 ];
 
-export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
+export function WorkspaceApp({
+  adapter,
+  commercialUser,
+  onSignOut,
+}: {
+  adapter: WorkspaceAdapter;
+  commercialUser?: CommercialUserSession | null;
+  onSignOut?: () => void;
+}) {
+  const router = useRouter();
   const [tab, setTab] = useState<TabId>("inbox");
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
   const [storeProfile, setStoreProfile] = useState<StoreBusinessProfile>(() =>
@@ -89,8 +97,10 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
   );
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState("");
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [companionTrigger, setCompanionTrigger] = useState<{
     id: number;
@@ -172,6 +182,38 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
   }
 
   const activeEdition = useMemo(() => getEditionById(editionId), [editionId]);
+  const effectiveRole = commercialUser?.role ?? snapshot?.currentRole ?? "owner";
+
+  const currentTabAccess = useMemo(
+    () => evaluateTabAccess(editionId, effectiveRole, tab),
+    [editionId, effectiveRole, tab],
+  );
+
+  const quotaSnapshot = useMemo(() => {
+    if (!snapshot) return null;
+    const enabledAgents = snapshot.aiAgents.filter((a) => a.enabled).length;
+    return {
+      contacts: evaluateEditionQuota(editionId, "contacts", snapshot.contacts.length),
+      channels: evaluateEditionQuota(editionId, "channels", snapshot.channels.length),
+      aiAgents: evaluateEditionQuota(editionId, "aiAgents", enabledAgents),
+    };
+  }, [editionId, snapshot]);
+
+  async function handleSignOutClick() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      if (onSignOut) {
+        onSignOut();
+        return;
+      }
+      await authClient.signOut().catch(() => undefined);
+      router.replace("/sign-in");
+      router.refresh();
+    } finally {
+      setSigningOut(false);
+    }
+  }
 
   async function handleStartChat(contact: ContactRecord) {
     try {
@@ -222,7 +264,7 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
             <div className="flex items-center gap-1.5">
               <span className="font-extrabold tracking-tight text-slate-900">WACRM</span>
               <span className="hidden rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white sm:inline">
-                v4.0
+                v4.2
               </span>
             </div>
           </button>
@@ -276,20 +318,33 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
             <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin text-emerald-600" : ""}`} />
             <span className="hidden md:inline">{syncing ? "Sinkron..." : "Sync"}</span>
           </button>
-          {adapter.mode === "demo" ? (
+          {commercialUser && (
+            <div className="hidden items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] xl:inline-flex">
+              <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+              <span className="max-w-[140px] truncate font-bold text-slate-800">{commercialUser.displayName}</span>
+              <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-700">
+                {effectiveRole}
+              </span>
+            </div>
+          )}
+          {onSignOut || adapter.mode === "neon" ? (
+            <button
+              type="button"
+              disabled={signingOut}
+              onClick={() => void handleSignOutClick()}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs transition hover:bg-rose-700 disabled:opacity-50"
+              title="Keluar (Sign Out) dari sesi WACRM"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              <span>{signingOut ? "Keluar..." : "Sign Out"}</span>
+            </button>
+          ) : (
             <Link
               href="/sign-in"
               className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
             >
               <LogIn className="h-3.5 w-3.5" />
               <span>Masuk</span>
-            </Link>
-          ) : (
-            <Link
-              href="/dashboard"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Workspace
             </Link>
           )}
         </div>
@@ -307,6 +362,7 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
                 {NAV_ITEMS.filter((n) => n.group === "core").map((item) => {
                   const Icon = item.icon;
                   const active = tab === item.id;
+                  const access = evaluateTabAccess(editionId, effectiveRole, item.id);
                   return (
                     <button
                       key={item.id}
@@ -315,14 +371,19 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
                       className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold transition ${
                         active
                           ? "bg-emerald-50 text-emerald-800"
-                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                          : access.allowed
+                            ? "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                            : "text-slate-400 hover:bg-slate-50"
                       }`}
+                      title={access.allowed ? item.label : access.reason ?? "Terkunci oleh Edisi/Role"}
                     >
                       <span className="flex items-center gap-2.5">
                         <Icon className={`h-4 w-4 ${active ? "text-emerald-600" : "text-slate-400"}`} />
                         {item.label}
                       </span>
-                      {item.id === "inbox" && (unreadTotal > 0 || escalationTotal > 0) && (
+                      {!access.allowed ? (
+                        <Lock className="h-3.5 w-3.5 text-amber-500" />
+                      ) : item.id === "inbox" && (unreadTotal > 0 || escalationTotal > 0) ? (
                         <span
                           className={`rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${
                             escalationTotal > 0 ? "bg-amber-600" : "bg-emerald-600"
@@ -330,17 +391,15 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
                         >
                           {escalationTotal > 0 ? `${escalationTotal}!` : unreadTotal}
                         </span>
-                      )}
-                      {item.id === "ai" && activeAiCount > 0 && (
+                      ) : item.id === "ai" && activeAiCount > 0 ? (
                         <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[10px] font-bold text-cyan-800">
                           {activeAiCount} ON
                         </span>
-                      )}
-                      {item.id === "pos" && snapshot && (
+                      ) : item.id === "pos" && snapshot ? (
                         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
                           {snapshot.orders.length}
                         </span>
-                      )}
+                      ) : null}
                     </button>
                   );
                 })}
@@ -355,6 +414,7 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
                 {NAV_ITEMS.filter((n) => n.group === "crm").map((item) => {
                   const Icon = item.icon;
                   const active = tab === item.id;
+                  const access = evaluateTabAccess(editionId, effectiveRole, item.id);
                   return (
                     <button
                       key={item.id}
@@ -363,13 +423,16 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
                       className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold transition ${
                         active
                           ? "bg-emerald-50 text-emerald-800"
-                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                          : access.allowed
+                            ? "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                            : "text-slate-400 hover:bg-slate-50"
                       }`}
                     >
                       <span className="flex items-center gap-2.5">
                         <Icon className={`h-4 w-4 ${active ? "text-emerald-600" : "text-slate-400"}`} />
                         {item.label}
                       </span>
+                      {!access.allowed && <Lock className="h-3.5 w-3.5 text-amber-500" />}
                     </button>
                   );
                 })}
@@ -384,6 +447,7 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
                 {NAV_ITEMS.filter((n) => n.group === "platform").map((item) => {
                   const Icon = item.icon;
                   const active = tab === item.id;
+                  const access = evaluateTabAccess(editionId, effectiveRole, item.id);
                   return (
                     <button
                       key={item.id}
@@ -392,18 +456,22 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
                       className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold transition ${
                         active
                           ? "bg-amber-50 text-amber-900"
-                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                          : access.allowed
+                            ? "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                            : "text-slate-400 hover:bg-slate-50"
                       }`}
                     >
                       <span className="flex items-center gap-2.5">
                         <Icon className={`h-4 w-4 ${active ? "text-amber-600" : "text-slate-400"}`} />
                         {item.label}
                       </span>
-                      {item.id === "editions" && (
+                      {!access.allowed ? (
+                        <Lock className="h-3.5 w-3.5 text-amber-500" />
+                      ) : item.id === "editions" ? (
                         <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
                           {activeEdition.id.toUpperCase()}
                         </span>
-                      )}
+                      ) : null}
                     </button>
                   );
                 })}
@@ -412,10 +480,38 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
           </div>
 
           <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs">
-            <p className="font-bold text-emerald-900">{storeProfile.businessName}</p>
-            <p className="mt-1 text-[11px] leading-relaxed text-emerald-800/80">
-              v4.1: 9 Agen AI + AI Template /slash, Cetak Universal (USB-C/Micro-USB/Inkjet/LaserJet/EDC), Katalog SEO &amp; Lisensi Terverifikasi.
-            </p>
+            <div className="flex items-center justify-between gap-1">
+              <p className="truncate font-bold text-emerald-900">{activeEdition.name}</p>
+              <button
+                type="button"
+                onClick={() => setTab("editions")}
+                className="text-[10px] font-bold text-indigo-700 hover:underline"
+              >
+                Upgrade
+              </button>
+            </div>
+            {quotaSnapshot && (
+              <div className="mt-2 space-y-1 text-[10px] text-emerald-900/90">
+                <div className="flex justify-between">
+                  <span>Kontak CRM</span>
+                  <strong className={!quotaSnapshot.contacts.withinQuota ? "text-rose-600" : ""}>
+                    {quotaSnapshot.contacts.label}
+                  </strong>
+                </div>
+                <div className="flex justify-between">
+                  <span>Kanal</span>
+                  <strong className={!quotaSnapshot.channels.withinQuota ? "text-rose-600" : ""}>
+                    {quotaSnapshot.channels.label}
+                  </strong>
+                </div>
+                <div className="flex justify-between">
+                  <span>Agen AI</span>
+                  <strong className={!quotaSnapshot.aiAgents.withinQuota ? "text-rose-600" : ""}>
+                    {quotaSnapshot.aiAgents.label}
+                  </strong>
+                </div>
+              </div>
+            )}
           </div>
         </nav>
 
@@ -437,6 +533,59 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
               </button>
             </div>
           ) : snapshot ? (
+            !currentTabAccess.allowed ? (
+              <div className="flex flex-1 items-center justify-center bg-slate-950 p-6 text-white">
+                <div className="w-full max-w-lg rounded-3xl border border-amber-500/35 bg-slate-900 p-7 text-center shadow-2xl">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-400">
+                    <Lock className="h-7 w-7" />
+                  </div>
+                  <p className="mt-4 font-mono text-[11px] font-bold uppercase tracking-widest text-amber-400">
+                    Hak Akses Dibatasi Sesuai Langganan &amp; Peran
+                  </p>
+                  <h2 className="mt-2 text-xl font-extrabold text-white">
+                    {NAV_ITEMS.find((n) => n.id === tab)?.label ?? "Modul"} Tidak Tersedia di Paket / Peran Saat Ini
+                  </h2>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-300">
+                    {currentTabAccess.reason}
+                  </p>
+                  <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-3.5 text-left text-xs text-slate-300">
+                    <div className="flex justify-between py-1">
+                      <span className="text-slate-400">Edisi Aktif Workspace:</span>
+                      <strong className="text-emerald-400">{activeEdition.name}</strong>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-slate-400">Peran Akun Anda:</span>
+                      <strong className="uppercase text-cyan-300">{effectiveRole}</strong>
+                    </div>
+                    {currentTabAccess.requiredEditionName && (
+                      <div className="flex justify-between py-1">
+                        <span className="text-slate-400">Minimal Edisi Dibutuhkan:</span>
+                        <strong className="text-amber-300">{currentTabAccess.requiredEditionName}</strong>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-5 flex flex-wrap justify-center gap-2.5 text-xs">
+                    {currentTabAccess.lockedByEdition && (
+                      <button
+                        type="button"
+                        onClick={() => setTab("editions")}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2.5 font-bold text-slate-950 hover:bg-emerald-400"
+                      >
+                        <KeyRound className="h-4 w-4" />
+                        Buka Edisi, Kuota &amp; Aktivasi License Key
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setTab("inbox")}
+                      className="rounded-xl border border-slate-700 px-4 py-2.5 font-semibold text-slate-200 hover:bg-slate-800"
+                    >
+                      Kembali ke Inbox
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
             <>
               {tab === "inbox" && (
                 <InboxView
@@ -449,12 +598,15 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
                   members={snapshot.members}
                   initialConversationId={activeConversationId}
                   onRefresh={refresh}
-                  onOpenPos={() => setTab("pos")}
+                  onOpenPos={(orderId) => {
+                    if (orderId) setHighlightOrderId(orderId);
+                    setTab("pos");
+                  }}
                   onToast={showToast}
                 />
               )}
               {tab === "master" && (
-                <div className="flex-1 overflow-y-auto bg-slate-50">
+                <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
                   <MasterDataView
                     adapter={adapter}
                     products={snapshot.products}
@@ -505,10 +657,13 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
               {tab === "pos" && (
                 <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
                   <PosView
+                    key={highlightOrderId ?? "pos-default"}
                     adapter={adapter}
                     storeProfile={storeProfile}
                     products={snapshot.products}
                     orders={snapshot.orders}
+                    highlightOrderId={highlightOrderId}
+                    onClearHighlight={() => setHighlightOrderId(null)}
                     onRefresh={refresh}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
@@ -577,13 +732,14 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
                   workspaceSlug={snapshot.workspaceSlug}
                   storeProfile={storeProfile}
                   onSaveStoreProfile={handleSaveStoreProfile}
-                  currentRole={snapshot.currentRole}
+                  currentRole={effectiveRole}
                   members={snapshot.members}
                   onRefresh={refresh}
                   onToast={showToast}
                 />
               )}
             </>
+            )
           ) : null}
         </main>
       </div>

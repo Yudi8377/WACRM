@@ -93,7 +93,12 @@ function resolveStore(storeOrName: string | StoreBusinessProfile): StoreBusiness
 }
 
 function escHtml(v: string): string {
-  return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return v
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function padRight(text: string, len: number): string {
@@ -974,7 +979,7 @@ export function renderInvoicePrintHtml(
         <div style="font-weight:700;font-size:15px;">${escHtml(order.customerName)}</div>
         ${order.customerPhone ? `<div>Telp: ${escHtml(order.customerPhone)}</div>` : ""}
         <div>Alamat Kirim: ${escHtml(order.shippingAddress || "-")}</div>
-        ${order.shippingCourier ? `<div class="muted" style="margin-top:3px;">Kurir: ${escHtml(order.shippingCourier)} · Resi: ${escHtml(order.trackingCode || "-")}</div>` : ""}
+        ${order.shippingCourier || order.shippingService ? `<div class="muted" style="margin-top:3px;">Kurir: ${escHtml(order.shippingService || order.shippingCourier || "-")} · Resi: ${escHtml(order.trackingCode || "-")}</div>` : ""}
       </div>
       <div style="text-align:center;">
         <img src="${qrDataUrl}" alt="QR Verifikasi Pesanan" style="width:124px;height:124px;border:1px solid #cbd5e1;border-radius:8px;padding:4px;" />
@@ -989,6 +994,7 @@ export function renderInvoicePrintHtml(
       <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Subtotal</span><span>${escHtml(formatIdr(order.subtotal))}</span></div>
       ${order.discountAmount > 0 ? `<div style="display:flex;justify-content:space-between;padding:4px 0;color:#dc2626;"><span>Diskon</span><span>-${escHtml(formatIdr(order.discountAmount))}</span></div>` : ""}
       ${order.taxAmount > 0 ? `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>PPN 11%</span><span>${escHtml(formatIdr(order.taxAmount))}</span></div>` : ""}
+      ${(order.shippingCost ?? 0) > 0 ? `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Ongkir (${escHtml(order.shippingService || order.shippingCourier || "Kurir")})</span><span>${escHtml(formatIdr(order.shippingCost ?? 0))}</span></div>` : ""}
       <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:2px solid #0f172a;font-weight:800;font-size:16px;"><span>TOTAL</span><span>${escHtml(formatIdr(order.totalAmount))}</span></div>
     </div>
     <p class="muted" style="margin-top:18px;border-top:1px dashed #cbd5e1;padding-top:8px;">
