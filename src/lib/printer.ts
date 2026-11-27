@@ -44,6 +44,8 @@ interface AndroidBridge {
   speakText?: (text: string, lang?: string) => void;
   stopSpeaking?: () => void;
   startVoiceInput?: (lang?: string) => void;
+  isBiometricAvailable?: () => boolean;
+  authenticateBiometric?: (title: string, subtitle: string) => void;
 }
 
 export function detectPrinterCapabilities(): PrinterCapabilities {

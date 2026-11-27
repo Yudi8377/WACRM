@@ -80,6 +80,11 @@ class WacrmJsBridge(
     fun getAppVersion(): String = BuildConfig.VERSION_NAME
 
     @JavascriptInterface
+    fun speakText(text: String?) {
+        speakText(text, "id-ID")
+    }
+
+    @JavascriptInterface
     fun speakText(text: String?, lang: String?) {
         val safe = text?.trim()?.take(1800) ?: return
         if (safe.isEmpty()) return
@@ -94,6 +99,11 @@ class WacrmJsBridge(
         activity.runOnUiThread {
             activity.stopCompanionSpeech()
         }
+    }
+
+    @JavascriptInterface
+    fun startVoiceInput() {
+        startVoiceInput("id-ID")
     }
 
     @JavascriptInterface

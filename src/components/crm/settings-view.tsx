@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
@@ -22,15 +22,24 @@ import {
   evaluateEditionQuota,
   getEditionMatrixCapabilities,
   loadCommercialSession,
+  saveCommercialSession,
+  type CommercialUserSession,
 } from "@/lib/access-control";
 import {
+  buildBiometricSessionFallback,
   detectBiometricCapability,
   enrollBiometricForSession,
   getEnrolledBiometricForEmail,
+  getLatestEnrolledBiometricProfile,
   removeEnrolledBiometricProfile,
   type BiometricCapability,
   type EnrolledBiometricProfile,
 } from "@/lib/biometric-auth";
+import {
+  COMPANION_FAB_EVENT,
+  loadCompanionFabVisible,
+  saveCompanionFabVisible,
+} from "@/lib/warm-voice";
 import type { AppEditionId, MemberRole, StoreBusinessProfile, TeamMemberRecord } from "@/lib/crm-types";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
@@ -38,6 +47,7 @@ interface SettingsViewProps {
   adapter: WorkspaceAdapter;
   editionId?: AppEditionId;
   licenseMaxSeats?: number | null;
+  commercialUser?: CommercialUserSession | null;
   workspaceName: string;
   workspaceSlug: string;
   storeProfile: StoreBusinessProfile;
@@ -53,6 +63,7 @@ export function SettingsView({
   adapter,
   editionId = "starter",
   licenseMaxSeats,
+  commercialUser,
   workspaceName,
   storeProfile,
   onSaveStoreProfile,
@@ -86,41 +97,126 @@ export function SettingsView({
   const [biometricCap, setBiometricCap] = useState<BiometricCapability | null>(null);
   const [enrolledBio, setEnrolledBio] = useState<EnrolledBiometricProfile | null>(null);
   const [busyBio, setBusyBio] = useState(false);
+  const [bioFeedback, setBioFeedback] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [showPinFallback, setShowPinFallback] = useState(false);
+  const [pinCode, setPinCode] = useState("");
+  const companionFabVisible = useSyncExternalStore(
+    (onStoreChange) => {
+      window.addEventListener(COMPANION_FAB_EVENT, onStoreChange);
+      return () => window.removeEventListener(COMPANION_FAB_EVENT, onStoreChange);
+    },
+    () => loadCompanionFabVisible(),
+    () => false,
+  );
+
+  function resolveEffectiveSession(): CommercialUserSession | null {
+    const stored = loadCommercialSession();
+    if (stored) {
+      // Ensure Sovereign / upgraded edition is always synced onto session before enrollment
+      if (stored.editionId !== editionId) {
+        const synced: CommercialUserSession = {
+          ...stored,
+          editionId,
+          hasPaidLicense: stored.hasPaidLicense || editionId !== "starter",
+        };
+        saveCommercialSession(synced);
+        return synced;
+      }
+      return stored;
+    }
+    if (commercialUser) {
+      const synced: CommercialUserSession = {
+        ...commercialUser,
+        editionId,
+        hasPaidLicense: commercialUser.hasPaidLicense || editionId !== "starter",
+      };
+      saveCommercialSession(synced);
+      return synced;
+    }
+    const matchedMember =
+      members.find((m) => m.role === currentRole) ?? members[0];
+    const fallbackSlug =
+      workspaceName.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 24) || "owner";
+    const resolvedEmail =
+      (storeProfile.email || email || "").trim() || `${fallbackSlug}@workspace.wacrm`;
+    const fallback = buildBiometricSessionFallback({
+      email: resolvedEmail,
+      displayName: matchedMember?.displayName || storeProfile.businessName || workspaceName,
+      businessName: storeProfile.businessName || workspaceName,
+      userId: matchedMember?.userId || matchedMember?.id,
+      role: currentRole,
+      editionId,
+    });
+    if (fallback) {
+      saveCommercialSession(fallback);
+    }
+    return fallback;
+  }
 
   useEffect(() => {
     let active = true;
-    const sess = loadCommercialSession();
+    const stored = loadCommercialSession();
+    const activeEmail = stored?.email || commercialUser?.email || storeProfile.email;
     detectBiometricCapability()
       .then((cap) => {
         if (!active) return;
         setBiometricCap(cap);
-        if (sess?.email) {
-          setEnrolledBio(getEnrolledBiometricForEmail(sess.email));
-        }
+        const existing = activeEmail
+          ? getEnrolledBiometricForEmail(activeEmail)
+          : getLatestEnrolledBiometricProfile();
+        setEnrolledBio(existing);
       })
       .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, []);
+  }, [commercialUser?.email, storeProfile.email]);
 
-  async function handleEnrollBiometric() {
-    const sess = loadCommercialSession();
+  async function handleEnrollBiometric(forcePin = false) {
+    setBioFeedback(null);
+    const sess = resolveEffectiveSession();
     if (!sess) {
-      onToast("Masuk terlebih dahulu dengan email akun Anda untuk mengaktifkan Biometrik.", "error");
+      const msg =
+        "Email akun belum ditemukan. Isi kolom Email di Profil Usaha lalu klik Simpan, atau masuk ulang dengan email Anda.";
+      setBioFeedback({ tone: "error", text: msg });
+      onToast(msg, "error");
       return;
     }
+
+    if ((forcePin || biometricCap?.method === "device_pin") && !pinCode.trim()) {
+      setShowPinFallback(true);
+      setBioFeedback({
+        tone: "error",
+        text: "Masukkan 6 digit angka PIN Cepat di bawah, lalu ketuk Simpan Kunci Cepat.",
+      });
+      return;
+    }
+
     setBusyBio(true);
     try {
-      const res = await enrollBiometricForSession(sess);
+      const res = await enrollBiometricForSession(sess, {
+        forceDevicePin: forcePin || biometricCap?.method === "device_pin",
+        pinCode: pinCode.trim() || undefined,
+      });
       if (!res.ok || !res.profile) {
-        onToast(res.error || "Gagal mengaktifkan Sidik Jari / Face ID.", "error");
+        const errText = res.error || "Gagal mengaktifkan Sidik Jari / Face ID.";
+        setBioFeedback({ tone: "error", text: errText });
+        if (res.fallbackPinSuggested) {
+          setShowPinFallback(true);
+        }
+        onToast(errText, "error");
         return;
       }
       setEnrolledBio(res.profile);
-      onToast(
-        `Login Biometrik (${biometricCap?.label || "Sidik Jari / Face ID"}) aktif untuk ${sess.email}!`,
-      );
+      setShowPinFallback(false);
+      setPinCode("");
+      const methodName =
+        res.profile.method === "device_pin"
+          ? "Kunci Cepat PIN 6-Digit Terenkripsi"
+          : biometricCap?.label || "Sidik Jari / Face ID";
+      const okMsg = `Berhasil! ${methodName} aktif untuk ${res.profile.email} (${editionId.toUpperCase()}).`;
+      setBioFeedback({ tone: "ok", text: okMsg });
+      onToast(okMsg);
     } finally {
       setBusyBio(false);
     }
@@ -128,10 +224,11 @@ export function SettingsView({
 
   function handleDisableBiometric() {
     const sess = loadCommercialSession();
-    const targetEmail = enrolledBio?.email || sess?.email;
+    const targetEmail = enrolledBio?.email || sess?.email || commercialUser?.email;
     if (!targetEmail) return;
     removeEnrolledBiometricProfile(targetEmail);
     setEnrolledBio(null);
+    setBioFeedback(null);
     onToast("Login Biometrik untuk perangkat ini telah dinonaktifkan.");
   }
 
@@ -283,24 +380,89 @@ export function SettingsView({
             </div>
             <p className="mt-2.5 text-xs leading-relaxed text-slate-600">
               {enrolledBio
-                ? `Biometrik aktif untuk akun ${enrolledBio.email}. Berikutnya cukup 1 sentuhan Sidik Jari atau Face Recognition saat membuka aplikasi di HP.`
+                ? enrolledBio.method === "device_pin"
+                  ? `Kunci Cepat PIN 6-Digit aktif untuk akun ${enrolledBio.email} (${enrolledBio.editionId.toUpperCase()}). Berikutnya cukup masukkan 6 digit PIN cepat tanpa ketik sandi panjang.`
+                  : `Biometrik aktif untuk akun ${enrolledBio.email} (${enrolledBio.editionId.toUpperCase()}). Berikutnya cukup 1 sentuhan Sidik Jari atau Face Recognition saat membuka aplikasi di HP.`
                 : biometricCap?.detail ||
                   "Aktifkan Sidik Jari atau Face Recognition setelah aplikasi diinstall di HP agar masuk lebih cepat & anti intip sandi."}
             </p>
-            <div className="mt-3.5 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={busyBio}
-                onClick={() => void handleEnrollBiometric()}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-600 px-3.5 py-2 text-xs font-extrabold text-white hover:bg-cyan-500 disabled:opacity-60"
+
+            {bioFeedback && (
+              <div
+                className={`mt-2.5 rounded-xl border px-3 py-2 text-[11px] font-semibold ${
+                  bioFeedback.tone === "ok"
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                    : "border-amber-300 bg-amber-50 text-amber-900"
+                }`}
               >
-                <Fingerprint className="h-3.5 w-3.5" />
-                {busyBio
-                  ? "Memverifikasi Sensor..."
-                  : enrolledBio
-                    ? "Perbarui Sidik Jari / Face ID"
-                    : "Aktifkan Sidik Jari / Face ID"}
-              </button>
+                {bioFeedback.text}
+              </div>
+            )}
+
+            {(showPinFallback || biometricCap?.method === "device_pin") && (
+              <div className="mt-3 rounded-xl border border-cyan-200 bg-white p-3">
+                <label className="block text-[11px] font-bold text-slate-800">
+                  Kunci Cepat Perangkat (6 Digit Angka — Terenkripsi SHA-256)
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={pinCode}
+                    onChange={(e) => setPinCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="Contoh: 123456"
+                    className="mt-1.5 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-mono tracking-[0.35em] text-slate-900 focus:border-cyan-500 focus:outline-none"
+                  />
+                </label>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busyBio || pinCode.length < 4}
+                    onClick={() => void handleEnrollBiometric(true)}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-extrabold text-white hover:bg-emerald-500 disabled:opacity-50"
+                  >
+                    <Lock className="h-3.5 w-3.5" /> Simpan Kunci Cepat PIN
+                  </button>
+                  {biometricCap?.method !== "device_pin" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowPinFallback(false);
+                        setPinCode("");
+                      }}
+                      className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                    >
+                      Tutup
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-3.5 flex flex-wrap gap-2">
+              {biometricCap?.method !== "device_pin" && (
+                <button
+                  type="button"
+                  disabled={busyBio}
+                  onClick={() => void handleEnrollBiometric(false)}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-600 px-3.5 py-2 text-xs font-extrabold text-white hover:bg-cyan-500 disabled:opacity-60"
+                >
+                  <Fingerprint className="h-3.5 w-3.5" />
+                  {busyBio
+                    ? "Memverifikasi Sensor..."
+                    : enrolledBio
+                      ? "Perbarui Sidik Jari / Face ID"
+                      : "Aktifkan Sidik Jari / Face ID"}
+                </button>
+              )}
+              {biometricCap?.method !== "device_pin" && !showPinFallback && (
+                <button
+                  type="button"
+                  onClick={() => setShowPinFallback(true)}
+                  className="inline-flex items-center gap-1 rounded-xl border border-cyan-300 bg-white px-3 py-2 text-xs font-bold text-cyan-800 hover:bg-cyan-50"
+                >
+                  <Lock className="h-3.5 w-3.5" /> Gunakan PIN Cepat 6-Digit
+                </button>
+              )}
               {enrolledBio && (
                 <button
                   type="button"
@@ -337,6 +499,33 @@ export function SettingsView({
               <li>✓ Proteksi Anti-XSS, Anti-SQL Injection &amp; Fraud COD AI</li>
               <li>✓ Printer Universal Plug &amp; Play (USB OTG, Bluetooth, WiFi, A4, EDC)</li>
             </ul>
+            <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
+              <div className="pr-2">
+                <p className="text-[11px] font-bold text-slate-800">Tombol Mengambang Asisten Suara AI</p>
+                <p className="text-[10px] text-slate-500">
+                  Disembunyikan otomatis di HP/Android agar layar lega (buka lewat ikon suara di bar atas).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !companionFabVisible;
+                  saveCompanionFabVisible(next);
+                  onToast(
+                    next
+                      ? "Tombol mengambang Asisten Suara AI ditampilkan."
+                      : "Tombol mengambang Asisten Suara AI disembunyikan agar layar lebih rapi.",
+                  );
+                }}
+                className={`shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${
+                  companionFabVisible
+                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                    : "border border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                {companionFabVisible ? "Tampil" : "Tersembunyi"}
+              </button>
+            </div>
             <button
               type="button"
               onClick={handleDownloadEncryptedBackup}

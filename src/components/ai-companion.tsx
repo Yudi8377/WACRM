@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import {
   Bot,
   HeartHandshake,
@@ -25,7 +25,11 @@ import { formatIdr, type AppEditionId, type StoreBusinessProfile } from "@/lib/c
 import { editionHasFeature, getEditionById } from "@/lib/editions";
 import { getAndroidBridge } from "@/lib/printer";
 import {
+  COMPANION_FAB_EVENT,
+  loadCompanionFabVisible,
   playWarmActivationChime,
+  primeMobileSpeechEngine,
+  saveCompanionFabVisible,
   selectWarmIndonesianVoice,
   speakWarmIndonesian,
   stopWarmSpeech,
@@ -104,6 +108,14 @@ export function AiCompanion({
   const voiceUnlocked = editionHasFeature(editionId, "voice_companion_24_7");
   const activeEditionName = getEditionById(editionId).name;
   const [open, setOpen] = useState(false);
+  const showFloatingFab = useSyncExternalStore(
+    (onStoreChange) => {
+      window.addEventListener(COMPANION_FAB_EVENT, onStoreChange);
+      return () => window.removeEventListener(COMPANION_FAB_EVENT, onStoreChange);
+    },
+    () => loadCompanionFabVisible(),
+    () => false,
+  );
   const [showVoiceSettings, setShowVoiceSettings] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [audioActivated, setAudioActivated] = useState(false);
@@ -198,9 +210,15 @@ export function AiCompanion({
 
     const android = getAndroidBridge();
     if (android?.startVoiceInput) {
-      setListening(true);
-      android.startVoiceInput();
-      return;
+      try {
+        setListening(true);
+        // CRITICAL: WacrmJsBridge.kt expects 1 arg: startVoiceInput(lang).
+        android.startVoiceInput("id-ID");
+        return;
+      } catch {
+        setListening(false);
+        // Fall through cleanly to browser SpeechRecognition if native bridge fails
+      }
     }
 
     const w = window as unknown as {
@@ -237,12 +255,20 @@ export function AiCompanion({
     };
     rec.onerror = (ev) => {
       setListening(false);
-      if (ev.error === "not-allowed") {
+      if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
         setContinuousMode(false);
         onToast(
-          "Izin mikrofon belum diberikan. Klik ikon gembok di address bar browser lalu izinkan Mikrofon.",
+          "Izin mikrofon belum diberikan. Buka Pengaturan Aplikasi / ikon gembok browser lalu izinkan Mikrofon.",
           "error",
         );
+      } else if (ev.error === "audio-capture") {
+        setContinuousMode(false);
+        onToast("Mikrofon tidak terdeteksi atau sedang dipakai aplikasi lain.", "error");
+      } else if (ev.error === "network") {
+        setContinuousMode(false);
+        onToast("Koneksi internet diperlukan untuk pengenalan suara. Coba ketik pesan di bawah.", "error");
+      } else if (ev.error === "no-speech") {
+        onToast("Suara belum terdengar — coba bicara lebih dekat ke mikrofon HP.", "error");
       }
     };
     rec.onend = () => {
@@ -254,6 +280,8 @@ export function AiCompanion({
       rec.start();
     } catch {
       setListening(false);
+      setContinuousMode(false);
+      onToast("Mikrofon belum bisa dimulai. Pastikan izin Mikrofon HP sudah aktif.", "error");
     }
   }, [onToast]);
 
@@ -306,6 +334,7 @@ export function AiCompanion({
     setVoiceEnabled(true);
     setAudioActivated(true);
     setVoiceWarning(null);
+    primeMobileSpeechEngine();
     playWarmActivationChime();
 
     const persona =
@@ -479,20 +508,31 @@ export function AiCompanion({
     handleUserUtteranceRef.current = handleUserUtterance;
   }, [handleUserUtterance]);
 
-  // Register global Android Native Voice callback
+  // Register global Android Native Voice callbacks (success + cancel/error)
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const win = window as unknown as { __wacrmOnVoiceResult?: (transcript: string) => void };
+    const win = window as unknown as {
+      __wacrmOnVoiceResult?: (transcript: string) => void;
+      __wacrmOnVoiceError?: (reason?: string) => void;
+    };
     win.__wacrmOnVoiceResult = (transcript: string) => {
       setListening(false);
       if (transcript?.trim()) {
         void handleUserUtteranceRef.current?.(transcript.trim(), true);
       }
     };
+    win.__wacrmOnVoiceError = (reason?: string) => {
+      setListening(false);
+      setContinuousMode(false);
+      if (reason && reason !== "cancelled") {
+        onToast(reason, "error");
+      }
+    };
     return () => {
       delete win.__wacrmOnVoiceResult;
+      delete win.__wacrmOnVoiceError;
     };
-  }, []);
+  }, [onToast]);
 
   // Respond to contextual triggers from inside modals (e.g. "Panduan Suara AI" on Meta WhatsApp Cloud API!)
   useEffect(() => {
@@ -534,6 +574,7 @@ export function AiCompanion({
       onToast("Mode mikrofon kontinu dihentikan.");
       return;
     }
+    primeMobileSpeechEngine();
     playWarmActivationChime();
     setVoiceEnabled(true);
     setAudioActivated(true);
@@ -546,6 +587,7 @@ export function AiCompanion({
     if (!draft.trim()) return;
     const text = draft;
     setDraft("");
+    primeMobileSpeechEngine();
     setVoiceEnabled(true);
     await handleUserUtterance(text, false);
   }
@@ -560,32 +602,47 @@ export function AiCompanion({
 
   return (
     <>
-      {/* Prominent Floating Launcher Button */}
-      {!open && (
-        <button
-          type="button"
-          onClick={() => {
-            setOpen(true);
-            playWarmActivationChime();
-          }}
-          className={`fixed right-4 bottom-20 z-40 flex items-center gap-2 rounded-full px-4 py-3 text-xs font-extrabold text-white shadow-2xl transition hover:scale-105 md:bottom-6 ${
-            voiceUnlocked
-              ? "bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 shadow-emerald-500/40 ring-2 ring-emerald-300/40"
-              : "bg-gradient-to-r from-slate-900 to-emerald-950 text-emerald-200 ring-2 ring-emerald-400/50 shadow-slate-950/50"
-          }`}
-          title="Buka Asisten Pribadi & Pemandu Suara AI 24/7"
-        >
-          <Sparkles className="h-4 w-4 animate-pulse text-amber-300" />
-          <span>Asisten Suara AI 24/7</span>
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20">
+      {/* Non-Intrusive Hideable Launcher (Hidden by default on Android/mobile; always accessible from Top Header Bar!) */}
+      {!open && showFloatingFab && (
+        <div className="fixed right-3 bottom-20 z-30 flex items-center gap-1 md:right-5 md:bottom-5">
+          <button
+            type="button"
+            onClick={() => {
+              primeMobileSpeechEngine();
+              playWarmActivationChime();
+              setOpen(true);
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold shadow-lg transition hover:brightness-110 ${
+              voiceUnlocked
+                ? "bg-emerald-600/95 text-white ring-1 ring-emerald-300/40"
+                : "bg-slate-900/90 text-emerald-200 ring-1 ring-emerald-500/40"
+            }`}
+            title="Buka Asisten Suara AI 24/7"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+            <span className="hidden sm:inline">Asisten AI</span>
             <Volume2 className="h-3.5 w-3.5" />
-          </span>
-        </button>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              saveCompanionFabVisible(false);
+              onToast(
+                "Tombol mengambang Asisten AI disembunyikan. Buka kapan saja lewat ikon suara di bagian atas layar.",
+              );
+            }}
+            aria-label="Sembunyikan tombol mengambang Asisten AI"
+            title="Sembunyikan tombol mengambang"
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-700/70 bg-slate-900/85 text-slate-300 shadow hover:bg-slate-800 hover:text-white"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       )}
 
-      {/* Dockable Companion Drawer */}
+      {/* Compact Responsive Companion Drawer (Mobile Bottom Sheet / Desktop Dock) */}
       {open && (
-        <div className="fixed right-3 bottom-16 z-50 flex h-[600px] max-h-[86vh] w-[calc(100vw-24px)] max-w-md flex-col overflow-hidden rounded-3xl border border-emerald-500/50 bg-slate-950 text-slate-100 shadow-2xl md:right-5 md:bottom-5">
+        <div className="fixed inset-x-2 bottom-2 z-50 flex max-h-[76vh] flex-col overflow-hidden rounded-3xl border border-emerald-500/40 bg-slate-950 text-slate-100 shadow-2xl md:inset-x-auto md:right-5 md:bottom-5 md:h-[560px] md:max-h-[82vh] md:w-[400px]">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-slate-800 bg-gradient-to-r from-emerald-950 via-teal-950/90 to-slate-900 px-4 py-3">
             <div className="flex items-center gap-2.5">
@@ -747,6 +804,28 @@ export function AiCompanion({
                   </select>
                 </label>
               )}
+              <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/70 px-2.5 py-2">
+                <span className="text-[11px] text-slate-300">Tombol mengambang di layar</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !showFloatingFab;
+                    saveCompanionFabVisible(next);
+                    onToast(
+                      next
+                        ? "Tombol mengambang Asisten AI ditampilkan."
+                        : "Tombol mengambang disembunyikan — buka lewat ikon suara di bar atas.",
+                    );
+                  }}
+                  className={`rounded-lg px-2.5 py-1 text-[10px] font-bold transition ${
+                    showFloatingFab
+                      ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40"
+                      : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  }`}
+                >
+                  {showFloatingFab ? "Tampil" : "Tersembunyi (Rapi)"}
+                </button>
+              </div>
             </div>
           )}
 

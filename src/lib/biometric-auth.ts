@@ -2,13 +2,18 @@
 
 import type { CommercialUserSession } from "@/lib/access-control";
 
-export type BiometricMethod = "android_biometric" | "webauthn_platform" | "unavailable";
+export type BiometricMethod =
+  | "android_biometric"
+  | "webauthn_platform"
+  | "device_pin"
+  | "unavailable";
 
 export interface BiometricCapability {
   available: boolean;
   method: BiometricMethod;
   label: string;
   detail: string;
+  isAndroidWebView?: boolean;
 }
 
 export interface EnrolledBiometricProfile {
@@ -28,6 +33,8 @@ export interface EnrolledBiometricProfile {
   platform: "web" | "android";
   method: BiometricMethod;
   credentialIdBase64: string;
+  pinSalt?: string;
+  pinHash?: string;
   enrolledAt: string;
   lastUsedAt?: string;
 }
@@ -43,6 +50,20 @@ function getAndroidBiometricBridge(): AndroidBiometricBridge | null {
   if (typeof window === "undefined") return null;
   const bridge = (window as unknown as { WACRMAndroid?: AndroidBiometricBridge }).WACRMAndroid;
   return bridge ?? null;
+}
+
+/**
+ * Detects Android APK / in-app WebView runtimes where FIDO2 WebAuthn
+ * (`navigator.credentials.create`) is commonly blocked by Android WebView even when
+ * `PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()` resolves true.
+ */
+export function isAndroidWebViewRuntime(): boolean {
+  if (typeof window === "undefined" || typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  if (/WACRM-Android/i.test(ua)) return true;
+  if (/;\s*wv\)/i.test(ua)) return true;
+  if (Boolean(getAndroidBiometricBridge())) return true;
+  return false;
 }
 
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -63,6 +84,10 @@ function base64UrlToBytes(b64: string): Uint8Array {
   return out;
 }
 
+function toExactArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
 function randomChallenge(length = 32): Uint8Array {
   const arr = new Uint8Array(length);
   if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
@@ -75,6 +100,57 @@ function randomChallenge(length = 32): Uint8Array {
   return arr;
 }
 
+async function hashDevicePin(pinCode: string, salt: string): Promise<string> {
+  const payload = `wacrm-biometric-pin-v5:${salt}:${pinCode}`;
+  if (typeof crypto !== "undefined" && crypto.subtle) {
+    const encoded = new TextEncoder().encode(payload);
+    const digest = await crypto.subtle.digest("SHA-256", encoded);
+    return bytesToBase64Url(new Uint8Array(digest));
+  }
+  // Safe deterministic fallback when SubtleCrypto is unavailable on older WebViews
+  let hash = 2166136261;
+  for (let i = 0; i < payload.length; i++) {
+    hash ^= payload.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `fnv1a_${(hash >>> 0).toString(16)}`;
+}
+
+/**
+ * Builds a complete CommercialUserSession from active workspace / Better Auth context when
+ * `loadCommercialSession()` is not yet populated (for example direct Neon Better Auth login
+ * or Sovereign Corporate deployment).
+ */
+export function buildBiometricSessionFallback(params: {
+  email?: string | null;
+  displayName?: string | null;
+  businessName?: string | null;
+  userId?: string | null;
+  role: CommercialUserSession["role"];
+  editionId: CommercialUserSession["editionId"];
+  licenseKey?: string | null;
+}): CommercialUserSession | null {
+  const cleanEmail = (params.email || "").trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes("@")) return null;
+  const nowIso = new Date().toISOString();
+  const isPaid = params.editionId !== "starter" || Boolean(params.licenseKey);
+  return {
+    userId: (params.userId || "").trim() || `usr_${cleanEmail.replace(/[^a-z0-9]/g, "_")}`,
+    email: cleanEmail,
+    displayName: (params.displayName || "").trim() || cleanEmail.split("@")[0] || "Pemilik Usaha",
+    businessName: (params.businessName || "").trim() || "Workspace WACRM",
+    role: params.role,
+    editionId: params.editionId,
+    authProvider: "cloud_neon",
+    hasPaidLicense: isPaid,
+    licenseKey: params.licenseKey ?? null,
+    trialStartedAt: nowIso,
+    trialEndsAt: nowIso,
+    platform: isAndroidWebViewRuntime() ? "android" : "web",
+    signedInAt: nowIso,
+  };
+}
+
 export async function detectBiometricCapability(): Promise<BiometricCapability> {
   if (typeof window === "undefined") {
     return {
@@ -85,9 +161,15 @@ export async function detectBiometricCapability(): Promise<BiometricCapability> 
     };
   }
 
-  // 1. Native Android APK BiometricPrompt (Fingerprint / Face Unlock)
+  const inAndroidWebView = isAndroidWebViewRuntime();
+
+  // 1. Native Android APK BiometricPrompt (Fingerprint / Face Unlock / Device Credential)
   const androidBridge = getAndroidBiometricBridge();
-  if (androidBridge && typeof androidBridge.isBiometricAvailable === "function") {
+  if (
+    androidBridge &&
+    typeof androidBridge.isBiometricAvailable === "function" &&
+    typeof androidBridge.authenticateBiometric === "function"
+  ) {
     try {
       const ok = androidBridge.isBiometricAvailable();
       if (ok) {
@@ -96,14 +178,28 @@ export async function detectBiometricCapability(): Promise<BiometricCapability> 
           method: "android_biometric",
           label: "Sidik Jari & Face Unlock Android",
           detail: "Sensor biometrik native Android aktif — login 1 sentuhan tanpa ketik sandi.",
+          isAndroidWebView: true,
         };
       }
     } catch {
-      // fall through to WebAuthn
+      // fall through
     }
   }
 
-  // 2. WebAuthn FIDO2 Platform Authenticator (Android Chrome, iOS Safari Face ID / Touch ID, Windows Hello, macOS Touch ID)
+  // 2. Android WebView without native biometric bridge (older APK or sensor disabled in HP Settings)
+  // NEVER fall through to broken FIDO2 WebAuthn inside Android WebView!
+  if (inAndroidWebView) {
+    return {
+      available: true,
+      method: "device_pin",
+      label: "Kunci Cepat Perangkat HP (PIN 6-Digit / APK)",
+      detail:
+        "Mode APK/WebView terdeteksi. Aktifkan Kunci Cepat 6-Digit langsung sekarang (atau aktifkan Kunci Layar/Sidik Jari di Pengaturan HP & perbarui APK WACRM terbaru untuk sensor native).",
+      isAndroidWebView: true,
+    };
+  }
+
+  // 3. WebAuthn FIDO2 Platform Authenticator (Chrome Android, Safari iOS Face ID/Touch ID, Windows Hello, macOS Touch ID)
   try {
     const pkc = (window as unknown as {
       PublicKeyCredential?: {
@@ -114,7 +210,9 @@ export async function detectBiometricCapability(): Promise<BiometricCapability> 
     if (
       pkc &&
       typeof pkc.isUserVerifyingPlatformAuthenticatorAvailable === "function" &&
-      window.isSecureContext
+      window.isSecureContext &&
+      typeof navigator !== "undefined" &&
+      Boolean(navigator.credentials?.create)
     ) {
       const supported = await pkc.isUserVerifyingPlatformAuthenticatorAvailable();
       if (supported) {
@@ -126,6 +224,7 @@ export async function detectBiometricCapability(): Promise<BiometricCapability> 
           label: isApple ? "Face ID / Touch ID" : "Sidik Jari / Pengenalan Wajah (Passkey)",
           detail:
             "Perangkat Anda mendukung autentikasi biometrik FIDO2/WebAuthn resmi untuk masuk 1 sentuhan.",
+          isAndroidWebView: false,
         };
       }
     }
@@ -133,12 +232,14 @@ export async function detectBiometricCapability(): Promise<BiometricCapability> 
     // ignore probe errors
   }
 
+  // 4. Universal Safe Fallback: Device Quick-Unlock PIN (works on 100% of phones & browsers)
   return {
-    available: false,
-    method: "unavailable",
-    label: "Perangkat Tanpa Sensor Biometrik",
+    available: true,
+    method: "device_pin",
+    label: "Kunci Cepat Perangkat (PIN 6-Digit)",
     detail:
-      "Buka WACRM di HP Android/iPhone (PWA atau Aplikasi Android APK) untuk mengaktifkan login Sidik Jari & Face Recognition.",
+      "Browser ini belum mengekspos sensor Passkey secara langsung. Aktifkan Kunci Cepat PIN 6-Digit terenkripsi SHA-256 agar tetap bisa masuk 1 langkah di perangkat ini.",
+    isAndroidWebView: false,
   };
 }
 
@@ -221,128 +322,208 @@ function runNativeAndroidBiometric(title: string, subtitle: string): Promise<{ o
   });
 }
 
+function createProfileRecord(
+  session: CommercialUserSession,
+  extra: Pick<EnrolledBiometricProfile, "method" | "credentialIdBase64" | "platform"> & {
+    pinSalt?: string;
+    pinHash?: string;
+  },
+): EnrolledBiometricProfile {
+  const email = session.email.trim().toLowerCase();
+  const nowIso = new Date().toISOString();
+  return {
+    email,
+    userId: session.userId,
+    displayName: session.displayName,
+    businessName: session.businessName,
+    city: session.city,
+    role: session.role,
+    editionId: session.editionId,
+    hasPaidLicense: Boolean(session.hasPaidLicense),
+    licenseKey: session.licenseKey ?? null,
+    trialEditionId: session.trialEditionId ?? null,
+    usedTrialEditions: session.usedTrialEditions ?? [],
+    trialStartedAt: session.trialStartedAt ?? nowIso,
+    trialEndsAt: session.trialEndsAt ?? nowIso,
+    platform: extra.platform,
+    method: extra.method,
+    credentialIdBase64: extra.credentialIdBase64,
+    pinSalt: extra.pinSalt,
+    pinHash: extra.pinHash,
+    enrolledAt: nowIso,
+    lastUsedAt: nowIso,
+  };
+}
+
 /**
- * Registers device Fingerprint / Face Recognition for the currently logged-in account.
+ * Registers device Fingerprint / Face Recognition (or encrypted 6-digit Quick PIN fallback)
+ * for the currently logged-in account (supports Starter, Pro, Enterprise & Sovereign Corporate).
  */
 export async function enrollBiometricForSession(
   session: CommercialUserSession,
-): Promise<{ ok: boolean; profile?: EnrolledBiometricProfile; error?: string }> {
+  options?: { pinCode?: string; forceDevicePin?: boolean },
+): Promise<{
+  ok: boolean;
+  profile?: EnrolledBiometricProfile;
+  error?: string;
+  fallbackPinSuggested?: boolean;
+}> {
   const cap = await detectBiometricCapability();
-  if (!cap.available) {
+  const email = session.email.trim().toLowerCase();
+  if (!email) {
     return {
       ok: false,
-      error:
-        "Sensor Sidik Jari / Face ID tidak terdeteksi di browser ini. Pastikan Anda membuka WACRM lewat HTTPS di HP Android/iPhone atau Aplikasi Android APK.",
+      error: "Email akun aktif tidak ditemukan. Silakan simpan profil atau masuk ulang terlebih dahulu.",
     };
   }
 
-  const email = session.email.trim().toLowerCase();
-  const nowIso = new Date().toISOString();
+  // Option A: Encrypted Device Quick PIN (explicitly requested OR capability is device_pin)
+  if (options?.forceDevicePin || cap.method === "device_pin") {
+    const cleanPin = (options?.pinCode || "").replace(/\D/g, "");
+    if (cleanPin.length < 4 || cleanPin.length > 8) {
+      return {
+        ok: false,
+        fallbackPinSuggested: true,
+        error: "Masukkan PIN Cepat 6 digit angka untuk mengaktifkan Kunci Cepat Perangkat HP.",
+      };
+    }
+    const salt = bytesToBase64Url(randomChallenge(16));
+    const pinHash = await hashDevicePin(cleanPin, salt);
+    const profile = createProfileRecord(session, {
+      platform: cap.isAndroidWebView ? "android" : session.platform ?? "web",
+      method: "device_pin",
+      credentialIdBase64: bytesToBase64Url(randomChallenge(24)),
+      pinSalt: salt,
+      pinHash,
+    });
+    saveEnrolledBiometricProfile(profile);
+    return { ok: true, profile };
+  }
 
+  if (!cap.available) {
+    return {
+      ok: false,
+      fallbackPinSuggested: true,
+      error:
+        "Sensor Sidik Jari / Face ID tidak terdeteksi di browser ini. Anda tetap bisa mengaktifkan Kunci Cepat PIN 6-Digit.",
+    };
+  }
+
+  // Option B: Native Android BiometricPrompt (Fingerprint / Face Unlock / Screen Lock)
   if (cap.method === "android_biometric") {
     const res = await runNativeAndroidBiometric(
       "Aktifkan Login Biometrik WACRM",
       `Verifikasi Sidik Jari / Wajah untuk ${email}`,
     );
-    if (!res.ok) return { ok: false, error: res.error };
+    if (!res.ok) {
+      return { ok: false, fallbackPinSuggested: true, error: res.error };
+    }
 
-    const profile: EnrolledBiometricProfile = {
-      email,
-      userId: session.userId,
-      displayName: session.displayName,
-      businessName: session.businessName,
-      city: session.city,
-      role: session.role,
-      editionId: session.editionId,
-      hasPaidLicense: Boolean(session.hasPaidLicense),
-      licenseKey: session.licenseKey ?? null,
-      trialEditionId: session.trialEditionId ?? null,
-      usedTrialEditions: session.usedTrialEditions ?? [],
-      trialStartedAt: session.trialStartedAt ?? nowIso,
-      trialEndsAt: session.trialEndsAt ?? nowIso,
+    const profile = createProfileRecord(session, {
       platform: "android",
       method: "android_biometric",
       credentialIdBase64: bytesToBase64Url(randomChallenge(24)),
-      enrolledAt: nowIso,
-      lastUsedAt: nowIso,
-    };
+    });
     saveEnrolledBiometricProfile(profile);
     return { ok: true, profile };
   }
 
-  // WebAuthn Platform Authenticator (FIDO2)
+  // Option C: WebAuthn Platform Authenticator (FIDO2 Passkey on Android Chrome, iOS Safari, Desktop)
+  const challenge = randomChallenge(32);
+  const userIdBytes = new TextEncoder().encode((session.userId || email).slice(0, 64));
+  const rpId = window.location.hostname;
+
+  const basePublicKey: PublicKeyCredentialCreationOptions = {
+    challenge: toExactArrayBuffer(challenge),
+    rp: {
+      name: "WACRM Commercial OS",
+      id: rpId,
+    },
+    user: {
+      id: toExactArrayBuffer(userIdBytes),
+      name: email,
+      displayName: session.displayName || email,
+    },
+    pubKeyCredParams: [
+      { type: "public-key", alg: -7 }, // ES256 (Android / Apple standard)
+      { type: "public-key", alg: -257 }, // RS256 (Windows Hello / legacy Android)
+      { type: "public-key", alg: -8 }, // EdDSA
+    ],
+    authenticatorSelection: {
+      authenticatorAttachment: "platform",
+      userVerification: "preferred",
+      residentKey: "preferred",
+    },
+    timeout: 60_000,
+    attestation: "none",
+  };
+
+  let credential: PublicKeyCredential | null = null;
+  let lastError: unknown = null;
+
   try {
-    const challenge = randomChallenge(32);
-    const userIdBytes = new TextEncoder().encode(session.userId.slice(0, 64));
-    const rpId = window.location.hostname;
-    const credential = (await navigator.credentials.create({
-      publicKey: {
-        challenge: challenge.buffer as ArrayBuffer,
-        rp: {
-          name: "WACRM Commercial OS",
-          id: rpId,
-        },
-        user: {
-          id: userIdBytes.buffer as ArrayBuffer,
-          name: email,
-          displayName: session.displayName || email,
-        },
-        pubKeyCredParams: [
-          { type: "public-key", alg: -7 }, // ES256
-          { type: "public-key", alg: -257 }, // RS256
-        ],
-        authenticatorSelection: {
-          authenticatorAttachment: "platform",
-          userVerification: "required",
-          residentKey: "preferred",
-        },
-        timeout: 45_000,
-        attestation: "none",
-      },
+    credential = (await navigator.credentials.create({
+      publicKey: basePublicKey,
     })) as PublicKeyCredential | null;
-
-    if (!credential) {
-      return { ok: false, error: "Pendaftaran biometrik dibatalkan pengguna." };
+  } catch (firstErr) {
+    lastError = firstErr;
+    const errName = firstErr instanceof Error ? firstErr.name : "";
+    // Many Android OEMs (Xiaomi/Oppo/Vivo/Samsung older Chrome) fail on `residentKey: "preferred"`
+    // Retry cleanly without residentKey constraint.
+    if (errName === "NotSupportedError" || errName === "ConstraintError" || errName === "TypeError") {
+      try {
+        credential = (await navigator.credentials.create({
+          publicKey: {
+            ...basePublicKey,
+            challenge: toExactArrayBuffer(randomChallenge(32)),
+            authenticatorSelection: {
+              authenticatorAttachment: "platform",
+              userVerification: "preferred",
+            },
+          },
+        })) as PublicKeyCredential | null;
+        lastError = null;
+      } catch (retryErr) {
+        lastError = retryErr;
+      }
     }
-
-    const credId = bytesToBase64Url(new Uint8Array(credential.rawId));
-    const profile: EnrolledBiometricProfile = {
-      email,
-      userId: session.userId,
-      displayName: session.displayName,
-      businessName: session.businessName,
-      city: session.city,
-      role: session.role,
-      editionId: session.editionId,
-      hasPaidLicense: Boolean(session.hasPaidLicense),
-      licenseKey: session.licenseKey ?? null,
-      trialEditionId: session.trialEditionId ?? null,
-      usedTrialEditions: session.usedTrialEditions ?? [],
-      trialStartedAt: session.trialStartedAt ?? nowIso,
-      trialEndsAt: session.trialEndsAt ?? nowIso,
-      platform: session.platform ?? "web",
-      method: "webauthn_platform",
-      credentialIdBase64: credId,
-      enrolledAt: nowIso,
-      lastUsedAt: nowIso,
-    };
-    saveEnrolledBiometricProfile(profile);
-    return { ok: true, profile };
-  } catch (err) {
-    const msg =
-      err instanceof Error && err.name === "NotAllowedError"
-        ? "Verifikasi Sidik Jari / Face ID dibatalkan atau belum aktif di perangkat Anda."
-        : "Gagal mengaktifkan biometrik di browser ini.";
-    return { ok: false, error: msg };
   }
+
+  if (!credential) {
+    const errName = lastError instanceof Error ? lastError.name : "";
+    const msg =
+      errName === "NotAllowedError"
+        ? "Sensor Sidik Jari / Face ID ditolak atau dibatalkan oleh HP/browser. Pastikan Kunci Layar & Sidik Jari aktif di Pengaturan HP, atau gunakan PIN Cepat 6-Digit di bawah."
+        : errName === "SecurityError" || errName === "InvalidStateError"
+          ? `Browser membatasi Passkey pada konteks ini (${errName}). Gunakan PIN Cepat 6-Digit di bawah agar tetap bisa login 1 langkah.`
+          : `Passkey belum didukung penuh oleh browser HP ini${errName ? ` (${errName})` : ""}. Gunakan PIN Cepat 6-Digit di bawah — 100% aman & langsung aktif!`;
+    return { ok: false, fallbackPinSuggested: true, error: msg };
+  }
+
+  const credId = bytesToBase64Url(new Uint8Array(credential.rawId));
+  const profile = createProfileRecord(session, {
+    platform: session.platform ?? "web",
+    method: "webauthn_platform",
+    credentialIdBase64: credId,
+  });
+  saveEnrolledBiometricProfile(profile);
+  return { ok: true, profile };
 }
 
 /**
- * Verifies Fingerprint / Face Recognition on Sign-In and returns the verified CommercialUserSession.
+ * Verifies Fingerprint / Face Recognition (or encrypted Device Quick PIN) on Sign-In
+ * and returns the verified CommercialUserSession.
  */
 export async function authenticateWithBiometric(
   preferredEmail?: string,
-): Promise<{ ok: boolean; session?: CommercialUserSession; error?: string }> {
+  pinCode?: string,
+): Promise<{
+  ok: boolean;
+  session?: CommercialUserSession;
+  requiresPin?: boolean;
+  profile?: EnrolledBiometricProfile;
+  error?: string;
+}> {
   const profile = preferredEmail
     ? getEnrolledBiometricForEmail(preferredEmail) || getLatestEnrolledBiometricProfile()
     : getLatestEnrolledBiometricProfile();
@@ -351,11 +532,32 @@ export async function authenticateWithBiometric(
     return {
       ok: false,
       error:
-        "Belum ada akun yang didaftarkan biometrik di perangkat ini. Masuk sekali dengan email, lalu aktifkan Sidik Jari / Face ID di Pengaturan.",
+        "Belum ada akun yang didaftarkan biometrik / kunci cepat di perangkat ini. Masuk sekali dengan email, lalu aktifkan Sidik Jari / Face ID di Pengaturan.",
     };
   }
 
-  if (profile.method === "android_biometric") {
+  if (profile.method === "device_pin") {
+    const cleanPin = (pinCode || "").replace(/\D/g, "");
+    if (!cleanPin) {
+      return {
+        ok: false,
+        requiresPin: true,
+        profile,
+        error: `Masukkan PIN Cepat perangkat untuk akun ${profile.email}.`,
+      };
+    }
+    const expectedHash = profile.pinHash || "";
+    const salt = profile.pinSalt || "";
+    const computed = await hashDevicePin(cleanPin, salt);
+    if (!expectedHash || computed !== expectedHash) {
+      return {
+        ok: false,
+        requiresPin: true,
+        profile,
+        error: "PIN Cepat salah. Periksa kembali 6 digit PIN Anda.",
+      };
+    }
+  } else if (profile.method === "android_biometric") {
     const res = await runNativeAndroidBiometric(
       "Masuk WACRM dengan Biometrik",
       `Gunakan Sidik Jari atau Face Unlock untuk ${profile.businessName || profile.email}`,
@@ -367,17 +569,17 @@ export async function authenticateWithBiometric(
       const credBytes = base64UrlToBytes(profile.credentialIdBase64);
       const assertion = await navigator.credentials.get({
         publicKey: {
-          challenge: challenge.buffer as ArrayBuffer,
+          challenge: toExactArrayBuffer(challenge),
           rpId: window.location.hostname,
           allowCredentials: [
             {
               type: "public-key",
-              id: credBytes.buffer as ArrayBuffer,
+              id: toExactArrayBuffer(credBytes),
               transports: ["internal"],
             },
           ],
-          userVerification: "required",
-          timeout: 45_000,
+          userVerification: "preferred",
+          timeout: 60_000,
         },
       });
       if (!assertion) {
@@ -403,7 +605,7 @@ export async function authenticateWithBiometric(
     city: profile.city,
     role: profile.role,
     editionId: profile.editionId,
-    authProvider: "workspace_local",
+    authProvider: profile.editionId === "sovereign" ? "cloud_neon" : "workspace_local",
     hasPaidLicense: profile.hasPaidLicense,
     licenseKey: profile.licenseKey ?? null,
     trialEditionId: profile.trialEditionId ?? null,

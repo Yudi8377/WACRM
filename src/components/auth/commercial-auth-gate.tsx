@@ -103,6 +103,8 @@ export function CommercialAuthGate({
   const [notice, setNotice] = useState<string | null>(null);
   const [biometricCap, setBiometricCap] = useState<BiometricCapability | null>(null);
   const [enrolledBiometric, setEnrolledBiometric] = useState<EnrolledBiometricProfile | null>(null);
+  const [showPinLogin, setShowPinLogin] = useState(false);
+  const [quickPin, setQuickPin] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -119,16 +121,24 @@ export function CommercialAuthGate({
     };
   }, []);
 
-  async function handleBiometricSignIn() {
+  async function handleBiometricSignIn(explicitPin?: string) {
     setError(null);
     setNotice(null);
     setBusy(true);
     try {
-      const res = await authenticateWithBiometric(loginEmail || undefined);
+      const res = await authenticateWithBiometric(
+        loginEmail || undefined,
+        explicitPin ?? (quickPin.trim() || undefined),
+      );
       if (!res.ok || !res.session) {
+        if (res.requiresPin) {
+          setShowPinLogin(true);
+        }
         setError(res.error || "Verifikasi biometrik gagal.");
         return;
       }
+      setShowPinLogin(false);
+      setQuickPin("");
       activateSession(res.session);
     } finally {
       setBusy(false);
@@ -962,7 +972,7 @@ export function CommercialAuthGate({
                   <ArrowRight className="h-4 w-4" />
                 </button>
 
-                {/* Biometric Login (Fingerprint / Face ID) */}
+                {/* Biometric Login (Fingerprint / Face ID / 6-Digit Quick PIN) */}
                 <button
                   type="button"
                   disabled={busy}
@@ -971,14 +981,39 @@ export function CommercialAuthGate({
                 >
                   <Fingerprint className="h-4 w-4 text-cyan-300" />
                   {enrolledBiometric
-                    ? `Masuk Cepat Sidik Jari / Face ID (${enrolledBiometric.displayName})`
+                    ? enrolledBiometric.method === "device_pin"
+                      ? `Masuk Cepat PIN 6-Digit (${enrolledBiometric.displayName})`
+                      : `Masuk Cepat Sidik Jari / Face ID (${enrolledBiometric.displayName})`
                     : biometricCap?.available
                       ? `Masuk dengan ${biometricCap.label}`
                       : "Masuk dengan Sidik Jari / Face Recognition"}
                 </button>
+                {showPinLogin && (
+                  <div className="flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-slate-950/90 p-2.5">
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={quickPin}
+                      onChange={(e) => setQuickPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="PIN 6 Digit"
+                      className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-center font-mono text-sm tracking-[0.35em] text-white focus:border-cyan-400 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      disabled={busy || quickPin.length < 4}
+                      onClick={() => void handleBiometricSignIn(quickPin)}
+                      className="rounded-lg bg-cyan-500 px-3.5 py-2 text-xs font-extrabold text-slate-950 hover:bg-cyan-400 disabled:opacity-50"
+                    >
+                      Buka
+                    </button>
+                  </div>
+                )}
                 <p className="text-center text-[10px] text-slate-400">
                   {enrolledBiometric
-                    ? `Biometrik aktif untuk ${enrolledBiometric.email} · 1 sentuhan tanpa ketik sandi`
+                    ? enrolledBiometric.method === "device_pin"
+                      ? `Kunci Cepat PIN aktif untuk ${enrolledBiometric.email} · tanpa ketik sandi panjang`
+                      : `Biometrik aktif untuk ${enrolledBiometric.email} · 1 sentuhan tanpa ketik sandi`
                     : "Tips HP: Setelah login pertama, aktifkan Login Biometrik (Sidik Jari / Face ID) di menu Pengaturan."}
                 </p>
 

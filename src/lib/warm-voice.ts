@@ -43,7 +43,78 @@ export const WARM_VOICE_PERSONAS: WarmVoicePersona[] = [
 
 let cachedVoices: SpeechSynthesisVoice[] = [];
 let activeWatchdogTimer: ReturnType<typeof setInterval> | null = null;
+let activeAndroidEndTimer: ReturnType<typeof setTimeout> | null = null;
+let activeUtteranceRef: SpeechSynthesisUtterance | null = null;
 let speechGenerationId = 0;
+
+export const COMPANION_FAB_PREF_KEY = "wacrm_companion_fab_visibility_v5";
+export const COMPANION_FAB_EVENT = "wacrm:companion-fab-pref";
+
+/**
+ * Determines whether the floating AI Voice Companion launcher should be shown.
+ * Default: HIDDEN on Android / mobile viewports (< 768px) to avoid blocking forms/buttons
+ * (the top header bar already provides a clean 1-tap Asisten Suara AI icon),
+ * and VISIBLE on desktop unless the user hides it.
+ */
+export function loadCompanionFabVisible(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const saved = window.localStorage.getItem(COMPANION_FAB_PREF_KEY);
+    if (saved === "visible") return true;
+    if (saved === "hidden") return false;
+  } catch {
+    // ignore storage restrictions
+  }
+  const isSmallOrMobile =
+    window.innerWidth < 768 ||
+    /Android|iPhone|iPad|iPod|Mobile|WACRM-Android/i.test(navigator.userAgent || "");
+  return !isSmallOrMobile;
+}
+
+export function saveCompanionFabVisible(visible: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(COMPANION_FAB_PREF_KEY, visible ? "visible" : "hidden");
+    window.dispatchEvent(new CustomEvent(COMPANION_FAB_EVENT, { detail: visible }));
+  } catch {
+    // ignore
+  }
+}
+
+export function isWarmSpeechActive(): boolean {
+  return Boolean(activeUtteranceRef || activeAndroidEndTimer);
+}
+
+function isMobileSpeechRuntime(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+}
+
+/**
+ * Primes browser speechSynthesis & voice registry inside a direct user tap/click gesture
+ * so subsequent async AI replies are allowed to speak on Android Chrome & iOS Safari.
+ */
+export function primeMobileSpeechEngine(): void {
+  if (typeof window === "undefined") return;
+  try {
+    if ("speechSynthesis" in window) {
+      loadAvailableVoices();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+      // On iOS/Android Safari & Chrome, speaking an empty silent utterance inside the
+      // tap event unlocks subsequent async speechSynthesis.speak() calls cleanly.
+      if (isMobileSpeechRuntime() && !window.speechSynthesis.speaking) {
+        const silent = new SpeechSynthesisUtterance("");
+        silent.lang = "id-ID";
+        silent.volume = 0;
+        window.speechSynthesis.speak(silent);
+      }
+    }
+  } catch {
+    // ignore priming failure
+  }
+}
 
 /**
  * Plays a very soft, warm 2-note chime via Web Audio API so browser audio context
@@ -202,14 +273,20 @@ export function splitIntoNaturalSpeechChunks(text: string, maxLen = 165): string
 
 export function stopWarmSpeech(): void {
   speechGenerationId += 1;
+  activeUtteranceRef = null;
   if (activeWatchdogTimer) {
     clearInterval(activeWatchdogTimer);
     activeWatchdogTimer = null;
   }
+  if (activeAndroidEndTimer) {
+    clearTimeout(activeAndroidEndTimer);
+    activeAndroidEndTimer = null;
+  }
   if (typeof window === "undefined") return;
   try {
+    (window as unknown as { __wacrmOnSpeechEnd?: () => void }).__wacrmOnSpeechEnd = undefined;
     getAndroidBridge()?.stopSpeaking?.();
-    if ("speechSynthesis" in window) {
+    if ("speechSynthesis" in window && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
       window.speechSynthesis.cancel();
     }
   } catch {
@@ -238,11 +315,33 @@ export function speakWarmIndonesian(params: {
 
   const android = getAndroidBridge();
   if (android?.speakText) {
-    params.onStart?.();
-    android.speakText(naturalText);
-    const approxMs = Math.min(14000, Math.max(2200, naturalText.length * 62));
-    setTimeout(() => params.onEnd?.(), approxMs);
-    return { engine: "android", voiceName: "Android Native Bahasa Indonesia" };
+    stopWarmSpeech();
+    const genId = ++speechGenerationId;
+    try {
+      // CRITICAL: WacrmJsBridge.kt expects 2 args: speakText(text, lang).
+      // Passing both arguments fixes silent invocation failure on Android APK WebView!
+      android.speakText(naturalText, "id-ID");
+      params.onStart?.();
+
+      let finished = false;
+      const finishOnce = () => {
+        if (finished || genId !== speechGenerationId) return;
+        finished = true;
+        if (activeAndroidEndTimer) {
+          clearTimeout(activeAndroidEndTimer);
+          activeAndroidEndTimer = null;
+        }
+        (window as unknown as { __wacrmOnSpeechEnd?: () => void }).__wacrmOnSpeechEnd = undefined;
+        params.onEnd?.();
+      };
+
+      (window as unknown as { __wacrmOnSpeechEnd?: () => void }).__wacrmOnSpeechEnd = finishOnce;
+      const approxMs = Math.min(20000, Math.max(2400, naturalText.length * 72));
+      activeAndroidEndTimer = setTimeout(finishOnce, approxMs);
+      return { engine: "android", voiceName: "Android Native Bahasa Indonesia" };
+    } catch {
+      // Fall through seamlessly to Web Speech Synthesis if native bridge call fails
+    }
   }
 
   if (!("speechSynthesis" in window)) {
@@ -252,11 +351,12 @@ export function speakWarmIndonesian(params: {
 
   stopWarmSpeech();
   const genId = ++speechGenerationId;
+  const isMobile = isMobileSpeechRuntime();
   const persona =
     WARM_VOICE_PERSONAS.find((p) => p.id === params.personaId) ?? WARM_VOICE_PERSONAS[0];
   const voices = loadAvailableVoices();
   const chosenVoice = selectWarmIndonesianVoice(voices, params.preferredVoiceName);
-  const chunks = splitIntoNaturalSpeechChunks(naturalText);
+  const chunks = splitIntoNaturalSpeechChunks(naturalText, isMobile ? 220 : 175);
 
   if (chunks.length === 0) {
     params.onEnd?.();
@@ -272,28 +372,33 @@ export function speakWarmIndonesian(params: {
     // ignore
   }
 
-  // Keep-alive watchdog prevents Chrome from silently pausing speech after ~14 seconds
-  activeWatchdogTimer = setInterval(() => {
-    if (genId !== speechGenerationId) {
-      if (activeWatchdogTimer) clearInterval(activeWatchdogTimer);
-      return;
-    }
-    try {
-      if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
-        window.speechSynthesis.pause();
-        window.speechSynthesis.resume();
+  // Desktop Chrome keep-alive watchdog ONLY — on Android Chrome/iOS Safari, calling pause()
+  // permanently halts speech synthesis, so we MUST NOT run pause()/resume() on mobile!
+  if (!isMobile) {
+    activeWatchdogTimer = setInterval(() => {
+      if (genId !== speechGenerationId) {
+        if (activeWatchdogTimer) clearInterval(activeWatchdogTimer);
+        return;
       }
-    } catch {
-      // ignore
-    }
-  }, 10_000);
+      try {
+        if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+          window.speechSynthesis.pause();
+          window.speechSynthesis.resume();
+        }
+      } catch {
+        // ignore
+      }
+    }, 10_000);
+  }
 
   let idx = 0;
   let startedNotified = false;
+  let retriedDefaultVoice = false;
 
-  const speakNext = () => {
+  const speakNext = (forceSystemDefaultVoice = false) => {
     if (genId !== speechGenerationId) return;
     if (idx >= chunks.length) {
+      activeUtteranceRef = null;
       if (activeWatchdogTimer) {
         clearInterval(activeWatchdogTimer);
         activeWatchdogTimer = null;
@@ -303,8 +408,11 @@ export function speakWarmIndonesian(params: {
     }
 
     const utter = new SpeechSynthesisUtterance(chunks[idx]);
-    utter.lang = chosenVoice?.lang || "id-ID";
-    if (chosenVoice) utter.voice = chosenVoice;
+    activeUtteranceRef = utter;
+    utter.lang = !forceSystemDefaultVoice && chosenVoice?.lang ? chosenVoice.lang : "id-ID";
+    if (!forceSystemDefaultVoice && chosenVoice) {
+      utter.voice = chosenVoice;
+    }
     utter.rate = persona.rate;
     utter.pitch = persona.pitch;
     utter.volume = Math.min(1, Math.max(0.2, params.volume ?? 1));
@@ -316,33 +424,44 @@ export function speakWarmIndonesian(params: {
       }
     };
     utter.onend = () => {
+      if (genId !== speechGenerationId) return;
       idx += 1;
-      speakNext();
+      retriedDefaultVoice = false;
+      speakNext(forceSystemDefaultVoice);
     };
     utter.onerror = (ev) => {
       if (genId !== speechGenerationId) return;
       const errCode = (ev as { error?: string }).error || "unknown";
       if (errCode === "canceled" || errCode === "interrupted") return;
+      // On Android Chrome, specific voice objects occasionally throw synthesis-failed;
+      // automatically retry once with OS default Indonesian TTS (voice = null).
+      if (!retriedDefaultVoice && chosenVoice && !forceSystemDefaultVoice) {
+        retriedDefaultVoice = true;
+        speakNext(true);
+        return;
+      }
+      activeUtteranceRef = null;
       if (activeWatchdogTimer) {
         clearInterval(activeWatchdogTimer);
         activeWatchdogTimer = null;
       }
       params.onError?.(
         errCode === "not-allowed"
-          ? "Browser menahan audio otomatis — klik tombol 'Tes & Aktifkan Suara' terlebih dahulu."
-          : `Kendala audio browser (${errCode}). Pastikan volume perangkat aktif.`,
+          ? "Browser HP menahan audio otomatis — ketuk tombol 'Tes & Aktifkan Suara' sekali untuk membuka audio."
+          : `Kendala audio HP (${errCode}). Pastikan volume media HP naik & mesin Text-to-Speech Bahasa Indonesia aktif.`,
       );
     };
 
     try {
       window.speechSynthesis.speak(utter);
     } catch {
+      activeUtteranceRef = null;
       params.onError?.("Gagal memutar suara pada browser ini.");
     }
   };
 
-  // Slight 40ms micro-delay after cancel() prevents Chrome from dropping the first chunk!
-  setTimeout(speakNext, 40);
+  // Speak synchronously on the first chunk so Android Chrome & iOS Safari preserve user-gesture unlock!
+  speakNext(false);
 
   return {
     engine: "web_speech",

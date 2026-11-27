@@ -57,7 +57,7 @@ import {
   sendMarketSignalTelemetry,
   sendUsageTelemetry,
 } from "@/lib/usage-telemetry";
-import { playWarmActivationChime } from "@/lib/warm-voice";
+import { playWarmActivationChime, primeMobileSpeechEngine } from "@/lib/warm-voice";
 import { loadStoreProfile, saveStoreProfile } from "@/lib/store-profile";
 import type { WorkspaceAdapter, WorkspaceSnapshot } from "@/lib/workspace-adapter";
 import { notifyAndroid } from "@/components/pwa-register";
@@ -538,6 +538,7 @@ export function WorkspaceApp({
           <button
             type="button"
             onClick={() => {
+              primeMobileSpeechEngine();
               playWarmActivationChime();
               setCompanionOpenSignal((s) => s + 1);
             }}
@@ -1178,6 +1179,7 @@ export function WorkspaceApp({
                   adapter={adapter}
                   editionId={editionId}
                   licenseMaxSeats={licenseMaxSeats}
+                  commercialUser={commercialUser}
                   workspaceName={snapshot.workspaceName}
                   workspaceSlug={snapshot.workspaceSlug}
                   storeProfile={storeProfile}

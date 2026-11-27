@@ -144,3 +144,67 @@ export async function validateMetaWhatsAppConnection(
     tokenExpiresAt: expiresAt > 0 ? new Date(expiresAt * 1000).toISOString() : null,
   };
 }
+
+/**
+ * Validates a workspace-supplied Meta Cloud API Bearer token directly against Meta Graph API
+ * when server-wide META_APP_ID/META_APP_SECRET are not configured (BYO Meta App mode).
+ * Still proves token validity AND phone-number membership under the given WABA ID.
+ */
+export async function validateMetaWhatsAppDirectToken(
+  input: {
+    graphApiVersion?: string;
+    wabaId: string;
+    phoneNumberId: string;
+    accessToken: string;
+  },
+  request: typeof fetch = fetch,
+): Promise<ValidatedMetaWhatsAppConnection> {
+  const version =
+    input.graphApiVersion && /^v\d+\.\d+$/.test(input.graphApiVersion)
+      ? input.graphApiVersion
+      : "v22.0";
+  const { wabaId, phoneNumberId, accessToken } = input;
+  if (!/^\d{5,30}$/.test(wabaId) || !/^\d{5,30}$/.test(phoneNumberId) || accessToken.length < 10) {
+    throw new MetaWhatsAppValidationError("invalid_token");
+  }
+
+  const authHeaders = { Authorization: `Bearer ${accessToken}` };
+  let phoneResp: Response;
+  try {
+    phoneResp = await request(
+      `https://graph.facebook.com/${version}/${phoneNumberId}?fields=id,display_phone_number,verified_name`,
+      { method: "GET", headers: authHeaders, signal: AbortSignal.timeout(10_000) },
+    );
+  } catch {
+    throw new MetaWhatsAppValidationError("provider_unavailable");
+  }
+  if (phoneResp.status === 401 || phoneResp.status === 403 || phoneResp.status === 400) {
+    throw new MetaWhatsAppValidationError("invalid_token");
+  }
+  if (!phoneResp.ok) {
+    throw new MetaWhatsAppValidationError("provider_unavailable");
+  }
+  const phoneJson = object(await phoneResp.json().catch(() => null));
+  if (!phoneJson || phoneJson.id !== phoneNumberId) {
+    throw new MetaWhatsAppValidationError("account_mismatch");
+  }
+
+  const wabaNumbers = await readJson(
+    request,
+    `https://graph.facebook.com/${version}/${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name&limit=100`,
+    { method: "GET", headers: authHeaders },
+  );
+  const items = Array.isArray(wabaNumbers.data) ? wabaNumbers.data : [];
+  if (!items.some((item) => object(item)?.id === phoneNumberId)) {
+    throw new MetaWhatsAppValidationError("account_mismatch");
+  }
+
+  return {
+    wabaId,
+    phoneNumberId,
+    displayPhoneNumber: stringOrNull(phoneJson.display_phone_number),
+    verifiedName: stringOrNull(phoneJson.verified_name),
+    scopes: ["whatsapp_business_management", "whatsapp_business_messaging"],
+    tokenExpiresAt: null,
+  };
+}

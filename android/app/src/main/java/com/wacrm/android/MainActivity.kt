@@ -28,6 +28,7 @@ import android.print.PrintAttributes
 import android.print.PrintManager
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Base64
 import org.json.JSONObject
 import java.util.Locale
@@ -112,16 +113,22 @@ class MainActivity : AppCompatActivity() {
                         "window.__wacrmOnVoiceResult && window.__wacrmOnVoiceResult($quoted);",
                         null
                     )
+                    return@registerForActivityResult
                 }
             }
+            webView.evaluateJavascript(
+                "window.__wacrmOnVoiceError && window.__wacrmOnVoiceError('cancelled');",
+                null
+            )
         }
 
-    private val cameraPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    private val mediaPermissionsLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
             val req = pendingWebPermissionRequest
             pendingWebPermissionRequest = null
             if (req != null) {
-                if (granted) req.grant(req.resources) else req.deny()
+                val allGranted = results.values.all { it }
+                if (allGranted) req.grant(req.resources) else req.deny()
             }
         }
 
@@ -182,6 +189,7 @@ class MainActivity : AppCompatActivity() {
         configureWebView()
         configureSwipeRefresh()
         configureBackNavigation()
+        initTextToSpeech()
 
         ContextCompat.registerReceiver(
             this,
@@ -213,6 +221,7 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             allowFileAccess = false
             allowContentAccess = true
+            mediaPlaybackRequiresUserGesture = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             userAgentString = "$userAgentString WACRM-Android/${BuildConfig.VERSION_NAME}"
         }
@@ -270,10 +279,20 @@ class MainActivity : AppCompatActivity() {
                     request.deny()
                     return
                 }
-                val wantsCamera = request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)
-                if (wantsCamera && ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                val needed = mutableListOf<String>()
+                if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE) &&
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    needed.add(Manifest.permission.CAMERA)
+                }
+                if (request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE) &&
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    needed.add(Manifest.permission.RECORD_AUDIO)
+                }
+                if (needed.isNotEmpty()) {
                     pendingWebPermissionRequest = request
-                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    mediaPermissionsLauncher.launch(needed.toTypedArray())
                 } else {
                     request.grant(request.resources)
                 }
@@ -674,19 +693,61 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun initTextToSpeech() {
+        if (textToSpeech != null) return
+        textToSpeech = TextToSpeech(this) { status ->
+            ttsReady = status == TextToSpeech.SUCCESS
+            if (ttsReady) {
+                textToSpeech?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) {
+                        runOnUiThread {
+                            webView.evaluateJavascript(
+                                "window.__wacrmOnSpeechEnd && window.__wacrmOnSpeechEnd();",
+                                null
+                            )
+                        }
+                    }
+
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) {
+                        runOnUiThread {
+                            webView.evaluateJavascript(
+                                "window.__wacrmOnSpeechEnd && window.__wacrmOnSpeechEnd();",
+                                null
+                            )
+                        }
+                    }
+                })
+                val queued = pendingSpeech
+                pendingSpeech = null
+                if (queued != null) {
+                    runOnUiThread { speakCompanionText(queued.first, queued.second) }
+                }
+            }
+        }
+    }
+
+    private fun resolveBestTtsLocale(tts: TextToSpeech, lang: String) {
+        val candidates = listOf(
+            Locale.forLanguageTag(lang),
+            Locale("id", "ID"),
+            Locale("in", "ID"),
+            Locale("ms", "MY"),
+            Locale.getDefault()
+        )
+        for (loc in candidates) {
+            val res = tts.setLanguage(loc)
+            if (res != TextToSpeech.LANG_MISSING_DATA && res != TextToSpeech.LANG_NOT_SUPPORTED) {
+                return
+            }
+        }
+    }
+
     fun speakCompanionText(text: String, lang: String) {
         if (textToSpeech == null) {
             pendingSpeech = Pair(text, lang)
-            textToSpeech = TextToSpeech(this) { status ->
-                ttsReady = status == TextToSpeech.SUCCESS
-                if (ttsReady) {
-                    val queued = pendingSpeech
-                    pendingSpeech = null
-                    if (queued != null) {
-                        speakCompanionText(queued.first, queued.second)
-                    }
-                }
-            }
+            initTextToSpeech()
             return
         }
         if (!ttsReady) {
@@ -694,11 +755,16 @@ class MainActivity : AppCompatActivity() {
             return
         }
         try {
-            val locale = Locale.forLanguageTag(lang)
-            textToSpeech?.language = locale
-            textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "wacrm-companion")
+            val tts = textToSpeech ?: return
+            resolveBestTtsLocale(tts, lang)
+            tts.setSpeechRate(0.96f)
+            tts.setPitch(1.03f)
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "wacrm-companion-${System.currentTimeMillis()}")
         } catch (_: Exception) {
-            // ignore TTS fallback errors
+            webView.evaluateJavascript(
+                "window.__wacrmOnSpeechEnd && window.__wacrmOnSpeechEnd();",
+                null
+            )
         }
     }
 
@@ -710,12 +776,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun allowedBiometricAuthenticators(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        } else {
+            BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        }
+    }
+
     fun isBiometricAuthAvailable(): Boolean {
         val manager = BiometricManager.from(this)
-        val status = manager.canAuthenticate(
-            BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                BiometricManager.Authenticators.BIOMETRIC_WEAK
-        )
+        val status = manager.canAuthenticate(allowedBiometricAuthenticators())
         return status == BiometricManager.BIOMETRIC_SUCCESS
     }
 
@@ -750,11 +824,7 @@ class MainActivity : AppCompatActivity() {
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setSubtitle(subtitle)
-            .setAllowedAuthenticators(
-                BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                    BiometricManager.Authenticators.BIOMETRIC_WEAK
-            )
-            .setNegativeButtonText("Gunakan Kata Sandi")
+            .setAllowedAuthenticators(allowedBiometricAuthenticators())
             .build()
         prompt.authenticate(info)
     }
@@ -764,11 +834,17 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang)
                 putExtra(RecognizerIntent.EXTRA_PROMPT, "Bicara dengan AI Companion WACRM...")
             }
             voiceRecognizerLauncher.launch(intent)
         } catch (_: Exception) {
-            Toast.makeText(this, "Layanan pengenalan suara tidak tersedia di perangkat ini.", Toast.LENGTH_LONG).show()
+            val msg = JSONObject.quote("Layanan Google Voice / Pengenalan Suara belum aktif di HP ini.")
+            webView.evaluateJavascript(
+                "window.__wacrmOnVoiceError && window.__wacrmOnVoiceError($msg);",
+                null
+            )
+            Toast.makeText(this, "Layanan pengenalan suara belum aktif di HP ini.", Toast.LENGTH_LONG).show()
         }
     }
 
