@@ -472,6 +472,24 @@ CREATE TABLE IF NOT EXISTS ai_agents (
   UNIQUE (tenant_id, agent_key)
 );
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'ai_agents'::regclass
+      AND conname = 'ai_agents_agent_key_check'
+      AND pg_get_constraintdef(oid) NOT LIKE '%companion_guide%'
+  ) THEN
+    ALTER TABLE ai_agents DROP CONSTRAINT ai_agents_agent_key_check;
+    ALTER TABLE ai_agents ADD CONSTRAINT ai_agents_agent_key_check CHECK (
+      agent_key IN (
+        'cs_sales','order_pos','knowledge_learner','fraud_sentinel',
+        'system_guardian','companion_guide','followup_hunter','procurement_forecast'
+      )
+    );
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS ai_knowledge_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
