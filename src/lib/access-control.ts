@@ -1,4 +1,4 @@
-import type { AppEditionId, MemberRole } from "@/lib/crm-types";
+import type { AiAgentKey, AppEditionId, MemberRole } from "@/lib/crm-types";
 import {
   APP_EDITIONS,
   editionHasFeature,
@@ -23,13 +23,135 @@ export type WorkspaceTabId =
 
 export const TRIAL_DURATION_DAYS = 14;
 
+/**
+ * Exact 1-to-1 mapping from the WACRM Feature Comparison Matrix:
+ * - Starter UMKM: Inbox (max 2 channels, manual AI assist), Master Data, POS QR & Universal Print,
+ *   Contacts (max 300), Channels (max 2), AI Agents (2 basic agents only: cs_sales & order_pos),
+ *   Basic Analytics, Editions, Settings (with Starter watermark).
+ * - Growth Pro unlocks: erp (erp_warehouse), seo_growth (seo_growth_ai), templates (zero_click_ai),
+ *   AI Auto-Reply 24/7 Zero-Click, 6 AI Agents, 5 channels, 5.000 contacts, 10 seats, 100% White-Label.
+ * - Enterprise AI Suite unlocks: accounting (double_entry_accounting), all 9 AI Agents,
+ *   24/7 Voice Companion (voice_companion_24_7), Fraud Sentinel & Self-Healing (fraud_sentinel_healing),
+ *   Super Admin & SWOT Analytics (super_admin_analytics), Unlimited seats, 50.000 contacts, 20 channels.
+ * - Sovereign Corporate unlocks: custom_branded_apk, dedicated_db_sla, Unlimited everything.
+ */
 export const TAB_REQUIRED_FEATURE: Partial<Record<WorkspaceTabId, EditionFeatureKey>> = {
   erp: "erp_warehouse",
   accounting: "double_entry_accounting",
   seo_growth: "seo_growth_ai",
-  ai: "fraud_sentinel_healing",
   templates: "zero_click_ai",
 };
+
+export const EDITION_ALLOWED_AI_AGENT_KEYS: Record<AppEditionId, AiAgentKey[]> = {
+  starter: ["cs_sales", "order_pos"],
+  pro: [
+    "cs_sales",
+    "order_pos",
+    "knowledge_learner",
+    "followup_hunter",
+    "seo_growth",
+    "procurement_forecast",
+  ],
+  enterprise: [
+    "cs_sales",
+    "order_pos",
+    "knowledge_learner",
+    "followup_hunter",
+    "seo_growth",
+    "procurement_forecast",
+    "fraud_sentinel",
+    "system_guardian",
+    "companion_guide",
+  ],
+  sovereign: [
+    "cs_sales",
+    "order_pos",
+    "knowledge_learner",
+    "followup_hunter",
+    "seo_growth",
+    "procurement_forecast",
+    "fraud_sentinel",
+    "system_guardian",
+    "companion_guide",
+  ],
+};
+
+export function isAiAgentAllowedInEdition(
+  editionId: AppEditionId,
+  agentKey: AiAgentKey,
+): boolean {
+  return EDITION_ALLOWED_AI_AGENT_KEYS[editionId].includes(agentKey);
+}
+
+export function getRequiredEditionForAiAgent(agentKey: AiAgentKey): AppEditionId {
+  if (EDITION_ALLOWED_AI_AGENT_KEYS.starter.includes(agentKey)) return "starter";
+  if (EDITION_ALLOWED_AI_AGENT_KEYS.pro.includes(agentKey)) return "pro";
+  return "enterprise";
+}
+
+export interface EditionMatrixCapabilities {
+  editionId: AppEditionId;
+  editionName: string;
+  omnichannelInbox: boolean;
+  zeroClickAiAutoReply: boolean;
+  masterData: boolean;
+  universalPrinting: boolean;
+  posQrShippingLabel: boolean;
+  erpWarehouse: boolean;
+  doubleEntryAccounting: boolean;
+  seoGrowthAi: boolean;
+  voiceCompanion247: boolean;
+  fraudSentinelHealing: boolean;
+  whiteLabelStore: boolean;
+  superAdminAnalytics: boolean;
+  customBrandedApk: boolean;
+  dedicatedDbSla: boolean;
+  allowedAiAgents: AiAgentKey[];
+  limits: {
+    maxAgents: number;
+    maxContacts: number;
+    maxChannels: number;
+    maxAiAgents: number;
+    maxWorkspaces: number;
+  };
+}
+
+export function getEditionMatrixCapabilities(
+  editionId: AppEditionId,
+  licenseSeatOverride?: number | null,
+): EditionMatrixCapabilities {
+  const ed = getEditionById(editionId);
+  const resolvedSeats =
+    licenseSeatOverride && licenseSeatOverride > 0
+      ? licenseSeatOverride >= 9999
+        ? -1
+        : licenseSeatOverride
+      : ed.limits.maxAgents;
+
+  return {
+    editionId: ed.id,
+    editionName: ed.name,
+    omnichannelInbox: editionHasFeature(editionId, "omnichannel_inbox"),
+    zeroClickAiAutoReply: editionHasFeature(editionId, "zero_click_ai"),
+    masterData: editionHasFeature(editionId, "master_data"),
+    universalPrinting: editionHasFeature(editionId, "universal_printing_usb_edc"),
+    posQrShippingLabel: editionHasFeature(editionId, "pos_qr_shipping_label"),
+    erpWarehouse: editionHasFeature(editionId, "erp_warehouse"),
+    doubleEntryAccounting: editionHasFeature(editionId, "double_entry_accounting"),
+    seoGrowthAi: editionHasFeature(editionId, "seo_growth_ai"),
+    voiceCompanion247: editionHasFeature(editionId, "voice_companion_24_7"),
+    fraudSentinelHealing: editionHasFeature(editionId, "fraud_sentinel_healing"),
+    whiteLabelStore: editionHasFeature(editionId, "white_label_store"),
+    superAdminAnalytics: editionHasFeature(editionId, "super_admin_analytics"),
+    customBrandedApk: editionHasFeature(editionId, "custom_branded_apk"),
+    dedicatedDbSla: editionHasFeature(editionId, "dedicated_db_sla"),
+    allowedAiAgents: EDITION_ALLOWED_AI_AGENT_KEYS[editionId],
+    limits: {
+      ...ed.limits,
+      maxAgents: resolvedSeats,
+    },
+  };
+}
 
 const ROLE_RANK: Record<MemberRole, number> = {
   viewer: 1,
@@ -523,4 +645,29 @@ export function upgradeCommercialSessionWithLicense(
     saveLocalAccounts(accounts);
   }
   return upgraded;
+}
+
+export function revertCommercialSessionToTrial(
+  session: CommercialUserSession,
+): CommercialUserSession {
+  const reverted: CommercialUserSession = {
+    ...session,
+    editionId: "starter",
+    licenseKey: null,
+    hasPaidLicense: false,
+  };
+  saveCommercialSession(reverted);
+
+  const accounts = loadLocalAccounts();
+  const idx = accounts.findIndex((a) => a.email.toLowerCase() === session.email.toLowerCase());
+  if (idx >= 0) {
+    accounts[idx] = {
+      ...accounts[idx],
+      editionId: "starter",
+      licenseKey: null,
+      hasPaidLicense: false,
+    };
+    saveLocalAccounts(accounts);
+  }
+  return reverted;
 }

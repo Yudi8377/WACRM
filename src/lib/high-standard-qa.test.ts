@@ -5,9 +5,14 @@ import {
   PATCH as publisherTenantsPatch,
 } from "@/app/api/publisher/tenants/route";
 import {
+  evaluateEditionQuota,
   evaluateTabAccess,
   evaluateTrialStatus,
+  getEditionMatrixCapabilities,
+  isAiAgentAllowedInEdition,
+  revertCommercialSessionToTrial,
   TRIAL_DURATION_DAYS,
+  upgradeCommercialSessionWithLicense,
   type CommercialUserSession,
 } from "@/lib/access-control";
 import {
@@ -21,7 +26,7 @@ import {
   runSystemGuardianAudit,
 } from "@/lib/ai-agents";
 import type { AiAgentRecord, ErpProductRecord, PosOrderRecord } from "@/lib/crm-types";
-import { verifySignedLicenseKey } from "@/lib/license-crypto";
+import { issueSignedLicenseKey, verifySignedLicenseKey } from "@/lib/license-crypto";
 import { renderShippingLabelPrintHtml } from "@/lib/printer";
 import {
   getPublisherSyncSecret,
@@ -349,17 +354,147 @@ describe("High-Standard QA 2 — Real-Time Signup Sync (Web & Android) + 14-Day 
     expect(licensed.isTrial).toBe(false);
     expect(licensed.isExpired).toBe(false);
 
-    // Starter UMKM allows core UMKM tabs and restricts premium modules to Preview-Only
+    // Starter UMKM allows core UMKM tabs (including AI tab with 2 basic agents) and restricts higher-tier tabs to Preview-Only
     expect(evaluateTabAccess("starter", "owner", "inbox").allowed).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "pos").allowed).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "master").allowed).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "contacts").allowed).toBe(true);
+    expect(evaluateTabAccess("starter", "owner", "channels").allowed).toBe(true);
+    expect(evaluateTabAccess("starter", "owner", "ai").allowed).toBe(true);
 
     expect(evaluateTabAccess("starter", "owner", "erp").lockedByEdition).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "seo_growth").lockedByEdition).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "templates").lockedByEdition).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "accounting").lockedByEdition).toBe(true);
-    expect(evaluateTabAccess("starter", "owner", "ai").lockedByEdition).toBe(true);
+  });
+
+  it("enforces every single row of Matriks Perbandingan Fitur Antar Edisi WACRM via real signed License Keys (STR / PRO / ENT / SOV)", () => {
+    const now = new Date("2026-11-26T00:00:00Z");
+
+    // 1. Starter UMKM License Key (STR)
+    const strKey = issueSignedLicenseKey({
+      editionId: "starter",
+      expiryYear: 2028,
+      expiryMonth: 12,
+      maxSeats: 2,
+    });
+    const strVerified = verifySignedLicenseKey(strKey, now);
+    expect(strVerified.valid).toBe(true);
+    expect(strVerified.editionId).toBe("starter");
+
+    const strCaps = getEditionMatrixCapabilities("starter", strVerified.maxSeats);
+    expect(strCaps.omnichannelInbox).toBe(true);
+    expect(strCaps.masterData).toBe(true);
+    expect(strCaps.posQrShippingLabel).toBe(true);
+    expect(strCaps.universalPrinting).toBe(true);
+    expect(strCaps.zeroClickAiAutoReply).toBe(false);
+    expect(strCaps.erpWarehouse).toBe(false);
+    expect(strCaps.seoGrowthAi).toBe(false);
+    expect(strCaps.whiteLabelStore).toBe(false);
+    expect(strCaps.doubleEntryAccounting).toBe(false);
+    expect(strCaps.voiceCompanion247).toBe(false);
+    expect(strCaps.fraudSentinelHealing).toBe(false);
+    expect(strCaps.superAdminAnalytics).toBe(false);
+    expect(strCaps.customBrandedApk).toBe(false);
+    expect(strCaps.dedicatedDbSla).toBe(false);
+    expect(strCaps.allowedAiAgents).toEqual(["cs_sales", "order_pos"]);
+    expect(isAiAgentAllowedInEdition("starter", "cs_sales")).toBe(true);
+    expect(isAiAgentAllowedInEdition("starter", "order_pos")).toBe(true);
+    expect(isAiAgentAllowedInEdition("starter", "seo_growth")).toBe(false);
+    expect(isAiAgentAllowedInEdition("starter", "fraud_sentinel")).toBe(false);
+    expect(evaluateEditionQuota("starter", "agents", 2).canAddMore).toBe(false);
+    expect(evaluateEditionQuota("starter", "contacts", 300).canAddMore).toBe(false);
+    expect(evaluateEditionQuota("starter", "channels", 2).canAddMore).toBe(false);
+
+    // 2. Growth Pro License Key (PRO)
+    const proKey = issueSignedLicenseKey({
+      editionId: "pro",
+      expiryYear: 2028,
+      expiryMonth: 12,
+      maxSeats: 10,
+    });
+    const proVerified = verifySignedLicenseKey(proKey, now);
+    expect(proVerified.valid).toBe(true);
+    expect(proVerified.editionId).toBe("pro");
+
+    const proCaps = getEditionMatrixCapabilities("pro", proVerified.maxSeats);
+    expect(proCaps.zeroClickAiAutoReply).toBe(true);
+    expect(proCaps.erpWarehouse).toBe(true);
+    expect(proCaps.seoGrowthAi).toBe(true);
+    expect(proCaps.whiteLabelStore).toBe(true);
+    expect(proCaps.doubleEntryAccounting).toBe(false);
+    expect(proCaps.voiceCompanion247).toBe(false);
+    expect(proCaps.fraudSentinelHealing).toBe(false);
+    expect(proCaps.superAdminAnalytics).toBe(false);
+    expect(proCaps.customBrandedApk).toBe(false);
+    expect(proCaps.allowedAiAgents.length).toBe(6);
+    expect(evaluateTabAccess("pro", "owner", "erp").allowed).toBe(true);
+    expect(evaluateTabAccess("pro", "owner", "seo_growth").allowed).toBe(true);
+    expect(evaluateTabAccess("pro", "owner", "templates").allowed).toBe(true);
+    expect(evaluateTabAccess("pro", "owner", "accounting").lockedByEdition).toBe(true);
+    expect(evaluateEditionQuota("pro", "contacts", 4999).canAddMore).toBe(true);
+    expect(evaluateEditionQuota("pro", "contacts", 5000).canAddMore).toBe(false);
+    expect(evaluateEditionQuota("pro", "channels", 5).canAddMore).toBe(false);
+
+    // 3. Enterprise AI Suite License Key (ENT)
+    const entKey = issueSignedLicenseKey({
+      editionId: "enterprise",
+      expiryYear: 2028,
+      expiryMonth: 12,
+      maxSeats: 9999,
+    });
+    const entVerified = verifySignedLicenseKey(entKey, now);
+    expect(entVerified.valid).toBe(true);
+    expect(entVerified.editionId).toBe("enterprise");
+
+    const entCaps = getEditionMatrixCapabilities("enterprise", entVerified.maxSeats);
+    expect(entCaps.doubleEntryAccounting).toBe(true);
+    expect(entCaps.voiceCompanion247).toBe(true);
+    expect(entCaps.fraudSentinelHealing).toBe(true);
+    expect(entCaps.superAdminAnalytics).toBe(true);
+    expect(entCaps.customBrandedApk).toBe(false);
+    expect(entCaps.dedicatedDbSla).toBe(false);
+    expect(entCaps.allowedAiAgents.length).toBe(9);
+    expect(evaluateTabAccess("enterprise", "owner", "accounting").allowed).toBe(true);
+    expect(evaluateEditionQuota("enterprise", "agents", 120, entVerified.maxSeats).isUnlimited).toBe(true);
+    expect(evaluateEditionQuota("enterprise", "channels", 20).canAddMore).toBe(false);
+
+    // 4. Sovereign Corporate License Key (SOV)
+    const sovKey = issueSignedLicenseKey({
+      editionId: "sovereign",
+      expiryYear: 2029,
+      expiryMonth: 12,
+      maxSeats: 9999,
+    });
+    const sovVerified = verifySignedLicenseKey(sovKey, now);
+    expect(sovVerified.valid).toBe(true);
+    expect(sovVerified.editionId).toBe("sovereign");
+
+    const sovCaps = getEditionMatrixCapabilities("sovereign", sovVerified.maxSeats);
+    expect(sovCaps.customBrandedApk).toBe(true);
+    expect(sovCaps.dedicatedDbSla).toBe(true);
+    expect(evaluateEditionQuota("sovereign", "contacts", 500_000).isUnlimited).toBe(true);
+    expect(evaluateEditionQuota("sovereign", "channels", 500).isUnlimited).toBe(true);
+
+    // 5. License activation & release downgrade integrity (zero bypass!)
+    const baseSession: CommercialUserSession = {
+      userId: "u-matrix-1",
+      email: "owner@matrix.id",
+      displayName: "Owner Matrix",
+      businessName: "Toko Matrix",
+      role: "owner",
+      editionId: "starter",
+      authProvider: "workspace_local",
+      hasPaidLicense: false,
+      signedInAt: now.toISOString(),
+    };
+    const upgraded = upgradeCommercialSessionWithLicense(baseSession, "sovereign", sovKey);
+    expect(upgraded.editionId).toBe("sovereign");
+    expect(upgraded.hasPaidLicense).toBe(true);
+    const reverted = revertCommercialSessionToTrial(upgraded);
+    expect(reverted.editionId).toBe("starter");
+    expect(reverted.hasPaidLicense).toBe(false);
+    expect(reverted.licenseKey).toBeNull();
   });
 });
 

@@ -202,7 +202,7 @@ export function editionHasFeature(editionId: AppEditionId, feature: EditionFeatu
 const EDITION_KEY_PREFIX = "wacrm_tenant_edition_v4_";
 
 export function loadTenantEdition(tenantId: string): AppEditionId {
-  if (typeof window === "undefined") return "enterprise";
+  if (typeof window === "undefined") return "starter";
   try {
     const raw = window.localStorage.getItem(`${EDITION_KEY_PREFIX}${tenantId}`);
     if (raw === "starter" || raw === "pro" || raw === "enterprise" || raw === "sovereign") {
@@ -211,7 +211,7 @@ export function loadTenantEdition(tenantId: string): AppEditionId {
   } catch {
     // ignore storage errors
   }
-  return "enterprise";
+  return "starter";
 }
 
 export function saveTenantEdition(tenantId: string, editionId: AppEditionId): void {

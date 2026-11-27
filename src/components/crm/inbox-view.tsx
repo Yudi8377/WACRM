@@ -9,6 +9,7 @@ import {
   CheckCheck,
   Clock,
   Info,
+  Lock,
   MessageSquarePlus,
   Plus,
   QrCode,
@@ -30,6 +31,7 @@ import {
   LIFECYCLE_LABELS,
   PRIORITY_LABELS,
   STATUS_LABELS,
+  type AppEditionId,
   type ChannelRecord,
   type ChannelType,
   type ContactRecord,
@@ -42,16 +44,19 @@ import {
   type QuickReplyRecord,
   type TeamMemberRecord,
 } from "@/lib/crm-types";
+import { editionHasFeature } from "@/lib/editions";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 interface InboxViewProps {
   adapter: WorkspaceAdapter;
+  editionId?: AppEditionId;
   conversations: ConversationRecord[];
   contacts: ContactRecord[];
   channels: ChannelRecord[];
   quickReplies: QuickReplyRecord[];
   members: TeamMemberRecord[];
   initialConversationId?: string | null;
+  onUpgradeRequest?: () => void;
   onRefresh: () => Promise<void>;
   onOpenPos?: (orderId?: string) => void;
   onToast: (message: string, tone?: "success" | "error") => void;
@@ -70,16 +75,19 @@ function formatTime(iso: string | null): string {
 
 export function InboxView({
   adapter,
+  editionId = "starter",
   conversations,
   contacts,
   channels,
   quickReplies,
   members,
   initialConversationId,
+  onUpgradeRequest,
   onRefresh,
   onOpenPos,
   onToast,
 }: InboxViewProps) {
+  const zeroClickAllowed = editionHasFeature(editionId, "zero_click_ai");
   const [manualSelectedId, setManualSelectedId] = useState<string | null>(initialConversationId ?? null);
   const [mobileShowDetail, setMobileShowDetail] = useState(Boolean(initialConversationId));
   const [showInspector, setShowInspector] = useState(false);
@@ -118,6 +126,8 @@ export function InboxView({
   const [newTagInput, setNewTagInput] = useState("");
   const [aiAutoReplyOn, setAiAutoReplyOn] = useState(true);
   const [aiAutoFollowUpOn, setAiAutoFollowUpOn] = useState(true);
+  const effectiveAiAutoReplyOn = zeroClickAllowed && aiAutoReplyOn;
+  const effectiveAiAutoFollowUpOn = zeroClickAllowed && aiAutoFollowUpOn;
   const [idleThresholdSec, setIdleThresholdSec] = useState<number>(1800); // default 30 menit (or 15 detik in demo test)
   const [runningAi, setRunningAi] = useState(false);
   const [runningFollowUp, setRunningFollowUp] = useState(false);
@@ -265,7 +275,7 @@ export function InboxView({
   // unanswered customer inbound message (and not already escalated to human admin),
   // automatically analyze & reply without requiring the user to click any button!
   useEffect(() => {
-    if (!aiAutoReplyOn || !currentDetail || runningAi || autoRunInFlightRef.current) return;
+    if (!effectiveAiAutoReplyOn || !currentDetail || runningAi || autoRunInFlightRef.current) return;
     const msgs = currentDetail.messages;
     if (msgs.length === 0) return;
     const lastMsg = msgs[msgs.length - 1];
@@ -287,7 +297,7 @@ export function InboxView({
       autoRunInFlightRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiAutoReplyOn, currentDetail?.conversation.id, currentDetail?.messages.length]);
+  }, [effectiveAiAutoReplyOn, currentDetail?.conversation.id, currentDetail?.messages.length]);
 
   // Periodic timer for real-time idle detection & automated proactive follow-up sweep
   useEffect(() => {
@@ -303,7 +313,7 @@ export function InboxView({
   // offers alternative products from the admin's catalog (attempt 2, capped at max 2x anti-spam).
   useEffect(() => {
     if (
-      !aiAutoFollowUpOn ||
+      !effectiveAiAutoFollowUpOn ||
       !currentDetail ||
       runningAi ||
       runningFollowUp ||
@@ -743,32 +753,74 @@ export function InboxView({
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setAiAutoReplyOn((v) => !v)}
+                    onClick={() => {
+                      if (!zeroClickAllowed) {
+                        onToast(
+                          "AI Auto-Reply 24/7 Otomatis Tanpa Klik membutuhkan minimal lisensi Growth Pro. Starter UMKM mendukung klik manual 'Jalankan AI' (2 Agen Dasar).",
+                          "error",
+                        );
+                        onUpgradeRequest?.();
+                        return;
+                      }
+                      setAiAutoReplyOn((v) => !v);
+                    }}
                     className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold transition ${
-                      aiAutoReplyOn
-                        ? "bg-emerald-600 text-white shadow-xs"
-                        : "bg-slate-200 text-slate-600"
+                      !zeroClickAllowed
+                        ? "border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                        : effectiveAiAutoReplyOn
+                          ? "bg-emerald-600 text-white shadow-xs"
+                          : "bg-slate-200 text-slate-600"
                     }`}
                   >
-                    <Bot className="h-3.5 w-3.5" />
-                    {aiAutoReplyOn ? "AI Auto-Reply AKTIF" : "AI Auto-Reply Dijeda"}
+                    {!zeroClickAllowed ? (
+                      <>
+                        <Lock className="h-3 w-3" />
+                        Auto-Reply 24/7 (Growth Pro)
+                      </>
+                    ) : (
+                      <>
+                        <Bot className="h-3.5 w-3.5" />
+                        {effectiveAiAutoReplyOn ? "AI Auto-Reply AKTIF" : "AI Auto-Reply Dijeda"}
+                      </>
+                    )}
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setAiAutoFollowUpOn((v) => !v)}
+                    onClick={() => {
+                      if (!zeroClickAllowed) {
+                        onToast(
+                          "Auto Follow-Up & Cross-Sell AI membutuhkan minimal lisensi Growth Pro (6 Agen AI).",
+                          "error",
+                        );
+                        onUpgradeRequest?.();
+                        return;
+                      }
+                      setAiAutoFollowUpOn((v) => !v);
+                    }}
                     className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold transition ${
-                      aiAutoFollowUpOn
-                        ? "bg-indigo-600 text-white shadow-xs"
-                        : "bg-slate-200 text-slate-600"
+                      !zeroClickAllowed
+                        ? "border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                        : effectiveAiAutoFollowUpOn
+                          ? "bg-indigo-600 text-white shadow-xs"
+                          : "bg-slate-200 text-slate-600"
                     }`}
                     title="Jika calon pelanggan lambat membalas, AI otomatis mengirim follow-up klarifikasi & menawarkan produk lain jika batal checkout (maks 2x anti-spam)"
                   >
-                    <BellRing className="h-3.5 w-3.5" />
-                    {aiAutoFollowUpOn ? "Auto Follow-Up & Cross-Sell ON" : "Auto Follow-Up OFF"}
+                    {!zeroClickAllowed ? (
+                      <>
+                        <Lock className="h-3 w-3" />
+                        Auto Follow-Up (Growth Pro)
+                      </>
+                    ) : (
+                      <>
+                        <BellRing className="h-3.5 w-3.5" />
+                        {effectiveAiAutoFollowUpOn ? "Auto Follow-Up & Cross-Sell ON" : "Auto Follow-Up OFF"}
+                      </>
+                    )}
                   </button>
 
-                  {aiAutoFollowUpOn && (
+                  {effectiveAiAutoFollowUpOn && (
                     <select
                       aria-label="Jeda tunggu respon pelanggan"
                       value={idleThresholdSec}
@@ -785,7 +837,7 @@ export function InboxView({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {adapter.runAiProactiveFollowUp && (
+                  {adapter.runAiProactiveFollowUp && zeroClickAllowed && (
                     <>
                       <button
                         type="button"

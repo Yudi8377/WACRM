@@ -32,9 +32,12 @@ interface EditionsViewProps {
   workspaceName: string;
   currentEditionId: AppEditionId;
   activeAgentsCount: number;
+  membersCount?: number;
+  contactsCount?: number;
   productsCount: number;
   channelsCount: number;
-  onSelectEdition: (editionId: AppEditionId, verifiedLicenseKey?: string) => void;
+  onSelectEdition: (editionId: AppEditionId, verifiedLicenseKey?: string, maxSeats?: number) => void;
+  onClearLicense?: () => void;
   onToast?: (msg: string, tone?: "success" | "error") => void;
 }
 
@@ -49,9 +52,12 @@ export function EditionsView({
   workspaceName,
   currentEditionId,
   activeAgentsCount,
+  membersCount = 1,
+  contactsCount = 0,
   productsCount,
   channelsCount,
   onSelectEdition,
+  onClearLicense,
   onToast,
 }: EditionsViewProps) {
   const activeEdition = getEditionById(currentEditionId);
@@ -103,9 +109,9 @@ export function EditionsView({
 
       saveStoredClientLicense(tenantId, nextLicense);
       setStoredLicense(nextLicense);
-      onSelectEdition(data.editionId, data.normalizedKey);
+      onSelectEdition(data.editionId, data.normalizedKey, data.maxSeats);
       setLicenseInput("");
-      const okMsg = `Lisensi resmi ${data.editionName} aktif (${data.isUnlimitedSeats ? "Unlimited" : data.maxSeats} kursi, berlaku hingga ${data.expiresAt}).`;
+      const okMsg = `Lisensi resmi ${data.editionName} aktif (${data.isUnlimitedSeats ? "Unlimited" : data.maxSeats} kursi, berlaku hingga ${data.expiresAt}). Seluruh menu & kuota langsung disesuaikan dengan Matriks Fitur!`;
       setVerifyFeedback({ ok: true, message: okMsg });
       onToast?.(okMsg, "success");
     } catch (err) {
@@ -121,7 +127,8 @@ export function EditionsView({
     clearStoredClientLicense(tenantId);
     setStoredLicense(null);
     setVerifyFeedback(null);
-    onToast?.("Ikatan License Key lokal dilepas dari browser ini.");
+    onClearLicense?.();
+    onToast?.("Ikatan License Key dilepas — workspace kembali ke batasan Starter UMKM.");
   }
 
   return (
@@ -241,20 +248,45 @@ export function EditionsView({
         )}
       </div>
 
-      {/* Live Quota Meters */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {/* Live Quota Meters (100% synced with active License Key & Edition Matrix) */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-xs">
           <div className="flex justify-between text-slate-400">
-            <span>Agen AI Aktif</span>
+            <span>Kursi Agen CS / Tim</span>
             <strong className="text-white">
-              {activeAgentsCount} / {activeEdition.limits.maxAiAgents}
+              {membersCount} /{" "}
+              {storedLicense?.editionId === currentEditionId && storedLicense.maxSeats > 0
+                ? storedLicense.maxSeats >= 9999
+                  ? "∞"
+                  : storedLicense.maxSeats
+                : activeEdition.limits.maxAgents < 0
+                  ? "∞"
+                  : activeEdition.limits.maxAgents}
             </strong>
           </div>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
             <div
-              className="h-full rounded-full bg-emerald-500"
+              className="h-full rounded-full bg-amber-400"
               style={{
-                width: `${Math.min(100, Math.round((activeAgentsCount / activeEdition.limits.maxAiAgents) * 100))}%`,
+                width: `${
+                  activeEdition.limits.maxAgents < 0 ||
+                  (storedLicense?.editionId === currentEditionId && storedLicense.maxSeats >= 9999)
+                    ? 25
+                    : Math.min(
+                        100,
+                        Math.round(
+                          (membersCount /
+                            Math.max(
+                              1,
+                              storedLicense?.editionId === currentEditionId &&
+                                storedLicense.maxSeats > 0
+                                ? storedLicense.maxSeats
+                                : activeEdition.limits.maxAgents,
+                            )) *
+                            100,
+                        ),
+                      )
+                }%`,
               }}
             />
           </div>
@@ -262,14 +294,45 @@ export function EditionsView({
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-xs">
           <div className="flex justify-between text-slate-400">
-            <span>Produk &amp; Kapasitas Kontak</span>
+            <span>Agen AI Terbuka</span>
             <strong className="text-white">
-              {productsCount} SKU · {formatLimit(activeEdition.limits.maxContacts, "kontak")}
+              {Math.min(activeAgentsCount, activeEdition.limits.maxAiAgents)} /{" "}
+              {activeEdition.limits.maxAiAgents}
             </strong>
           </div>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
-            <div className="h-full w-1/3 rounded-full bg-cyan-500" />
+            <div
+              className="h-full rounded-full bg-emerald-500"
+              style={{
+                width: `${Math.min(100, Math.round((Math.min(activeAgentsCount, activeEdition.limits.maxAiAgents) / activeEdition.limits.maxAiAgents) * 100))}%`,
+              }}
+            />
           </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-xs">
+          <div className="flex justify-between text-slate-400">
+            <span>Kapasitas Kontak CRM</span>
+            <strong className="text-white">
+              {contactsCount.toLocaleString("id-ID")} /{" "}
+              {activeEdition.limits.maxContacts < 0
+                ? "∞"
+                : activeEdition.limits.maxContacts.toLocaleString("id-ID")}
+            </strong>
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
+            <div
+              className="h-full rounded-full bg-cyan-500"
+              style={{
+                width: `${
+                  activeEdition.limits.maxContacts < 0
+                    ? 20
+                    : Math.min(100, Math.max(4, Math.round((contactsCount / activeEdition.limits.maxContacts) * 100)))
+                }%`,
+              }}
+            />
+          </div>
+          <div className="mt-1 text-[10px] text-slate-500">{productsCount} SKU produk terdaftar</div>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-xs">
@@ -286,7 +349,7 @@ export function EditionsView({
               style={{
                 width: `${
                   activeEdition.limits.maxChannels < 0
-                    ? 40
+                    ? 35
                     : Math.min(100, Math.round((channelsCount / activeEdition.limits.maxChannels) * 100))
                 }%`,
               }}
@@ -415,8 +478,18 @@ export function EditionsView({
             <tr className="border-b border-slate-800 text-slate-400">
               <th className="py-2.5 pr-4">Kapabilitas &amp; Modul</th>
               {APP_EDITIONS.map((ed) => (
-                <th key={ed.id} className="px-3 py-2.5 text-center font-bold text-white">
+                <th
+                  key={ed.id}
+                  className={`px-3 py-2.5 text-center font-bold ${
+                    ed.id === currentEditionId
+                      ? "rounded-t-lg bg-emerald-500/15 text-emerald-300"
+                      : "text-white"
+                  }`}
+                >
                   {ed.name}
+                  {ed.id === currentEditionId && (
+                    <div className="text-[10px] font-semibold text-emerald-400">Aktif</div>
+                  )}
                 </th>
               ))}
             </tr>
@@ -429,8 +502,14 @@ export function EditionsView({
                 </td>
                 {APP_EDITIONS.map((ed) => {
                   const has = ed.features.includes(feat);
+                  const isCurrentCol = ed.id === currentEditionId;
                   return (
-                    <td key={ed.id} className="px-3 py-2.5 text-center">
+                    <td
+                      key={ed.id}
+                      className={`px-3 py-2.5 text-center ${
+                        isCurrentCol ? "bg-emerald-500/10" : ""
+                      }`}
+                    >
                       {has ? (
                         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
                           <Check className="h-3.5 w-3.5" />

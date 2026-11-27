@@ -20,6 +20,7 @@ import { UniversalPrintPanel } from "@/components/universal-print-panel";
 import {
   formatIdr,
   PAYMENT_METHOD_LABELS,
+  type AppEditionId,
   type ChannelType,
   type ErpProductRecord,
   type OrderStatus,
@@ -27,6 +28,7 @@ import {
   type PosOrderRecord,
   type StoreBusinessProfile,
 } from "@/lib/crm-types";
+import { editionHasFeature } from "@/lib/editions";
 import {
   buildEscPosEdcCompact,
   buildEscPosReceipt,
@@ -42,6 +44,7 @@ import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 interface PosViewProps {
   adapter: WorkspaceAdapter;
+  editionId?: AppEditionId;
   storeProfile: StoreBusinessProfile;
   products: ErpProductRecord[];
   orders: PosOrderRecord[];
@@ -60,6 +63,7 @@ const PAGE_SIZE = 5;
 
 export function PosView({
   adapter,
+  editionId = "starter",
   storeProfile,
   products,
   orders,
@@ -68,6 +72,17 @@ export function PosView({
   onRefresh,
   onToast,
 }: PosViewProps) {
+  const isWhiteLabel = editionHasFeature(editionId, "white_label_store");
+  const effectivePrintProfile: StoreBusinessProfile = useMemo(
+    () =>
+      isWhiteLabel
+        ? storeProfile
+        : {
+            ...storeProfile,
+            invoiceFooter: `${storeProfile.invoiceFooter ? `${storeProfile.invoiceFooter} · ` : ""}Powered by WACRM Starter UMKM`,
+          },
+    [isWhiteLabel, storeProfile],
+  );
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(highlightOrderId ?? null);
@@ -374,16 +389,16 @@ export function PosView({
       if (via === "bluetooth") {
         const escpos =
           docType === "label"
-            ? buildEscPosShippingLabel(order, storeProfile)
-            : buildEscPosReceipt(order, storeProfile);
+            ? buildEscPosShippingLabel(order, effectivePrintProfile)
+            : buildEscPosReceipt(order, effectivePrintProfile);
         const res = await printViaBluetooth(escpos);
         onToast(res.message, res.ok ? "ok" : "error");
       } else {
         const qr = qrDataUrl || (await generateQrDataUrl(order.qrPayload, 260));
         const html =
           docType === "label"
-            ? renderShippingLabelPrintHtml(order, storeProfile, qr)
-            : renderInvoicePrintHtml(order, storeProfile, qr);
+            ? renderShippingLabelPrintHtml(order, effectivePrintProfile, qr)
+            : renderInvoicePrintHtml(order, effectivePrintProfile, qr);
         const res = printViaWifiHtml(
           docType === "label"
             ? `Label Pengiriman ${order.invoiceNumber}`
@@ -982,7 +997,7 @@ export function PosView({
                     </div>
                   </div>
                   <div className="border-t border-dashed border-slate-300 pt-2 text-[11px] text-slate-500">
-                    {storeProfile.invoiceFooter}
+                    {effectivePrintProfile.invoiceFooter}
                   </div>
                 </div>
               ) : (
@@ -1073,15 +1088,15 @@ export function PosView({
                 buildHtml={async () => {
                   const qr = qrDataUrl || (await generateQrDataUrl(studioOrder.qrPayload, 260));
                   return studioTab === "label"
-                    ? renderShippingLabelPrintHtml(studioOrder, storeProfile, qr)
-                    : renderInvoicePrintHtml(studioOrder, storeProfile, qr);
+                    ? renderShippingLabelPrintHtml(studioOrder, effectivePrintProfile, qr)
+                    : renderInvoicePrintHtml(studioOrder, effectivePrintProfile, qr);
                 }}
                 buildEscPos={() =>
                   studioTab === "label"
-                    ? buildEscPosShippingLabel(studioOrder, storeProfile)
-                    : buildEscPosReceipt(studioOrder, storeProfile)
+                    ? buildEscPosShippingLabel(studioOrder, effectivePrintProfile)
+                    : buildEscPosReceipt(studioOrder, effectivePrintProfile)
                 }
-                buildEdcEscPos={() => buildEscPosEdcCompact(studioOrder, storeProfile)}
+                buildEdcEscPos={() => buildEscPosEdcCompact(studioOrder, effectivePrintProfile)}
                 onResult={(res) => onToast(res.message, res.ok ? "ok" : "error")}
                 compact
               />

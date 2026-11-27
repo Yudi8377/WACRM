@@ -378,6 +378,13 @@ export interface SocialChannelHandles {
   websiteUrl?: string;
 }
 
+export interface SovereignCorporateConfig {
+  customDomain?: string;
+  brandedApkName?: string;
+  brandedPackageId?: string;
+  dedicatedDbRegion?: string;
+}
+
 export interface StoreBusinessProfile {
   businessName: string;
   businessTagline: string;
@@ -389,6 +396,7 @@ export interface StoreBusinessProfile {
   invoiceFooter: string;
   defaultCourier: string;
   socialHandles?: SocialChannelHandles;
+  sovereignConfig?: SovereignCorporateConfig;
 }
 
 export interface MasterCategoryRecord {

@@ -30,13 +30,16 @@ import {
   evaluateEditionQuota,
   evaluateTabAccess,
   evaluateTrialStatus,
+  isAiAgentAllowedInEdition,
+  revertCommercialSessionToTrial,
   upgradeCommercialSessionWithLicense,
   type CommercialUserSession,
   type WorkspaceTabId,
 } from "@/lib/access-control";
 import { authClient } from "@/lib/auth-client";
 import type { AppEditionId, ContactRecord, StoreBusinessProfile } from "@/lib/crm-types";
-import { getEditionById, loadTenantEdition, saveTenantEdition } from "@/lib/editions";
+import { editionHasFeature, getEditionById, loadTenantEdition, saveTenantEdition } from "@/lib/editions";
+import { loadStoredClientLicense } from "@/lib/license-crypto";
 import { loadStoreProfile, saveStoreProfile } from "@/lib/store-profile";
 import type { WorkspaceAdapter, WorkspaceSnapshot } from "@/lib/workspace-adapter";
 import { notifyAndroid } from "@/components/pwa-register";
@@ -96,9 +99,16 @@ export function WorkspaceApp({
   const [storeProfile, setStoreProfile] = useState<StoreBusinessProfile>(() =>
     loadStoreProfile(adapter.tenantId),
   );
-  const [editionId, setEditionId] = useState<AppEditionId>(() =>
-    loadTenantEdition(adapter.tenantId),
-  );
+  const [editionId, setEditionId] = useState<AppEditionId>(() => {
+    const storedLic = loadStoredClientLicense(adapter.tenantId);
+    if (storedLic && storedLic.status === "active") return storedLic.editionId;
+    if (commercialUser?.editionId) return commercialUser.editionId;
+    return loadTenantEdition(adapter.tenantId);
+  });
+  const [licenseMaxSeats, setLicenseMaxSeats] = useState<number | null>(() => {
+    const storedLic = loadStoredClientLicense(adapter.tenantId);
+    return storedLic && storedLic.status === "active" ? storedLic.maxSeats : null;
+  });
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -178,23 +188,42 @@ export function WorkspaceApp({
     setStoreProfile(next);
   }
 
-  function handleSelectEdition(nextEdition: AppEditionId, verifiedLicenseKey?: string) {
+  function handleSelectEdition(
+    nextEdition: AppEditionId,
+    verifiedLicenseKey?: string,
+    maxSeats?: number,
+  ) {
     saveTenantEdition(adapter.tenantId, nextEdition);
     setEditionId(nextEdition);
-    if (verifiedLicenseKey && commercialUser) {
-      const upgraded = upgradeCommercialSessionWithLicense(
-        commercialUser,
-        nextEdition,
-        verifiedLicenseKey,
-      );
-      onCommercialSessionUpdate?.(upgraded);
+    if (verifiedLicenseKey) {
+      setLicenseMaxSeats(maxSeats ?? loadStoredClientLicense(adapter.tenantId)?.maxSeats ?? null);
+      if (commercialUser) {
+        const upgraded = upgradeCommercialSessionWithLicense(
+          commercialUser,
+          nextEdition,
+          verifiedLicenseKey,
+        );
+        onCommercialSessionUpdate?.(upgraded);
+      }
+    } else if (nextEdition === "starter") {
+      setLicenseMaxSeats(null);
     }
     const ed = getEditionById(nextEdition);
     showToast(
       verifiedLicenseKey
-        ? `Lisensi resmi ${ed.name} berhasil diaktifkan! Seluruh fitur edisi ini kini terbuka penuh.`
+        ? `Lisensi resmi ${ed.name} berhasil diaktifkan! Seluruh menu, kuota & fitur otomatis disesuaikan dengan Matriks Edisi.`
         : `Edisi workspace aktif diubah ke ${ed.name} (${ed.badge}).`,
     );
+  }
+
+  function handleClearLicense() {
+    saveTenantEdition(adapter.tenantId, "starter");
+    setEditionId("starter");
+    setLicenseMaxSeats(null);
+    if (commercialUser) {
+      const reverted = revertCommercialSessionToTrial(commercialUser);
+      onCommercialSessionUpdate?.(reverted);
+    }
   }
 
   const activeEdition = useMemo(() => getEditionById(editionId), [editionId]);
@@ -260,7 +289,11 @@ export function WorkspaceApp({
   const unreadTotal = snapshot?.conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0) ?? 0;
   const escalationTotal =
     snapshot?.conversations.filter((c) => c.tags.includes("perlu-admin")).length ?? 0;
-  const activeAiCount = snapshot?.aiAgents.filter((a) => a.enabled).length ?? 0;
+  const activeAiCount =
+    snapshot?.aiAgents.filter(
+      (a) => a.enabled && isAiAgentAllowedInEdition(editionId, a.agentKey),
+    ).length ?? 0;
+  const voiceCompanionUnlocked = editionHasFeature(editionId, "voice_companion_24_7");
   const syncedClock = snapshot?.syncedAt
     ? new Date(snapshot.syncedAt).toLocaleTimeString("id-ID", {
         hour: "2-digit",
@@ -316,17 +349,39 @@ export function WorkspaceApp({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() =>
+            onClick={() => {
+              if (!voiceCompanionUnlocked) {
+                showToast(
+                  "24/7 AI Personal Companion Suara & Memori Kontinu tersedia mulai edisi Enterprise AI Suite. Aktifkan License Key Enterprise di menu Edisi & Lisensi.",
+                  "error",
+                );
+                setTab("editions");
+                return;
+              }
               triggerCompanion(
                 "Apakah hari ini ada prospek yang belum kita follow up?",
                 true,
-              )
+              );
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold ring-1 transition ${
+              voiceCompanionUnlocked
+                ? "bg-emerald-50 text-emerald-800 ring-emerald-200 hover:bg-emerald-100"
+                : "bg-amber-50 text-amber-800 ring-amber-200 hover:bg-amber-100"
+            }`}
+            title={
+              voiceCompanionUnlocked
+                ? "Tanya Asisten Pribadi AI 24/7 (Suara & Teks)"
+                : "Khusus Enterprise AI Suite — klik untuk aktivasi License Key"
             }
-            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800 ring-1 ring-emerald-200 transition hover:bg-emerald-100"
-            title="Tanya Asisten Pribadi AI 24/7 (Suara & Teks)"
           >
-            <Mic className="h-3.5 w-3.5 text-emerald-600" />
-            <span className="hidden sm:inline">AI Companion 24/7</span>
+            {voiceCompanionUnlocked ? (
+              <Mic className="h-3.5 w-3.5 text-emerald-600" />
+            ) : (
+              <Lock className="h-3.5 w-3.5 text-amber-600" />
+            )}
+            <span className="hidden sm:inline">
+              {voiceCompanionUnlocked ? "AI Companion 24/7" : "AI Suara (Ent)"}
+            </span>
           </button>
           <button
             type="button"
@@ -401,7 +456,14 @@ export function WorkspaceApp({
                         {item.label}
                       </span>
                       {!access.allowed ? (
-                        <Lock className="h-3.5 w-3.5 text-amber-500" />
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-800">
+                          <Lock className="h-2.5 w-2.5" />
+                          {access.requiredEditionId === "pro"
+                            ? "Pro"
+                            : access.requiredEditionId === "enterprise"
+                              ? "Ent"
+                              : "Sov"}
+                        </span>
                       ) : item.id === "inbox" && (unreadTotal > 0 || escalationTotal > 0) ? (
                         <span
                           className={`rounded-full px-2 py-0.5 text-[10px] font-bold text-white ${
@@ -410,9 +472,9 @@ export function WorkspaceApp({
                         >
                           {escalationTotal > 0 ? `${escalationTotal}!` : unreadTotal}
                         </span>
-                      ) : item.id === "ai" && activeAiCount > 0 ? (
+                      ) : item.id === "ai" ? (
                         <span className="rounded-full bg-cyan-100 px-2 py-0.5 text-[10px] font-bold text-cyan-800">
-                          {activeAiCount} ON
+                          {activeEdition.limits.maxAiAgents}/9 AI
                         </span>
                       ) : item.id === "pos" && snapshot ? (
                         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
@@ -451,7 +513,12 @@ export function WorkspaceApp({
                         <Icon className={`h-4 w-4 ${active ? "text-emerald-600" : "text-slate-400"}`} />
                         {item.label}
                       </span>
-                      {!access.allowed && <Lock className="h-3.5 w-3.5 text-amber-500" />}
+                      {!access.allowed && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-800">
+                          <Lock className="h-2.5 w-2.5" />
+                          {access.requiredEditionId === "pro" ? "Pro" : "Ent"}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -663,12 +730,14 @@ export function WorkspaceApp({
                 <InboxView
                   key={activeConversationId ?? "default-inbox"}
                   adapter={adapter}
+                  editionId={editionId}
                   conversations={snapshot.conversations}
                   contacts={snapshot.contacts}
                   channels={snapshot.channels}
                   quickReplies={snapshot.quickReplies}
                   members={snapshot.members}
                   initialConversationId={activeConversationId}
+                  onUpgradeRequest={() => setTab("editions")}
                   onRefresh={refresh}
                   onOpenPos={(orderId) => {
                     if (orderId) setHighlightOrderId(orderId);
@@ -693,9 +762,11 @@ export function WorkspaceApp({
                 <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
                   <AiAgentsView
                     adapter={adapter}
+                    editionId={editionId}
                     agents={snapshot.aiAgents}
                     knowledge={snapshot.aiKnowledge}
                     incidents={snapshot.aiIncidents}
+                    onUpgradeRequest={() => setTab("editions")}
                     onRefresh={refresh}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
@@ -720,9 +791,12 @@ export function WorkspaceApp({
                     workspaceName={storeProfile.businessName || snapshot.workspaceName}
                     currentEditionId={editionId}
                     activeAgentsCount={activeAiCount}
+                    membersCount={snapshot.members.length}
+                    contactsCount={snapshot.contacts.length}
                     productsCount={snapshot.products.length}
                     channelsCount={snapshot.channels.length}
                     onSelectEdition={handleSelectEdition}
+                    onClearLicense={handleClearLicense}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
                 </div>
@@ -732,6 +806,7 @@ export function WorkspaceApp({
                   <PosView
                     key={highlightOrderId ?? "pos-default"}
                     adapter={adapter}
+                    editionId={editionId}
                     storeProfile={storeProfile}
                     products={snapshot.products}
                     orders={snapshot.orders}
@@ -771,7 +846,9 @@ export function WorkspaceApp({
               {tab === "contacts" && (
                 <ContactsView
                   adapter={adapter}
+                  editionId={editionId}
                   contacts={snapshot.contacts}
+                  onUpgradeRequest={() => setTab("editions")}
                   onRefresh={refresh}
                   onStartChat={handleStartChat}
                   onToast={showToast}
@@ -780,7 +857,9 @@ export function WorkspaceApp({
               {tab === "channels" && (
                 <ChannelsView
                   adapter={adapter}
+                  editionId={editionId}
                   channels={snapshot.channels}
+                  onUpgradeRequest={() => setTab("editions")}
                   onRefresh={refresh}
                   onAskCompanion={triggerCompanion}
                   onToast={showToast}
@@ -797,14 +876,23 @@ export function WorkspaceApp({
                   onToast={showToast}
                 />
               )}
-              {tab === "analytics" && <AnalyticsView analytics={snapshot.analytics} />}
+              {tab === "analytics" && (
+                <AnalyticsView
+                  analytics={snapshot.analytics}
+                  editionId={editionId}
+                  onUpgradeRequest={() => setTab("editions")}
+                />
+              )}
               {tab === "settings" && (
                 <SettingsView
                   adapter={adapter}
+                  editionId={editionId}
+                  licenseMaxSeats={licenseMaxSeats}
                   workspaceName={snapshot.workspaceName}
                   workspaceSlug={snapshot.workspaceSlug}
                   storeProfile={storeProfile}
                   onSaveStoreProfile={handleSaveStoreProfile}
+                  onUpgradeRequest={() => setTab("editions")}
                   currentRole={effectiveRole}
                   members={snapshot.members}
                   onRefresh={refresh}
@@ -845,14 +933,16 @@ export function WorkspaceApp({
         })}
       </nav>
 
-      {/* 24/7 PERSONAL AI COMPANION (VOICE + TEXT + CONTINUOUS MEMORY) */}
+      {/* 24/7 PERSONAL AI COMPANION (VOICE + TEXT + CONTINUOUS MEMORY — Enterprise AI Suite+) */}
       {snapshot && (
         <AiCompanion
           adapter={adapter}
+          editionId={editionId}
           snapshot={snapshot}
           storeProfile={storeProfile}
           activeTab={tab}
           onNavigateTab={(nextTab) => setTab(nextTab as TabId)}
+          onUpgradeRequest={() => setTab("editions")}
           onRefresh={refresh}
           onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
           externalPrompt={companionTrigger}

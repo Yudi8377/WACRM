@@ -1,11 +1,43 @@
 "use client";
 
-import { Activity, CheckCircle2, Link2, MessageSquare, Shield, Users } from "lucide-react";
-import { CHANNEL_META, LIFECYCLE_LABELS, type WorkspaceAnalytics } from "@/lib/crm-types";
+import Link from "next/link";
+import {
+  Activity,
+  CheckCircle2,
+  ExternalLink,
+  KeyRound,
+  Link2,
+  Lock,
+  MessageSquare,
+  Shield,
+  Sparkles,
+  Users,
+} from "lucide-react";
+import {
+  CHANNEL_META,
+  LIFECYCLE_LABELS,
+  type AppEditionId,
+  type WorkspaceAnalytics,
+} from "@/lib/crm-types";
+import { editionHasFeature, getEditionById } from "@/lib/editions";
 
-export function AnalyticsView({ analytics }: { analytics: WorkspaceAnalytics }) {
+export function AnalyticsView({
+  analytics,
+  editionId = "starter",
+  onUpgradeRequest,
+}: {
+  analytics: WorkspaceAnalytics;
+  editionId?: AppEditionId;
+  onUpgradeRequest?: () => void;
+}) {
+  const superAdminUnlocked = editionHasFeature(editionId, "super_admin_analytics");
+  const activeEdition = getEditionById(editionId);
   const maxChannel = Math.max(1, ...analytics.byChannel.map((item) => item.count));
   const maxStage = Math.max(1, ...analytics.byStage.map((item) => item.count));
+  const resolutionRate =
+    analytics.totalConversations > 0
+      ? Math.round((analytics.resolvedConversations / analytics.totalConversations) * 100)
+      : 100;
 
   const kpis = [
     { label: "Percakapan Aktif", value: analytics.openConversations + analytics.pendingConversations, sub: `${analytics.openConversations} terbuka · ${analytics.pendingConversations} menunggu`, icon: MessageSquare, accent: "text-emerald-700 bg-emerald-50" },
@@ -142,6 +174,81 @@ export function AnalyticsView({ analytics }: { analytics: WorkspaceAnalytics }) 
               </table>
             </div>
           )}
+        </section>
+
+        {/* Row 12 Matrix: Dashboard Super Admin, Analitik SWOT & Auto-Perbaikan (Enterprise AI Suite+) */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-indigo-600" />
+                <h3 className="text-sm font-bold text-slate-900">
+                  Analitik SWOT AI, Auto-Perbaikan &amp; Dashboard Super Admin
+                </h3>
+                {!superAdminUnlocked && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-800">
+                    <Lock className="h-3 w-3" /> Enterprise AI Suite
+                  </span>
+                )}
+              </div>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Analisis Strengths, Weaknesses, Opportunities &amp; Threats otomatis serta diagnostik lintas cabang.
+              </p>
+            </div>
+            {superAdminUnlocked ? (
+              <Link
+                href="/super-admin"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-700"
+              >
+                Buka Dashboard Super Admin <ExternalLink className="h-3.5 w-3.5" />
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onUpgradeRequest?.()}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+              >
+                <KeyRound className="h-3.5 w-3.5" /> Aktifkan dengan License Key Enterprise
+              </button>
+            )}
+          </div>
+
+          {!superAdminUnlocked && (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
+              Mode Pratinjau — Lisensi aktif Anda (<strong>{activeEdition.name}</strong>) mencakup Analitik Dasar di atas. Upgrade ke <strong>Enterprise AI Suite</strong> atau <strong>Sovereign Corporate</strong> untuk mengaktifkan SWOT AI &amp; Dashboard Super Admin.
+            </div>
+          )}
+
+          <div
+            className={`mt-4 grid gap-3 sm:grid-cols-2 ${
+              !superAdminUnlocked ? "pointer-events-none select-none opacity-65" : ""
+            }`}
+          >
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3.5 text-xs">
+              <div className="font-bold text-emerald-900">Strengths (Kekuatan)</div>
+              <p className="mt-1 text-emerald-800">
+                Tingkat penyelesaian percakapan mencapai <strong>{resolutionRate}%</strong> dengan {analytics.connectedChannels} kanal aktif &amp; {analytics.totalContacts} kontak terstruktur.
+              </p>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3.5 text-xs">
+              <div className="font-bold text-amber-900">Weaknesses (Area Perhatian)</div>
+              <p className="mt-1 text-amber-800">
+                Masih terdapat <strong>{analytics.openConversations + analytics.pendingConversations} percakapan terbuka</strong> yang perlu respon cepat &amp; follow-up otomatis.
+              </p>
+            </div>
+            <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3.5 text-xs">
+              <div className="font-bold text-sky-900">Opportunities (Peluang Omzet)</div>
+              <p className="mt-1 text-sky-800">
+                Optimasi SEO lintas 6 kanal + Auto Cross-Sell berpotensi menaikkan konversi prospek menjadi transaksi POS QR lunas.
+              </p>
+            </div>
+            <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-3.5 text-xs">
+              <div className="font-bold text-rose-900">Threats &amp; Auto-Mitigasi</div>
+              <p className="mt-1 text-rose-800">
+                Aktifkan Fraud Sentinel &amp; Self-Healing Guardian untuk mendeteksi manipulasi bukti transfer &amp; anomali stok secara real-time.
+              </p>
+            </div>
+          </div>
         </section>
       </div>
     </div>

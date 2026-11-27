@@ -1,19 +1,34 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Check, Copy, Link2, Mic, Plus, Power, ShieldCheck, Trash2, X } from "lucide-react";
-import { CHANNEL_META, type ChannelRecord, type ChannelType } from "@/lib/crm-types";
+import { Check, Copy, KeyRound, Link2, Lock, Mic, Plus, Power, ShieldCheck, Trash2, X } from "lucide-react";
+import { evaluateEditionQuota } from "@/lib/access-control";
+import { CHANNEL_META, type AppEditionId, type ChannelRecord, type ChannelType } from "@/lib/crm-types";
+import { getEditionById } from "@/lib/editions";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 interface ChannelsViewProps {
   adapter: WorkspaceAdapter;
+  editionId?: AppEditionId;
   channels: ChannelRecord[];
+  onUpgradeRequest?: () => void;
   onRefresh: () => Promise<void>;
   onAskCompanion?: (prompt: string, speakImmediately?: boolean) => void;
   onToast: (message: string, tone?: "success" | "error") => void;
 }
 
-export function ChannelsView({ adapter, channels, onRefresh, onAskCompanion, onToast }: ChannelsViewProps) {
+export function ChannelsView({
+  adapter,
+  editionId = "starter",
+  channels,
+  onUpgradeRequest,
+  onRefresh,
+  onAskCompanion,
+  onToast,
+}: ChannelsViewProps) {
+  const activeEdition = getEditionById(editionId);
+  const connectedCount = channels.filter((c) => c.status === "connected").length;
+  const channelQuota = evaluateEditionQuota(editionId, "channels", connectedCount);
   const [modalMode, setModalMode] = useState<"none" | "meta_whatsapp" | "custom">("none");
   const [copiedUrl, setCopiedUrl] = useState(false);
 
@@ -44,6 +59,14 @@ export function ChannelsView({ adapter, channels, onRefresh, onAskCompanion, onT
 
   async function handleConnectMeta(e: FormEvent) {
     e.preventDefault();
+    if (!channelQuota.canAddMore) {
+      onToast(
+        `Kuota kanal aktif edisi ${activeEdition.name} penuh (${connectedCount}/${channelQuota.limit} kanal). Upgrade dengan License Key untuk menambah kanal omnichannel.`,
+        "error",
+      );
+      onUpgradeRequest?.();
+      return;
+    }
     setSaving(true);
     try {
       const res = await adapter.connectMetaWhatsApp({ wabaId, phoneNumberId, accessToken: metaToken });
@@ -62,6 +85,14 @@ export function ChannelsView({ adapter, channels, onRefresh, onAskCompanion, onT
 
   async function handleCreateCustom(e: FormEvent) {
     e.preventDefault();
+    if (!channelQuota.canAddMore) {
+      onToast(
+        `Kuota kanal aktif edisi ${activeEdition.name} penuh (${connectedCount}/${channelQuota.limit} kanal). Upgrade dengan License Key untuk membuka lebih banyak kanal.`,
+        "error",
+      );
+      onUpgradeRequest?.();
+      return;
+    }
     setSaving(true);
     try {
       await adapter.createChannel({
@@ -90,6 +121,14 @@ export function ChannelsView({ adapter, channels, onRefresh, onAskCompanion, onT
 
   async function handleToggle(ch: ChannelRecord) {
     const nextStatus = ch.status === "connected" ? "disabled" : "connected";
+    if (nextStatus === "connected" && !channelQuota.canAddMore) {
+      onToast(
+        `Batas maksimal ${channelQuota.limit} kanal aktif untuk edisi ${activeEdition.name} sudah tercapai. Nonaktifkan 1 kanal lain atau upgrade License Key.`,
+        "error",
+      );
+      onUpgradeRequest?.();
+      return;
+    }
     try {
       await adapter.updateChannel(ch.id, { status: nextStatus });
       await onRefresh();
@@ -123,21 +162,69 @@ export function ChannelsView({ adapter, channels, onRefresh, onAskCompanion, onT
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => setModalMode("meta_whatsapp")}
+              onClick={() => {
+                if (!channelQuota.canAddMore) {
+                  onToast(
+                    `Kuota ${channelQuota.limit} kanal aktif pada ${activeEdition.name} sudah penuh. Upgrade License Key untuk menambah kanal.`,
+                    "error",
+                  );
+                  onUpgradeRequest?.();
+                  return;
+                }
+                setModalMode("meta_whatsapp");
+              }}
               className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700"
             >
-              <ShieldCheck className="h-4 w-4" />
+              {channelQuota.canAddMore ? <ShieldCheck className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
               Hubungkan Meta WhatsApp
             </button>
             <button
               type="button"
-              onClick={() => setModalMode("custom")}
+              onClick={() => {
+                if (!channelQuota.canAddMore) {
+                  onToast(
+                    `Kuota ${channelQuota.limit} kanal aktif pada ${activeEdition.name} sudah penuh. Upgrade License Key untuk menambah kanal.`,
+                    "error",
+                  );
+                  onUpgradeRequest?.();
+                  return;
+                }
+                setModalMode("custom");
+              }}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
-              <Plus className="h-4 w-4" />
+              {channelQuota.canAddMore ? <Plus className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
               Tambah Kanal / Evolution API
             </button>
           </div>
+        </div>
+
+        {/* Edition Channel Quota Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs">
+          <div>
+            <span className="font-bold text-slate-800">
+              Kuota Kanal Edisi {activeEdition.name}:{" "}
+              <span className={channelQuota.canAddMore ? "text-emerald-700" : "text-amber-700"}>
+                {connectedCount} / {channelQuota.isUnlimited ? "∞ Unlimited" : `${channelQuota.limit} kanal aktif`}
+              </span>
+            </span>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              {editionId === "starter"
+                ? "Starter UMKM mencakup WhatsApp + 1 kanal media sosial (maks 2 kanal aktif). Upgrade ke Growth Pro untuk 5 kanal omnichannel penuh."
+                : editionId === "pro"
+                  ? "Growth Pro mendukung 5 kanal omnichannel (WA, IG, Messenger, TikTok, YouTube). Enterprise mendukung hingga 20 kanal."
+                  : "Lisensi Anda mendukung ekspansi kanal omnichannel skala besar."}
+            </p>
+          </div>
+          {!channelQuota.canAddMore && onUpgradeRequest && (
+            <button
+              type="button"
+              onClick={onUpgradeRequest}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 font-bold text-white hover:bg-emerald-700"
+            >
+              <KeyRound className="h-3.5 w-3.5" /> Upgrade Kuota Kanal
+            </button>
+          )}
         </div>
 
         {/* Webhook Info Card */}

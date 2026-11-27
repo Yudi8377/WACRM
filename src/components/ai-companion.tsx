@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Bot,
+  KeyRound,
+  Lock,
   Mic,
   MicOff,
   Send,
@@ -15,7 +17,8 @@ import {
   processCompanionTurn,
   type CompanionPendingAction,
 } from "@/lib/ai-companion-engine";
-import { formatIdr, type StoreBusinessProfile } from "@/lib/crm-types";
+import { formatIdr, type AppEditionId, type StoreBusinessProfile } from "@/lib/crm-types";
+import { editionHasFeature, getEditionById } from "@/lib/editions";
 import { getAndroidBridge } from "@/lib/printer";
 import type { WorkspaceAdapter, WorkspaceSnapshot } from "@/lib/workspace-adapter";
 
@@ -28,11 +31,13 @@ interface CompanionMessage {
 
 interface AiCompanionProps {
   adapter: WorkspaceAdapter;
+  editionId?: AppEditionId;
   snapshot: WorkspaceSnapshot;
   storeProfile: StoreBusinessProfile;
   activeTab: string;
   externalPrompt?: { id: number; prompt: string; speakImmediately?: boolean } | null;
   onNavigateTab: (tab: string) => void;
+  onUpgradeRequest?: () => void;
   onRefresh: () => Promise<void>;
   onToast: (msg: string, tone?: "success" | "error") => void;
 }
@@ -52,14 +57,18 @@ const STORAGE_KEY = "wacrm_companion_memory_v3";
 
 export function AiCompanion({
   adapter,
+  editionId = "starter",
   snapshot,
   storeProfile,
   activeTab,
   externalPrompt,
   onNavigateTab,
+  onUpgradeRequest,
   onRefresh,
   onToast,
 }: AiCompanionProps) {
+  const voiceUnlocked = editionHasFeature(editionId, "voice_companion_24_7");
+  const activeEditionName = getEditionById(editionId).name;
   const [open, setOpen] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [continuousMode, setContinuousMode] = useState(false);
@@ -409,12 +418,29 @@ export function AiCompanion({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="fixed right-4 bottom-20 z-40 flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-600 to-cyan-600 px-4 py-3 text-xs font-bold text-white shadow-2xl shadow-emerald-600/30 transition hover:scale-105 md:bottom-6"
-          title="Buka Asisten Pribadi AI 24/7 (Suara & Teks)"
+          className={`fixed right-4 bottom-20 z-40 flex items-center gap-2 rounded-full px-4 py-3 text-xs font-bold text-white shadow-2xl transition hover:scale-105 md:bottom-6 ${
+            voiceUnlocked
+              ? "bg-gradient-to-r from-emerald-600 to-cyan-600 shadow-emerald-600/30"
+              : "border border-amber-400/50 bg-slate-900/95 text-amber-200 shadow-slate-950/40"
+          }`}
+          title={
+            voiceUnlocked
+              ? "Buka Asisten Pribadi AI 24/7 (Suara & Teks)"
+              : "Asisten Suara 24/7 — Khusus Enterprise AI Suite (Pratinjau)"
+          }
         >
-          <Sparkles className="h-4 w-4 animate-pulse" />
-          <span>Asisten AI 24/7</span>
-          <Mic className="h-3.5 w-3.5" />
+          {voiceUnlocked ? (
+            <>
+              <Sparkles className="h-4 w-4 animate-pulse" />
+              <span>Asisten AI 24/7</span>
+              <Mic className="h-3.5 w-3.5" />
+            </>
+          ) : (
+            <>
+              <Lock className="h-3.5 w-3.5 text-amber-300" />
+              <span>AI Suara 24/7 (Enterprise)</span>
+            </>
+          )}
         </button>
       )}
 
@@ -474,8 +500,39 @@ export function AiCompanion({
             </div>
           </div>
 
+          {/* Enterprise Voice Companion Lock Banner */}
+          {!voiceUnlocked && (
+            <div className="border-b border-amber-500/40 bg-amber-950/40 px-4 py-3 text-xs">
+              <div className="flex items-start gap-2">
+                <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                <div>
+                  <div className="font-bold text-amber-200">
+                    Pratinjau Terkunci · Khusus Enterprise AI Suite
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-slate-300">
+                    Lisensi aktif Anda ({activeEditionName}) belum mencakup 24/7 AI Personal Companion Suara &amp; Memori Kontinu. Aktifkan License Key Enterprise atau Sovereign untuk berbicara &amp; mengeksekusi perintah suara 24/7.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      onUpgradeRequest?.();
+                    }}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-1.5 text-[11px] font-extrabold text-slate-950 hover:bg-emerald-400"
+                  >
+                    <KeyRound className="h-3.5 w-3.5" /> Aktifkan License Key Enterprise
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Quick Prompt Chips */}
-          <div className="flex gap-1.5 overflow-x-auto border-b border-slate-800 bg-slate-900/70 px-3 py-2">
+          <div
+            className={`flex gap-1.5 overflow-x-auto border-b border-slate-800 bg-slate-900/70 px-3 py-2 ${
+              !voiceUnlocked ? "pointer-events-none opacity-55" : ""
+            }`}
+          >
             {[
               "Apakah hari ini ada prospek yang belum kita follow up?",
               "Panduan hubungkan WhatsApp Cloud API Meta",
@@ -546,9 +603,15 @@ export function AiCompanion({
           </div>
 
           {/* Voice + Text Input Bar */}
-          <form onSubmit={handleSubmit} className="flex items-center gap-2 border-t border-slate-800 bg-slate-900 p-3">
+          <form
+            onSubmit={handleSubmit}
+            className={`flex items-center gap-2 border-t border-slate-800 bg-slate-900 p-3 ${
+              !voiceUnlocked ? "pointer-events-none opacity-50" : ""
+            }`}
+          >
             <button
               type="button"
+              disabled={!voiceUnlocked}
               onClick={toggleVoiceSession}
               className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition ${
                 listening || continuousMode
@@ -560,14 +623,19 @@ export function AiCompanion({
               {listening || continuousMode ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
             </button>
             <input
+              disabled={!voiceUnlocked}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="Ketik perintah atau tekan mikrofon..."
+              placeholder={
+                voiceUnlocked
+                  ? "Ketik perintah atau tekan mikrofon..."
+                  : "Terkunci — butuh License Key Enterprise AI Suite..."
+              }
               className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none"
             />
             <button
               type="submit"
-              disabled={busy || !draft.trim()}
+              disabled={!voiceUnlocked || busy || !draft.trim()}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-slate-950 hover:bg-emerald-400 disabled:opacity-40"
               aria-label="Kirim ke Asisten AI"
             >

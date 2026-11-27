@@ -2,16 +2,32 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { RotateCcw, Save, Store, Trash2, Users } from "lucide-react";
-import type { MemberRole, StoreBusinessProfile, TeamMemberRecord } from "@/lib/crm-types";
+import {
+  CheckCircle2,
+  Database,
+  Globe,
+  KeyRound,
+  Lock,
+  RotateCcw,
+  Save,
+  Smartphone,
+  Store,
+  Trash2,
+  Users,
+} from "lucide-react";
+import { evaluateEditionQuota, getEditionMatrixCapabilities } from "@/lib/access-control";
+import type { AppEditionId, MemberRole, StoreBusinessProfile, TeamMemberRecord } from "@/lib/crm-types";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 interface SettingsViewProps {
   adapter: WorkspaceAdapter;
+  editionId?: AppEditionId;
+  licenseMaxSeats?: number | null;
   workspaceName: string;
   workspaceSlug: string;
   storeProfile: StoreBusinessProfile;
   onSaveStoreProfile: (next: StoreBusinessProfile) => void;
+  onUpgradeRequest?: () => void;
   currentRole: MemberRole;
   members: TeamMemberRecord[];
   onRefresh: () => Promise<void>;
@@ -20,15 +36,20 @@ interface SettingsViewProps {
 
 export function SettingsView({
   adapter,
+  editionId = "starter",
+  licenseMaxSeats,
   workspaceName,
   storeProfile,
   onSaveStoreProfile,
+  onUpgradeRequest,
   currentRole,
   members,
   onRefresh,
   onToast,
 }: SettingsViewProps) {
   const router = useRouter();
+  const caps = getEditionMatrixCapabilities(editionId, licenseMaxSeats);
+  const seatQuota = evaluateEditionQuota(editionId, "agents", members.length, licenseMaxSeats);
   const [businessName, setBusinessName] = useState(storeProfile.businessName);
   const [businessTagline, setBusinessTagline] = useState(storeProfile.businessTagline);
   const [phone, setPhone] = useState(storeProfile.phone);
@@ -38,6 +59,14 @@ export function SettingsView({
   const [taxId, setTaxId] = useState(storeProfile.taxId);
   const [defaultCourier, setDefaultCourier] = useState(storeProfile.defaultCourier);
   const [invoiceFooter, setInvoiceFooter] = useState(storeProfile.invoiceFooter);
+  const [customDomain, setCustomDomain] = useState(storeProfile.sovereignConfig?.customDomain ?? "");
+  const [brandedApkName, setBrandedApkName] = useState(storeProfile.sovereignConfig?.brandedApkName ?? "");
+  const [brandedPackageId, setBrandedPackageId] = useState(
+    storeProfile.sovereignConfig?.brandedPackageId ?? "",
+  );
+  const [dedicatedDbRegion, setDedicatedDbRegion] = useState(
+    storeProfile.sovereignConfig?.dedicatedDbRegion ?? "ap-southeast-1 (Singapore)",
+  );
   const [saving, setSaving] = useState(false);
 
   async function handleSaveBusinessProfile(e: FormEvent) {
@@ -46,6 +75,7 @@ export function SettingsView({
     setSaving(true);
     try {
       const next: StoreBusinessProfile = {
+        ...storeProfile,
         businessName: businessName.trim(),
         businessTagline: businessTagline.trim(),
         phone: phone.trim(),
@@ -55,6 +85,16 @@ export function SettingsView({
         taxId: taxId.trim(),
         defaultCourier: defaultCourier.trim() || "JNE Reguler",
         invoiceFooter: invoiceFooter.trim(),
+        ...(caps.customBrandedApk || caps.dedicatedDbSla
+          ? {
+              sovereignConfig: {
+                customDomain: customDomain.trim(),
+                brandedApkName: brandedApkName.trim(),
+                brandedPackageId: brandedPackageId.trim(),
+                dedicatedDbRegion: dedicatedDbRegion.trim(),
+              },
+            }
+          : {}),
       };
       onSaveStoreProfile(next);
       if (canManage && businessName.trim() !== workspaceName) {
@@ -130,14 +170,31 @@ export function SettingsView({
 
         {/* White-Label Store / Business Profile */}
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
-          <div className="flex items-center gap-2">
-            <Store className="h-5 w-5 text-emerald-600" />
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Identitas Toko / Usaha (Untuk Cetak Invoice, Label QR &amp; Laporan)</h3>
-              <p className="text-xs text-slate-500">
-                Nama usaha Anda menggantikan seluruh label sistem pada setiap dokumen yang dicetak maupun dikirim ke pelanggan.
-              </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Store className="h-5 w-5 text-emerald-600" />
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Identitas Toko / Usaha (Untuk Cetak Invoice, Label QR &amp; Laporan)</h3>
+                <p className="text-xs text-slate-500">
+                  {caps.whiteLabelStore
+                    ? "100% White-Label Aktif — Nama usaha Anda menggantikan seluruh label sistem tanpa watermark WACRM."
+                    : "Starter UMKM menambahkan watermark 'Powered by WACRM Starter UMKM' pada struk & invoice. Upgrade ke Growth Pro untuk 100% White-Label."}
+                </p>
+              </div>
             </div>
+            {caps.whiteLabelStore ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-bold text-emerald-800">
+                <CheckCircle2 className="h-3.5 w-3.5" /> 100% White-Label Aktif
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onUpgradeRequest?.()}
+                className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-800 hover:bg-amber-100"
+              >
+                <Lock className="h-3 w-3" /> White-Label Penuh (Growth Pro)
+              </button>
+            )}
           </div>
 
           <form onSubmit={handleSaveBusinessProfile} className="mt-4 space-y-3.5 text-xs">
@@ -252,10 +309,22 @@ export function SettingsView({
 
         {/* Team Members & RBAC */}
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
-          <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
-            <Users className="h-4 w-4 text-emerald-600" />
-            Anggota Tim &amp; Hak Akses ({members.length} orang — Multi-User Aktif)
-          </h3>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
+              <Users className="h-4 w-4 text-emerald-600" />
+              Anggota Tim &amp; Kuota Kursi Lisensi ({members.length} /{" "}
+              {seatQuota.isUnlimited ? "∞ Unlimited" : `${seatQuota.limit} agen`} · {caps.editionName})
+            </h3>
+            {!seatQuota.canAddMore && onUpgradeRequest && (
+              <button
+                type="button"
+                onClick={onUpgradeRequest}
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700"
+              >
+                <KeyRound className="h-3.5 w-3.5" /> Tambah Kuota Kursi
+              </button>
+            )}
+          </div>
           <div className="mt-4 divide-y divide-slate-100">
             {members.map((m) => (
               <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
@@ -290,6 +359,106 @@ export function SettingsView({
               </div>
             ))}
           </div>
+        </section>
+
+        {/* Sovereign Corporate Infrastructure: Custom Branded APK, Custom Domain & Dedicated Neon DB SLA 99.95% */}
+        <section className="rounded-2xl border border-indigo-200 bg-white p-5 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Globe className="h-4 w-4 text-indigo-600" />
+                <h3 className="text-sm font-bold text-slate-900">
+                  Infrastruktur Sovereign Corporate — Custom Domain, Branded Android APK &amp; Dedicated DB SLA 99.95%
+                </h3>
+                {!caps.customBrandedApk && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-bold text-indigo-800">
+                    <Lock className="h-3 w-3" /> Sovereign Corporate
+                  </span>
+                )}
+              </div>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Konfigurasi domain korporasi, aplikasi Android APK berlabel perusahaan Anda sendiri, dan klaster Neon PostgreSQL Dedicated SLA 99.95%.
+              </p>
+            </div>
+            {!caps.customBrandedApk && onUpgradeRequest && (
+              <button
+                type="button"
+                onClick={onUpgradeRequest}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-indigo-700"
+              >
+                <KeyRound className="h-3.5 w-3.5" /> Aktifkan License Key Sovereign
+              </button>
+            )}
+          </div>
+
+          {!caps.customBrandedApk && (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
+              Mode Pratinjau — Lisensi aktif Anda (<strong>{caps.editionName}</strong>) belum membuka Custom Branded APK, Custom Domain &amp; Dedicated DB SLA 99.95%. Masukkan License Key <strong>Sovereign Corporate</strong> di menu Edisi &amp; Lisensi untuk mengaktifkan.
+            </div>
+          )}
+
+          <div
+            className={`mt-4 grid gap-3 text-xs sm:grid-cols-2 ${
+              !caps.customBrandedApk ? "pointer-events-none select-none opacity-65" : ""
+            }`}
+          >
+            <label className="block font-semibold text-slate-700">
+              <span className="inline-flex items-center gap-1">
+                <Globe className="h-3.5 w-3.5 text-indigo-500" /> Custom Domain Korporasi
+              </span>
+              <input
+                disabled={!caps.customBrandedApk}
+                value={customDomain}
+                onChange={(e) => setCustomDomain(e.target.value)}
+                placeholder="crm.perusahaananda.co.id"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal text-slate-900"
+              />
+            </label>
+            <label className="block font-semibold text-slate-700">
+              <span className="inline-flex items-center gap-1">
+                <Smartphone className="h-3.5 w-3.5 text-emerald-600" /> Nama Aplikasi Android APK Berlabel Sendiri
+              </span>
+              <input
+                disabled={!caps.customBrandedApk}
+                value={brandedApkName}
+                onChange={(e) => setBrandedApkName(e.target.value)}
+                placeholder="Nusantara Retail CRM"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal text-slate-900"
+              />
+            </label>
+            <label className="block font-semibold text-slate-700">
+              Android Package ID (Play Store / Internal MDM)
+              <input
+                disabled={!caps.customBrandedApk}
+                value={brandedPackageId}
+                onChange={(e) => setBrandedPackageId(e.target.value)}
+                placeholder="id.co.perusahaananda.crm"
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 font-mono text-sm font-normal text-slate-900"
+              />
+            </label>
+            <label className="block font-semibold text-slate-700">
+              <span className="inline-flex items-center gap-1">
+                <Database className="h-3.5 w-3.5 text-cyan-600" /> Region Dedicated Neon DB &amp; SLA 99.95%
+              </span>
+              <select
+                disabled={!caps.dedicatedDbSla}
+                value={dedicatedDbRegion}
+                onChange={(e) => setDedicatedDbRegion(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-900"
+              >
+                <option value="ap-southeast-1 (Singapore)">ap-southeast-1 (Singapore · SLA 99.95%)</option>
+                <option value="ap-southeast-3 (Jakarta)">ap-southeast-3 (Jakarta · SLA 99.95%)</option>
+                <option value="us-east-1 (Virginia)">us-east-1 (Virginia · SLA 99.95%)</option>
+              </select>
+            </label>
+          </div>
+          {caps.customBrandedApk && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-xs text-emerald-900">
+              <span>
+                ✓ <strong>Sovereign Corporate Aktif:</strong> Simpan perubahan lewat tombol &ldquo;Simpan Profil Usaha&rdquo; di atas. Backup harian otomatis &amp; SLA 99.95% aktif.
+              </span>
+            </div>
+          )}
         </section>
 
         {/* Reset / Danger Zone */}
