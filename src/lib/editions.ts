@@ -21,6 +21,7 @@ export interface AppEditionDefinition {
   name: string;
   tagline: string;
   badge: string;
+  trialDays: number; // 0 = Starter UMKM Gratis Selamanya; 14 = Growth Pro Trial; 7 = Enterprise Trial; 0 = Sovereign License Key Only
   monthlyPriceIdr: number;
   annualPriceIdr: number;
   recommended?: boolean;
@@ -39,8 +40,9 @@ export const APP_EDITIONS: AppEditionDefinition[] = [
   {
     id: "starter",
     name: "Starter UMKM",
-    tagline: "Mulai digitalisasi toko & WhatsApp bisnis dengan cepat tanpa biaya bulanan.",
-    badge: "Gratis",
+    tagline: "Gratis selamanya tanpa batas trial setelah mendaftar. Digitalisasi toko, WhatsApp, POS QR & FAQ AI.",
+    badge: "Gratis Selamanya · Wajib Daftar",
+    trialDays: 0,
     monthlyPriceIdr: 0,
     annualPriceIdr: 0,
     limits: {
@@ -57,18 +59,19 @@ export const APP_EDITIONS: AppEditionDefinition[] = [
       "universal_printing_usb_edc",
     ],
     highlights: [
-      "Hingga 2 agen CS bersamaan (Web & Android)",
-      "WhatsApp + 1 kanal media sosial, maks 300 kontak",
+      "Gratis selamanya tanpa batas trial (wajib mendaftar akun email terlebih dahulu)",
+      "Hingga 2 agen CS bersamaan (Web & Android), maks 300 kontak & 2 kanal",
       "Master Data & POS Kasir + Label Pengiriman QR",
       "Cetak universal: USB-C/Micro-USB OTG, Bluetooth, WiFi, Inkjet/LaserJet & EDC",
-      "2 Agen AI Dasar (CS & Order Extractor)",
+      "2 Agen AI Dasar (CS & Order Extractor) + Pusat FAQ Multi-Agen AI & Komunitas",
     ],
   },
   {
     id: "pro",
     name: "Growth Pro",
-    tagline: "Automasi penuh penjualan omnichannel, ERP gudang & SEO AI untuk UMKM bertumbuh.",
-    badge: "Populer",
+    tagline: "Trial gratis 14 hari! Automasi penuh penjualan omnichannel, ERP gudang & SEO AI untuk UMKM bertumbuh.",
+    badge: "Trial 14 Hari · Populer",
+    trialDays: 14,
     monthlyPriceIdr: 249_000,
     annualPriceIdr: 2_390_000,
     limits: {
@@ -89,9 +92,9 @@ export const APP_EDITIONS: AppEditionDefinition[] = [
       "white_label_store",
     ],
     highlights: [
-      "Hingga 10 agen CS serentak (Desktop, Android & iOS)",
-      "Semua 5 kanal omnichannel (WA, IG, Messenger, TikTok, YouTube)",
-      "AI Auto-Reply 24/7 Tanpa Klik + Eskalasi Admin Otomatis",
+      "Trial Gratis 14 Hari Penuh (otomatis kembali ke Starter UMKM Gratis jika belum aktivasi License Key)",
+      "Hingga 10 agen CS serentak (Desktop, Android & iOS) & 5 kanal omnichannel",
+      "AI Auto-Reply 24/7 Tanpa Klik + Eskalasi Admin Otomatis & 6 Agen AI",
       "ERP Gudang, Supplier & Mutasi Stok Real-Time",
       "Multi-Agent SEO & Growth AI (Google, WA, IG, TikTok, YouTube, FB)",
       "100% White-Label Nama Toko pada Invoice, Label QR & Laporan",
@@ -100,8 +103,9 @@ export const APP_EDITIONS: AppEditionDefinition[] = [
   {
     id: "enterprise",
     name: "Enterprise AI Suite",
-    tagline: "Seluruh 9 Agen AI Otonom, Asisten Suara 24/7, Akuntansi Double-Entry & Self-Healing.",
-    badge: "Rekomendasi",
+    tagline: "Trial gratis 7 hari! Seluruh 9 Agen AI Otonom, Pemandu Suara AI 24/7, Akuntansi Double-Entry & Self-Healing.",
+    badge: "Trial 7 Hari · Rekomendasi",
+    trialDays: 7,
     monthlyPriceIdr: 699_000,
     annualPriceIdr: 6_790_000,
     recommended: true,
@@ -127,19 +131,20 @@ export const APP_EDITIONS: AppEditionDefinition[] = [
       "super_admin_analytics",
     ],
     highlights: [
+      "Trial Gratis 7 Hari Penuh (otomatis kembali ke Starter UMKM Gratis setelah 7 hari tanpa key)",
       "Agen CS Unlimited + 5 Cabang/Workspace dengan RLS PostgreSQL",
       "Seluruh 9 Multi-Agent AI Otonom (termasuk SEO AI, Follow-Up Hunter & Procurement Forecast)",
-      "24/7 AI Personal Companion Suara & Teks + Memori Kontinu sampai 'cukup'",
+      "24/7 AI Personal Companion Suara Hangat & Memori Kontinu sampai 'cukup'",
       "Akuntansi Double-Entry Neraca & Laba Rugi + Jurnal Pelunasan Otomatis",
       "Fraud Sentinel (Anti Prompt/SQL/XSS Injection) & Self-Healing Guardian",
-      "Dashboard Super Admin, Audit & Diagnostik 1-Klik",
     ],
   },
   {
     id: "sovereign",
     name: "Sovereign Corporate",
-    tagline: "Infrastruktur privat, custom domain & APK Android berlabel perusahaan Anda sendiri.",
-    badge: "Korporasi",
+    tagline: "Infrastruktur privat, custom domain & APK Android berlabel perusahaan Anda sendiri (License Key Resmi).",
+    badge: "Korporasi · License Key",
+    trialDays: 0,
     monthlyPriceIdr: 1_950_000,
     annualPriceIdr: 18_900_000,
     limits: {
@@ -192,7 +197,11 @@ export const EDITION_FEATURE_LABELS: Record<EditionFeatureKey, string> = {
 };
 
 export function getEditionById(id: AppEditionId): AppEditionDefinition {
-  return APP_EDITIONS.find((e) => e.id === id) ?? APP_EDITIONS[2];
+  return APP_EDITIONS.find((e) => e.id === id) ?? APP_EDITIONS[0];
+}
+
+export function getTrialDaysForEdition(editionId: AppEditionId): number {
+  return getEditionById(editionId).trialDays;
 }
 
 export function editionHasFeature(editionId: AppEditionId, feature: EditionFeatureKey): boolean {

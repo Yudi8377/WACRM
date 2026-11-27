@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
+  ENTERPRISE_TRIAL_DAYS,
   getPublisherSyncSecret,
+  GROWTH_PRO_TRIAL_DAYS,
   recordTenantRegistration,
-  TRIAL_DURATION_DAYS,
 } from "@/lib/publisher-sync";
 import { checkRateLimit, getClientIpFromRequest, sanitizePhoneDigits } from "@/lib/security";
 
@@ -17,6 +18,7 @@ const registerTenantSchema = z.object({
   phone: z.string().trim().max(40).optional().default(""),
   city: z.string().trim().max(80).optional().default("Indonesia"),
   platform: z.enum(["web", "android"]).optional(),
+  editionId: z.enum(["starter", "pro", "enterprise"]).optional().default("starter"),
 });
 
 export async function POST(request: Request) {
@@ -53,7 +55,15 @@ export async function POST(request: Request) {
     phone: sanitizePhoneDigits(parsed.data.phone),
     city: parsed.data.city || "Indonesia",
     platform: detectedPlatform,
+    editionId: parsed.data.editionId,
   });
+
+  const resolvedTrialDays =
+    tenant.editionId === "enterprise"
+      ? ENTERPRISE_TRIAL_DAYS
+      : tenant.editionId === "pro"
+        ? GROWTH_PRO_TRIAL_DAYS
+        : 0;
 
   // Best-effort real-time webhook push to Publisher HQ (non-blocking)
   const publisherUrl = process.env.PUBLISHER_LICENSE_API_URL?.trim().replace(/\/$/, "");
@@ -82,7 +92,8 @@ export async function POST(request: Request) {
     {
       ok: true,
       tenant,
-      trialDays: TRIAL_DURATION_DAYS,
+      trialDays: resolvedTrialDays,
+      isFreeForever: tenant.editionId === "starter",
       trialEndsAt: tenant.trialEndsAt,
       syncedToPublisherHq,
     },

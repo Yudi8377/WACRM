@@ -267,37 +267,39 @@ export interface ResolvedSessionEntitlement {
   activeLicense: StoredClientLicense | null;
   licenseMaxSeats: number | null;
   isLicensed: boolean;
+  isTrialActive: boolean;
+  isFreeForever: boolean;
+  trialEndsAt: string | null;
 }
 
 /**
  * Single source of truth for resolving a signed-in user's edition & license:
- * 1. A Trial / unlicensed session (no verified License Key) is ALWAYS strictly locked to "starter" (Starter UMKM).
- * 2. A paid edition (pro / enterprise / sovereign) is ONLY unlocked when backed by a
- *    cryptographically verified, non-expired License Key bound to THIS exact account.
+ * 1. Verified paid License Key bound to THIS exact account unlocks its exact tier (STR/PRO/ENT/SOV).
+ * 2. Active non-expired Trial bound to THIS exact account unlocks:
+ *    - Growth Pro (14 days)
+ *    - Enterprise AI Suite (7 days)
+ *    (Sovereign Corporate NEVER unlocks via trial — License Key required!)
+ * 3. Otherwise (including Starter UMKM or expired Pro/Enterprise trial) strictly resolves to
+ *    "starter" (Starter UMKM — Gratis Selamanya, tanpa batas trial).
+ * 4. Cross-account isolation guarantees another account's Sovereign key on the same browser NEVER leaks.
  */
 export function resolveStrictSessionEntitlement(params: {
   tenantId: string;
   accountEmail?: string | null;
+  sessionEditionId?: AppEditionId;
   sessionLicenseKey?: string | null;
   sessionHasPaidLicense?: boolean;
+  trialEndsAt?: string | null;
   workspaceName?: string;
+  nowMs?: number;
 }): ResolvedSessionEntitlement {
   const scopeEmail = normalizeScopeEmail(params.accountEmail);
-
-  // Explicit trial/unlicensed user: NEVER inherit any stored license from another account
-  if (params.sessionHasPaidLicense === false && !params.sessionLicenseKey?.trim()) {
-    return {
-      editionId: "starter",
-      activeLicense: null,
-      licenseMaxSeats: null,
-      isLicensed: false,
-    };
-  }
+  const nowMs = params.nowMs ?? Date.now();
 
   // 1. Check license key attached directly to this account session
   const sessionKey = params.sessionLicenseKey?.trim();
   if (sessionKey) {
-    const verified = verifySignedLicenseKey(sessionKey);
+    const verified = verifySignedLicenseKey(sessionKey, new Date(nowMs));
     if (verified.valid && !verified.isExpired && verified.editionId && verified.expiresAt) {
       const storedForAccount = loadStoredClientLicense(params.tenantId, scopeEmail);
       const activeLicense: StoredClientLicense =
@@ -308,7 +310,7 @@ export function resolveStrictSessionEntitlement(params: {
               editionId: verified.editionId,
               maxSeats: verified.maxSeats ?? 2,
               expiresAt: verified.expiresAt,
-              activatedAt: new Date().toISOString().slice(0, 10),
+              activatedAt: new Date(nowMs).toISOString().slice(0, 10),
               licensedTo: params.workspaceName || "Workspace WACRM",
               licensedEmail: scopeEmail,
               verificationMode: verified.verificationMode,
@@ -319,11 +321,45 @@ export function resolveStrictSessionEntitlement(params: {
         activeLicense,
         licenseMaxSeats: verified.maxSeats ?? null,
         isLicensed: true,
+        isTrialActive: false,
+        isFreeForever: false,
+        trialEndsAt: null,
       };
     }
   }
 
-  // 2. Check strictly account-scoped license storage (only when session didn't forbid it)
+  // 2. If session explicitly has NO paid license, check if THIS session has an active Pro (14d) or Enterprise (7d) trial
+  if (params.sessionHasPaidLicense === false && !sessionKey) {
+    if (
+      (params.sessionEditionId === "pro" || params.sessionEditionId === "enterprise") &&
+      params.trialEndsAt
+    ) {
+      const endMs = Date.parse(params.trialEndsAt);
+      if (!Number.isNaN(endMs) && endMs > nowMs) {
+        return {
+          editionId: params.sessionEditionId,
+          activeLicense: null,
+          licenseMaxSeats: null,
+          isLicensed: false,
+          isTrialActive: true,
+          isFreeForever: false,
+          trialEndsAt: new Date(endMs).toISOString(),
+        };
+      }
+    }
+    // Starter UMKM (Free Forever) or expired trial -> strictly Starter UMKM, NEVER inherit another account's key
+    return {
+      editionId: "starter",
+      activeLicense: null,
+      licenseMaxSeats: null,
+      isLicensed: false,
+      isTrialActive: false,
+      isFreeForever: true,
+      trialEndsAt: null,
+    };
+  }
+
+  // 3. Check strictly account-scoped license storage (for Better Auth / restored paid sessions)
   if (scopeEmail) {
     const storedForAccount = loadStoredClientLicense(params.tenantId, scopeEmail);
     if (storedForAccount && storedForAccount.status === "active") {
@@ -332,15 +368,40 @@ export function resolveStrictSessionEntitlement(params: {
         activeLicense: storedForAccount,
         licenseMaxSeats: storedForAccount.maxSeats,
         isLicensed: true,
+        isTrialActive: false,
+        isFreeForever: false,
+        trialEndsAt: null,
       };
     }
   }
 
-  // Default fallback: strictly Starter UMKM
+  // 4. Active Pro (14d) or Enterprise (7d) trial fallback when sessionHasPaidLicense was omitted
+  if (
+    (params.sessionEditionId === "pro" || params.sessionEditionId === "enterprise") &&
+    params.trialEndsAt
+  ) {
+    const endMs = Date.parse(params.trialEndsAt);
+    if (!Number.isNaN(endMs) && endMs > nowMs) {
+      return {
+        editionId: params.sessionEditionId,
+        activeLicense: null,
+        licenseMaxSeats: null,
+        isLicensed: false,
+        isTrialActive: true,
+        isFreeForever: false,
+        trialEndsAt: new Date(endMs).toISOString(),
+      };
+    }
+  }
+
+  // 5. Default fallback: strictly Starter UMKM (Gratis Selamanya)
   return {
     editionId: "starter",
     activeLicense: null,
     licenseMaxSeats: null,
     isLicensed: false,
+    isTrialActive: false,
+    isFreeForever: true,
+    trialEndsAt: null,
   };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -18,20 +18,25 @@ import {
   Lock,
   LogIn,
   LogOut,
+  MessageSquareHeart,
   Mic,
   Receipt,
   RefreshCw,
   Settings,
   ShieldCheck,
+  Sparkles,
   TrendingUp,
   Users,
+  Volume2,
 } from "lucide-react";
 import {
+  detectClientPlatform,
   evaluateEditionQuota,
   evaluateTabAccess,
   evaluateTrialStatus,
   isAiAgentAllowedInEdition,
   revertCommercialSessionToTrial,
+  startCommercialEditionTrial,
   upgradeCommercialSessionWithLicense,
   type CommercialUserSession,
   type WorkspaceTabId,
@@ -43,6 +48,13 @@ import {
   clearLegacyUnscopedLicenseStorage,
   resolveStrictSessionEntitlement,
 } from "@/lib/license-crypto";
+import {
+  detectUserRegionHint,
+  getOrCreateSessionId,
+  sendMarketSignalTelemetry,
+  sendUsageTelemetry,
+} from "@/lib/usage-telemetry";
+import { playWarmActivationChime } from "@/lib/warm-voice";
 import { loadStoreProfile, saveStoreProfile } from "@/lib/store-profile";
 import type { WorkspaceAdapter, WorkspaceSnapshot } from "@/lib/workspace-adapter";
 import { notifyAndroid } from "@/components/pwa-register";
@@ -54,6 +66,7 @@ import { AccountingView } from "@/components/accounting-view";
 import { MasterDataView } from "@/components/master-data-view";
 import { SeoGrowthView } from "@/components/seo-growth-view";
 import { EditionsView } from "@/components/editions-view";
+import { CommunityHubView } from "@/components/community-hub-view";
 import { InboxView } from "./inbox-view";
 import { ContactsView } from "./contacts-view";
 import { ChannelsView } from "./channels-view";
@@ -81,6 +94,7 @@ const NAV_ITEMS: Array<{
   { id: "channels", label: "Kanal Omnichannel", shortLabel: "Kanal", icon: Link2, group: "crm" },
   { id: "templates", label: "Template & Cepat", shortLabel: "Template", icon: FileText, group: "crm" },
   { id: "analytics", label: "Analitik & Audit", shortLabel: "Analitik", icon: BarChart3, group: "crm" },
+  { id: "community", label: "FAQ AI & Testimoni", shortLabel: "FAQ/Ulasan", icon: MessageSquareHeart, group: "platform" },
   { id: "editions", label: "Edisi & Lisensi", shortLabel: "Lisensi", icon: Layers, group: "platform" },
   { id: "settings", label: "Pengaturan", shortLabel: "Atur", icon: Settings, group: "platform" },
 ];
@@ -106,13 +120,16 @@ export function WorkspaceApp({
   );
   const activeAccountEmail = commercialUser?.email ?? accountEmail ?? null;
   const [licenseRevision, setLicenseRevision] = useState(0);
+  const [companionOpenSignal, setCompanionOpenSignal] = useState(0);
   const resolvedEntitlement = useMemo(() => {
     void licenseRevision;
     return resolveStrictSessionEntitlement({
       tenantId: adapter.tenantId,
       accountEmail: activeAccountEmail,
+      sessionEditionId: commercialUser?.editionId,
       sessionLicenseKey: commercialUser?.licenseKey ?? null,
       sessionHasPaidLicense: commercialUser ? Boolean(commercialUser.hasPaidLicense) : undefined,
+      trialEndsAt: commercialUser?.trialEndsAt ?? null,
       workspaceName: storeProfile.businessName || snapshot?.workspaceName,
     });
   }, [
@@ -128,9 +145,103 @@ export function WorkspaceApp({
 
   useEffect(() => {
     // Scrub legacy unscoped v4 license/edition keys so old Sovereign/Enterprise keys
-    // never leak into a Starter UMKM 14-day Trial account on the same browser.
+    // never leak into a Starter UMKM or Trial account on the same browser.
     clearLegacyUnscopedLicenseStorage(adapter.tenantId);
   }, [adapter.tenantId, activeAccountEmail]);
+
+  // --- Real-Time Usage Telemetry Tracker (Duration, Feature, Peak Hour, Region -> Publisher HQ) ---
+  const tabEnteredAtRef = useRef<number>(0);
+  const trackedOrdersCountRef = useRef<number>(0);
+
+  useEffect(() => {
+    tabEnteredAtRef.current = Date.now();
+    const sessionId = getOrCreateSessionId();
+    const region = detectUserRegionHint(commercialUser?.city || storeProfile.address);
+    const platform = commercialUser?.platform ?? detectClientPlatform();
+    const email = activeAccountEmail || "guest@umkm.id";
+    const business = storeProfile.businessName || commercialUser?.businessName || "";
+
+    const flush = (useBeacon = false) => {
+      const elapsedSec = Math.round((Date.now() - tabEnteredAtRef.current) / 1000);
+      if (elapsedSec < 4) return;
+      tabEnteredAtRef.current = Date.now();
+      sendUsageTelemetry(
+        {
+          tenantEmail: email,
+          businessName: business,
+          editionId,
+          platform,
+          region,
+          featureKey: tab,
+          durationSeconds: elapsedSec,
+          sessionId,
+        },
+        useBeacon,
+      );
+    };
+
+    // Initial ping after 8s so even short visits record feature & hour telemetry
+    const initTimer = window.setTimeout(() => flush(false), 8_000);
+    const heartbeat = window.setInterval(() => flush(false), 45_000);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush(true);
+    };
+    window.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.clearTimeout(initTimer);
+      window.clearInterval(heartbeat);
+      window.removeEventListener("visibilitychange", onVisibility);
+      flush(true);
+    };
+  }, [
+    activeAccountEmail,
+    commercialUser?.businessName,
+    commercialUser?.city,
+    commercialUser?.platform,
+    editionId,
+    storeProfile.address,
+    storeProfile.businessName,
+    tab,
+  ]);
+
+  // Stream anonymized economic/market trend signals when new POS orders are recorded
+  useEffect(() => {
+    if (!snapshot) return;
+    if (trackedOrdersCountRef.current === 0) {
+      trackedOrdersCountRef.current = snapshot.orders.length;
+      return;
+    }
+    if (snapshot.orders.length > trackedOrdersCountRef.current) {
+      const newest = snapshot.orders[0];
+      trackedOrdersCountRef.current = snapshot.orders.length;
+      if (newest) {
+        const firstItem = newest.items[0];
+        const prod = snapshot.products.find((p) => p.id === firstItem?.productId);
+        const totalUnits = newest.items.reduce((s, it) => s + (it.quantity || 1), 0);
+        const payRaw = (newest.paymentMethod || "qris").toLowerCase();
+        const paymentMethod = payRaw.includes("qris")
+          ? "qris"
+          : payRaw.includes("cod")
+            ? "cod"
+            : payRaw.includes("tunai") || payRaw.includes("cash")
+              ? "cash"
+              : "transfer";
+        sendMarketSignalTelemetry({
+          tenantEmail: activeAccountEmail || "",
+          region: detectUserRegionHint(commercialUser?.city || storeProfile.address),
+          productCategory: prod?.category || "UMKM Umum",
+          productName: firstItem?.productName || "Produk UMKM",
+          avgPriceIdr: firstItem?.unitPrice || newest.totalAmount,
+          unitsSold: Math.max(1, totalUnits),
+          orderValueIdr: newest.totalAmount,
+          paymentMethod,
+          channel: newest.conversationId ? "whatsapp" : "pos",
+          repeatBuyer: snapshot.orders.filter((o) => o.customerPhone === newest.customerPhone).length > 1,
+        });
+      }
+    }
+  }, [activeAccountEmail, commercialUser?.city, snapshot, storeProfile.address]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -239,6 +350,27 @@ export function WorkspaceApp({
     );
   }
 
+  function handleStartEditionTrial(targetEdition: "pro" | "enterprise") {
+    if (!commercialUser) {
+      showToast("Silakan masuk akun terlebih dahulu untuk mengaktifkan Trial gratis.", "error");
+      setTab("editions");
+      return;
+    }
+    const res = startCommercialEditionTrial(commercialUser, targetEdition);
+    if (!res.ok) {
+      showToast(res.error || "Trial edisi ini sudah pernah digunakan pada akun ini.", "error");
+      setTab("editions");
+      return;
+    }
+    saveTenantEdition(adapter.tenantId, targetEdition);
+    onCommercialSessionUpdate?.(res.session);
+    setLicenseRevision((r) => r + 1);
+    const edName = getEditionById(targetEdition).name;
+    showToast(
+      `Selamat! Trial Gratis ${res.trialDays} Hari ${edName} aktif sekarang. Setelah ${res.trialDays} hari tanpa License Key, akun otomatis kembali ke Starter UMKM (Gratis Selamanya).`,
+    );
+  }
+
   function handleClearLicense() {
     saveTenantEdition(adapter.tenantId, "starter");
     clearLegacyUnscopedLicenseStorage(adapter.tenantId);
@@ -257,8 +389,8 @@ export function WorkspaceApp({
     () => evaluateTabAccess(editionId, effectiveRole, tab),
     [editionId, effectiveRole, tab],
   );
-  const isTrialExpiredBlock = trialStatus.isExpired && tab !== "editions";
-  const isPreviewRestricted = !isTrialExpiredBlock && !currentTabAccess.allowed;
+  // Starter UMKM is FREE FOREVER; expired Pro/Enterprise trials gracefully fall back to Starter UMKM (never locked out!)
+  const isPreviewRestricted = !currentTabAccess.allowed;
 
   const quotaSnapshot = useMemo(() => {
     if (!snapshot) return null;
@@ -373,37 +505,23 @@ export function WorkspaceApp({
           <button
             type="button"
             onClick={() => {
-              if (!voiceCompanionUnlocked) {
-                showToast(
-                  "24/7 AI Personal Companion Suara & Memori Kontinu tersedia mulai edisi Enterprise AI Suite. Aktifkan License Key Enterprise di menu Edisi & Lisensi.",
-                  "error",
-                );
-                setTab("editions");
-                return;
-              }
-              triggerCompanion(
-                "Apakah hari ini ada prospek yang belum kita follow up?",
-                true,
-              );
+              playWarmActivationChime();
+              setCompanionOpenSignal((s) => s + 1);
             }}
-            className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold ring-1 transition ${
+            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold ring-1 transition ${
               voiceCompanionUnlocked
-                ? "bg-emerald-50 text-emerald-800 ring-emerald-200 hover:bg-emerald-100"
-                : "bg-amber-50 text-amber-800 ring-amber-200 hover:bg-amber-100"
+                ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white ring-emerald-400 shadow-xs hover:from-emerald-600 hover:to-teal-600"
+                : "bg-emerald-50 text-emerald-800 ring-emerald-200 hover:bg-emerald-100"
             }`}
-            title={
-              voiceCompanionUnlocked
-                ? "Tanya Asisten Pribadi AI 24/7 (Suara & Teks)"
-                : "Khusus Enterprise AI Suite — klik untuk aktivasi License Key"
-            }
+            title="Buka Asisten Pribadi & Pemandu Suara AI 24/7 (Suara Ramah & Hangat)"
           >
             {voiceCompanionUnlocked ? (
-              <Mic className="h-3.5 w-3.5 text-emerald-600" />
+              <Mic className="h-3.5 w-3.5" />
             ) : (
-              <Lock className="h-3.5 w-3.5 text-amber-600" />
+              <Volume2 className="h-3.5 w-3.5 text-emerald-600" />
             )}
             <span className="hidden sm:inline">
-              {voiceCompanionUnlocked ? "AI Companion 24/7" : "AI Suara (Ent)"}
+              {voiceCompanionUnlocked ? "Asisten Suara 24/7" : "Asisten Suara AI"}
             </span>
           </button>
           <button
@@ -626,31 +744,52 @@ export function WorkspaceApp({
 
         {/* MAIN CONTENT */}
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          {/* 14-DAY UMKM TRIAL COUNTDOWN BANNER (Web & Android) */}
-          {commercialUser && trialStatus.isTrial && (
+          {/* EDITION & TRIAL STATUS BANNER (Starter UMKM = Free Forever; Pro = 14d Trial; Enterprise = 7d Trial) */}
+          {commercialUser && !resolvedEntitlement.isLicensed && (
             <div
               className={`flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2 text-xs ${
-                trialStatus.isExpired
-                  ? "border-rose-500/40 bg-rose-950 text-rose-100"
-                  : "border-amber-500/30 bg-amber-950/90 text-amber-100"
+                trialStatus.isTrial && !trialStatus.isExpired
+                  ? "border-cyan-500/40 bg-slate-900 text-cyan-100"
+                  : trialStatus.isExpired
+                    ? "border-amber-500/40 bg-amber-950/95 text-amber-100"
+                    : "border-emerald-500/30 bg-emerald-950/95 text-emerald-100"
               }`}
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-amber-500/20 px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-amber-300">
-                  {commercialUser.platform === "android" ? "Android APK · Trial UMKM" : "Web · Trial UMKM"}
+                <span className="rounded-full bg-white/15 px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-emerald-300">
+                  {trialStatus.isTrial && !trialStatus.isExpired
+                    ? `Trial ${trialStatus.totalTrialDays} Hari · ${activeEdition.name}`
+                    : "Starter UMKM · Gratis Selamanya"}
                 </span>
                 <span className="font-semibold">{trialStatus.label}</span>
-                <span className="hidden text-amber-200/80 lg:inline">
-                  — Fitur di atas Starter UMKM ditampilkan sebagai pratinjau (tombol dibatasi hingga License Key aktif).
-                </span>
               </div>
-              <button
-                type="button"
-                onClick={() => setTab("editions")}
-                className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1 text-[11px] font-extrabold text-slate-950 hover:bg-emerald-400"
-              >
-                <KeyRound className="h-3.5 w-3.5" /> Aktivasi License Key
-              </button>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {editionId === "starter" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleStartEditionTrial("pro")}
+                      className="inline-flex items-center gap-1 rounded-lg bg-cyan-500 px-2.5 py-1 text-[11px] font-extrabold text-slate-950 hover:bg-cyan-400"
+                    >
+                      <Sparkles className="h-3 w-3" /> Trial 14h Growth Pro
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleStartEditionTrial("enterprise")}
+                      className="inline-flex items-center gap-1 rounded-lg bg-violet-500 px-2.5 py-1 text-[11px] font-extrabold text-white hover:bg-violet-400"
+                    >
+                      <Sparkles className="h-3 w-3" /> Trial 7h Enterprise
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setTab("editions")}
+                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1 text-[11px] font-extrabold text-slate-950 hover:bg-emerald-400"
+                >
+                  <KeyRound className="h-3.5 w-3.5" /> License Key
+                </button>
+              </div>
             </div>
           )}
 
@@ -670,38 +809,8 @@ export function WorkspaceApp({
               </button>
             </div>
           ) : snapshot ? (
-            isTrialExpiredBlock ? (
-              <div className="flex flex-1 items-center justify-center bg-slate-950 p-6 text-white">
-                <div className="w-full max-w-lg rounded-3xl border border-rose-500/40 bg-slate-900 p-7 text-center shadow-2xl">
-                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-400">
-                    <Lock className="h-7 w-7" />
-                  </div>
-                  <p className="mt-4 font-mono text-[11px] font-bold uppercase tracking-widest text-rose-400">
-                    Masa Trial 14 Hari Versi UMKM Berakhir
-                  </p>
-                  <h2 className="mt-2 text-xl font-extrabold text-white">
-                    Aktifkan License Key Resmi WACRM untuk Melanjutkan
-                  </h2>
-                  <p className="mt-2 text-xs leading-relaxed text-slate-300">
-                    Masa uji coba gratis 14 hari akun <strong>{commercialUser?.email}</strong> telah
-                    selesai. Masukkan License Key resmi dari WACRM Publisher HQ untuk melanjutkan
-                    operasional tanpa kehilangan data toko Anda.
-                  </p>
-                  <div className="mt-5 flex justify-center">
-                    <button
-                      type="button"
-                      onClick={() => setTab("editions")}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-5 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-emerald-400"
-                    >
-                      <KeyRound className="h-4 w-4" />
-                      Masukkan License Key Sekarang
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              {/* PREVIEW-ONLY BANNER WHEN MODULE IS ABOVE STARTER UMKM (Buttons Restricted!) */}
+              {/* PREVIEW-ONLY BANNER WHEN MODULE IS ABOVE ACTIVE EDITION */}
               {isPreviewRestricted && (
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/40 bg-slate-900 px-4 py-3 text-xs text-white">
                   <div className="flex items-start gap-2.5">
@@ -714,24 +823,35 @@ export function WorkspaceApp({
                       </div>
                       <p className="mt-0.5 text-[11px] text-slate-300">
                         {currentTabAccess.reason ||
-                          `Modul ini membutuhkan minimal edisi ${currentTabAccess.requiredEditionName}. Anda dapat melihat tampilannya sekarang; aktifkan License Key untuk mengaktifkan semua tombol & otomatisasi.`}
+                          `Modul ini membutuhkan minimal edisi ${currentTabAccess.requiredEditionName}. Coba gratis dengan Trial atau aktifkan License Key untuk membuka seluruh tombol & otomatisasi.`}
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {currentTabAccess.requiredEditionId === "pro" && (
+                      <button
+                        type="button"
+                        onClick={() => handleStartEditionTrial("pro")}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-500 px-3.5 py-2 text-xs font-extrabold text-slate-950 hover:bg-cyan-400"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" /> Coba Gratis 14 Hari Pro
+                      </button>
+                    )}
+                    {currentTabAccess.requiredEditionId === "enterprise" && (
+                      <button
+                        type="button"
+                        onClick={() => handleStartEditionTrial("enterprise")}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-violet-500 px-3.5 py-2 text-xs font-extrabold text-white hover:bg-violet-400"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" /> Coba Gratis 7 Hari Enterprise
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setTab("editions")}
                       className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 text-xs font-extrabold text-slate-950 hover:bg-emerald-400"
                     >
                       <KeyRound className="h-3.5 w-3.5" /> Buka dengan License Key
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTab("inbox")}
-                      className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800"
-                    >
-                      Ke Inbox UMKM
                     </button>
                   </div>
                 </div>
@@ -807,6 +927,19 @@ export function WorkspaceApp({
                   />
                 </div>
               )}
+              {tab === "community" && (
+                <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
+                  <CommunityHubView
+                    editionId={editionId}
+                    accountEmail={activeAccountEmail}
+                    displayName={commercialUser?.displayName}
+                    businessName={storeProfile.businessName || snapshot.workspaceName}
+                    defaultCity={commercialUser?.city || storeProfile.address}
+                    onNavigateTab={(nextTab) => setTab(nextTab as TabId)}
+                    onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
+                  />
+                </div>
+              )}
               {tab === "editions" && (
                 <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
                   <EditionsView
@@ -816,12 +949,16 @@ export function WorkspaceApp({
                     workspaceName={storeProfile.businessName || snapshot.workspaceName}
                     currentEditionId={editionId}
                     activeLicense={resolvedEntitlement.activeLicense}
+                    isTrialActive={resolvedEntitlement.isTrialActive}
+                    trialEndsAt={resolvedEntitlement.trialEndsAt}
+                    usedTrialEditions={commercialUser?.usedTrialEditions}
                     activeAgentsCount={activeAiCount}
                     membersCount={snapshot.members.length}
                     contactsCount={snapshot.contacts.length}
                     productsCount={snapshot.products.length}
                     channelsCount={snapshot.channels.length}
                     onSelectEdition={handleSelectEdition}
+                    onStartTrial={handleStartEditionTrial}
                     onClearLicense={handleClearLicense}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
@@ -928,7 +1065,6 @@ export function WorkspaceApp({
                 </div>
               </div>
             </div>
-            )
           ) : null}
         </main>
       </div>
@@ -969,19 +1105,22 @@ export function WorkspaceApp({
         })}
       </nav>
 
-      {/* 24/7 PERSONAL AI COMPANION (VOICE + TEXT + CONTINUOUS MEMORY — Enterprise AI Suite+) */}
+      {/* 24/7 PERSONAL AI COMPANION (WARM HUMAN VOICE + TEXT + CONTINUOUS MEMORY) */}
       {snapshot && (
         <AiCompanion
           adapter={adapter}
           editionId={editionId}
+          userName={commercialUser?.displayName}
           snapshot={snapshot}
           storeProfile={storeProfile}
           activeTab={tab}
           onNavigateTab={(nextTab) => setTab(nextTab as TabId)}
           onUpgradeRequest={() => setTab("editions")}
+          onStartEnterpriseTrial={() => handleStartEditionTrial("enterprise")}
           onRefresh={refresh}
           onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
           externalPrompt={companionTrigger}
+          externalOpenSignal={companionOpenSignal}
         />
       )}
 

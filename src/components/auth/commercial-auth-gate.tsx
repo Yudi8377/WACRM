@@ -70,10 +70,12 @@ export function CommercialAuthGate({
   const [loginPassword, setLoginPassword] = useState("");
   const [showLoginPass, setShowLoginPass] = useState(false);
 
-  // Sign Up (14-Day UMKM Trial) fields
+  // Sign Up fields (Starter UMKM Gratis Selamanya / Trial 14h Growth Pro / Trial 7h Enterprise)
   const [regName, setRegName] = useState("");
   const [regBusiness, setRegBusiness] = useState("");
   const [regPhone, setRegPhone] = useState("");
+  const [regCity, setRegCity] = useState("Kediri, Jawa Timur");
+  const [regEdition, setRegEdition] = useState<"starter" | "pro" | "enterprise">("starter");
   const [regEmail, setRegEmail] = useState("");
   const [regPassword, setRegPassword] = useState("");
   const [regConfirm, setRegConfirm] = useState("");
@@ -109,11 +111,21 @@ export function CommercialAuthGate({
   );
 
   function activateSession(next: CommercialUserSession) {
-    const strictEdition = next.hasPaidLicense && next.licenseKey ? next.editionId : "starter";
+    const hasVerifiedPaidKey = Boolean(next.hasPaidLicense && next.licenseKey);
+    const hasActiveTierTrial =
+      !hasVerifiedPaidKey &&
+      (next.editionId === "pro" || next.editionId === "enterprise") &&
+      Boolean(next.trialEndsAt && Date.parse(next.trialEndsAt) > Date.now());
+    const strictEdition = hasVerifiedPaidKey
+      ? next.editionId
+      : hasActiveTierTrial
+        ? next.editionId
+        : "starter";
+
     const normalizedSession: CommercialUserSession = {
       ...next,
       editionId: strictEdition,
-      hasPaidLicense: Boolean(next.hasPaidLicense && next.licenseKey),
+      hasPaidLicense: hasVerifiedPaidKey,
     };
     if (!normalizedSession.hasPaidLicense) {
       clearLegacyUnscopedLicenseStorage(adapter.tenantId);
@@ -126,6 +138,7 @@ export function CommercialAuthGate({
         ...store,
         businessName: normalizedSession.businessName,
         email: normalizedSession.email,
+        address: normalizedSession.city || store.address,
       });
     }
     setSession(normalizedSession);
@@ -190,11 +203,14 @@ export function CommercialAuthGate({
         email: localRes.account.email,
         displayName: localRes.account.displayName,
         businessName: localRes.account.businessName,
+        city: localRes.account.city,
         role: localRes.account.role,
         editionId: localRes.account.editionId,
         authProvider: "workspace_local",
         hasPaidLicense: localRes.account.hasPaidLicense ?? false,
         licenseKey: localRes.account.licenseKey ?? null,
+        trialEditionId: localRes.account.trialEditionId,
+        usedTrialEditions: localRes.account.usedTrialEditions,
         trialStartedAt: localRes.account.trialStartedAt || localRes.account.createdAt,
         trialEndsAt: localRes.account.trialEndsAt,
         platform: clientPlatform,
@@ -233,16 +249,18 @@ export function CommercialAuthGate({
       const cleanName = regName.trim();
       const cleanBusiness = regBusiness.trim();
       const cleanPhone = regPhone.trim();
+      const cleanCity = regCity.trim() || "Indonesia";
 
-      // 1. Register local account locked to Starter UMKM 14-Day Trial
+      // 1. Register local account (Starter UMKM Gratis Selamanya / Growth Pro 14d Trial / Enterprise 7d Trial)
       const localRes = registerLocalCommercialAccount({
         displayName: cleanName,
         businessName: cleanBusiness,
         phone: cleanPhone,
+        city: cleanCity,
         email: cleanEmail,
         password: regPassword,
         platform: clientPlatform,
-        editionId: "starter",
+        editionId: regEdition,
       });
 
       if (!localRes.ok || !localRes.account) {
@@ -261,17 +279,19 @@ export function CommercialAuthGate({
             businessName: cleanBusiness,
             email: cleanEmail,
             phone: cleanPhone,
+            city: cleanCity,
             platform: clientPlatform,
+            editionId: regEdition,
           }),
         });
         if (regApiRes.ok) {
           const regData = (await regApiRes.json()) as { trialEndsAt?: string };
-          if (regData.trialEndsAt) {
+          if (regData.trialEndsAt && regEdition !== "starter") {
             syncedTrialEndsAt = regData.trialEndsAt;
           }
         }
       } catch {
-        // Non-blocking fallback so user can still enter trial immediately
+        // Non-blocking fallback so user can still enter workspace immediately
       }
 
       // 3. Also sync to Neon Cloud Better Auth if live DB configured & password >= 12 chars
@@ -296,11 +316,14 @@ export function CommercialAuthGate({
         email: localRes.account.email,
         displayName: localRes.account.displayName,
         businessName: localRes.account.businessName,
+        city: cleanCity,
         role: "owner",
-        editionId: "starter",
+        editionId: localRes.account.editionId,
         authProvider: provider,
         hasPaidLicense: false,
         licenseKey: null,
+        trialEditionId: localRes.account.trialEditionId,
+        usedTrialEditions: localRes.account.usedTrialEditions,
         trialStartedAt: localRes.account.trialStartedAt,
         trialEndsAt: syncedTrialEndsAt,
         platform: clientPlatform,
@@ -429,7 +452,7 @@ export function CommercialAuthGate({
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-bold text-emerald-300">
               <Sparkles className="h-3.5 w-3.5" />
-              Trial Gratis {TRIAL_DURATION_DAYS} Hari Versi Starter UMKM · Web &amp; Android
+              UMKM Gratis Selamanya · Trial 14h Growth Pro · Trial 7h Enterprise
             </span>
             {clientPlatform === "android" && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-500/40 bg-cyan-500/15 px-3 py-1.5 text-xs font-bold text-cyan-200">
@@ -443,10 +466,10 @@ export function CommercialAuthGate({
               Satu Aplikasi untuk CS AI Otomatis, POS QR, ERP &amp; Akuntansi
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">
-              Daftar cukup menggunakan email untuk langsung mencoba{" "}
-              <strong>Trial Gratis {TRIAL_DURATION_DAYS} Hari Versi UMKM</strong> (berlaku di Web
-              maupun Aplikasi Android). Modul Growth Pro &amp; Enterprise dapat Anda lihat langsung
-              tampilannya dan dibuka penuh kapan saja dengan <strong>License Key</strong> resmi.
+              Daftar akun email untuk menggunakan{" "}
+              <strong>Starter UMKM Gratis Selamanya</strong> tanpa batas trial, atau coba gratis{" "}
+              <strong>14 Hari Growth Pro</strong> &amp; <strong>7 Hari Enterprise AI Suite</strong>{" "}
+              (termasuk Pemandu Suara AI 24/7 yang ramah). Berlaku di Web &amp; Aplikasi Android.
             </p>
           </div>
 
@@ -489,11 +512,11 @@ export function CommercialAuthGate({
             </div>
           </div>
 
-          {/* Transparent Trial & Editions Matrix */}
+          {/* Transparent Editions & Revised Trial Matrix */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-white">
-                <Crown className="h-4 w-4 text-amber-400" /> Paket Edisi &amp; Aturan Trial {TRIAL_DURATION_DAYS} Hari
+                <Crown className="h-4 w-4 text-amber-400" /> Paket Edisi &amp; Aturan Gratis / Trial
               </h2>
               <span className="text-[11px] font-semibold text-emerald-300">
                 Aktivasi &amp; upgrade instan via License Key
@@ -506,18 +529,28 @@ export function CommercialAuthGate({
                   className={`rounded-xl border p-3 text-xs ${
                     ed.id === "starter"
                       ? "border-emerald-500/50 bg-emerald-500/10"
-                      : "border-slate-800 bg-slate-950/80"
+                      : ed.id === "pro"
+                        ? "border-cyan-500/40 bg-cyan-500/10"
+                        : ed.id === "enterprise"
+                          ? "border-violet-500/40 bg-violet-500/10"
+                          : "border-slate-800 bg-slate-950/80"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-white">{ed.name}</span>
                     <span
                       className={`font-extrabold ${
-                        ed.id === "starter" ? "text-emerald-300" : "text-amber-300"
+                        ed.id === "starter"
+                          ? "text-emerald-300"
+                          : ed.id === "pro"
+                            ? "text-cyan-300"
+                            : ed.id === "enterprise"
+                              ? "text-violet-300"
+                              : "text-amber-300"
                       }`}
                     >
                       {ed.id === "starter"
-                        ? `Trial ${TRIAL_DURATION_DAYS} Hari`
+                        ? "Gratis Selamanya"
                         : `${formatIdr(ed.monthlyPriceIdr)}/bln`}
                     </span>
                   </div>
@@ -530,7 +563,13 @@ export function CommercialAuthGate({
                       {ed.limits.maxContacts < 0 ? "∞" : ed.limits.maxContacts.toLocaleString("id-ID")} Kontak
                     </span>
                     <span className="rounded bg-slate-800 px-1.5 py-0.5">
-                      {ed.id === "starter" ? "Aktif saat Trial" : "Preview + License Key"}
+                      {ed.id === "starter"
+                        ? "Wajib Daftar · Tanpa Batas Trial"
+                        : ed.id === "pro"
+                          ? `Trial ${TRIAL_DURATION_DAYS} Hari`
+                          : ed.id === "enterprise"
+                            ? "Trial 7 Hari"
+                            : "Khusus License Key"}
                     </span>
                   </div>
                 </div>
@@ -539,7 +578,7 @@ export function CommercialAuthGate({
           </div>
         </section>
 
-        {/* RIGHT COLUMN: Commercial Sign Up (14-Day Trial) / Sign In / Forgot Password */}
+        {/* RIGHT COLUMN: Commercial Sign Up / Sign In / Forgot Password */}
         <section className="lg:col-span-5">
           <div className="rounded-3xl border border-slate-700/80 bg-slate-900/95 p-6 shadow-2xl">
             {/* Mode Switcher Tabs */}
@@ -557,7 +596,7 @@ export function CommercialAuthGate({
                     : "text-slate-400 hover:text-white"
                 }`}
               >
-                Trial 14 Hari
+                Daftar Gratis
               </button>
               <button
                 type="button"
@@ -669,6 +708,46 @@ export function CommercialAuthGate({
                 </div>
 
                 <label className="block text-xs font-semibold text-slate-300">
+                  Kota / Daerah Usaha *
+                  <input
+                    required
+                    value={regCity}
+                    onChange={(e) => setRegCity(e.target.value)}
+                    placeholder="Contoh: Kediri, Jawa Timur / Jakarta / Bandung"
+                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500"
+                  />
+                </label>
+
+                <div className="space-y-1.5">
+                  <span className="block text-xs font-semibold text-slate-300">
+                    Pilih Paket Mulai Anda *
+                  </span>
+                  <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                    {(
+                      [
+                        { id: "starter", title: "Starter UMKM", sub: "Gratis Selamanya" },
+                        { id: "pro", title: "Growth Pro", sub: "Trial 14 Hari" },
+                        { id: "enterprise", title: "Enterprise AI", sub: "Trial 7 Hari" },
+                      ] as const
+                    ).map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setRegEdition(opt.id)}
+                        className={`rounded-xl border px-2 py-2 text-left transition ${
+                          regEdition === opt.id
+                            ? "border-emerald-400 bg-emerald-500/20 text-white"
+                            : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-600"
+                        }`}
+                      >
+                        <div className="font-extrabold">{opt.title}</div>
+                        <div className="text-[10px] text-emerald-300">{opt.sub}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <label className="block text-xs font-semibold text-slate-300">
                   Kata Sandi *
                   <div className="relative mt-1">
                     <input
@@ -741,11 +820,16 @@ export function CommercialAuthGate({
                 <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-[11px] text-emerald-200">
                   <div className="flex items-center gap-1.5 font-bold">
                     <Clock className="h-3.5 w-3.5 shrink-0" />
-                    Paket Aktif Otomatis: Trial {TRIAL_DURATION_DAYS} Hari Starter UMKM
+                    {regEdition === "starter"
+                      ? "Paket Pilihan: Starter UMKM — Gratis Selamanya (Tanpa Batas Trial)"
+                      : regEdition === "pro"
+                        ? `Paket Pilihan: Trial Gratis ${TRIAL_DURATION_DAYS} Hari Growth Pro`
+                        : "Paket Pilihan: Trial Gratis 7 Hari Enterprise AI Suite (Full Suara 24/7)"}
                   </div>
                   <p className="mt-1 text-emerald-100/80">
-                    Termasuk Inbox AI Dasar, POS QR, Master Data Barang/Supplier/Kurir &amp; Kontak.
-                    Modul Growth Pro &amp; Enterprise ditampilkan sebagai pratinjau hingga aktivasi License Key.
+                    {regEdition === "starter"
+                      ? "Wajib daftar agar data usaha aman. Termasuk Inbox AI Dasar, POS QR, Master Data, FAQ AI & 2 Agen AI selamanya gratis."
+                      : "Setelah masa trial selesai tanpa License Key, data usaha tetap aman & akun otomatis kembali ke Starter UMKM (Gratis Selamanya)."}
                   </p>
                 </div>
 
@@ -755,7 +839,13 @@ export function CommercialAuthGate({
                   className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 shadow-lg hover:bg-emerald-400 disabled:opacity-60"
                 >
                   <UserPlus className="h-4 w-4" />
-                  {busy ? "Mengaktifkan Trial 14 Hari..." : `Mulai Trial ${TRIAL_DURATION_DAYS} Hari Gratis`}
+                  {busy
+                    ? "Mendaftarkan Akun..."
+                    : regEdition === "starter"
+                      ? "Daftar Starter UMKM Gratis Selamanya"
+                      : regEdition === "pro"
+                        ? `Mulai Trial ${TRIAL_DURATION_DAYS} Hari Growth Pro`
+                        : "Mulai Trial 7 Hari Enterprise AI"}
                 </button>
               </form>
             )}

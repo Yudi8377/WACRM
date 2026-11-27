@@ -2,6 +2,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { getDbPool, isDatabaseConfigured } from "@/lib/db";
 
 export const TRIAL_DURATION_DAYS = 14;
+export const GROWTH_PRO_TRIAL_DAYS = 14;
+export const ENTERPRISE_TRIAL_DAYS = 7;
 
 export interface RegisteredTenantRecord {
   id: string;
@@ -12,7 +14,7 @@ export interface RegisteredTenantRecord {
   city: string;
   platform: "web" | "android";
   editionId: "starter" | "pro" | "enterprise" | "sovereign";
-  licenseStatus: "trial" | "active" | "grace_period" | "expired" | "suspended";
+  licenseStatus: "free_umkm" | "trial" | "active" | "grace_period" | "expired" | "suspended";
   trialStartedAt: string;
   trialEndsAt: string;
   licenseKey: string | null;
@@ -106,11 +108,11 @@ function mapRow(row: Record<string, unknown>): RegisteredTenantRecord {
     editionId: (["starter", "pro", "enterprise", "sovereign"].includes(String(row.edition_id))
       ? String(row.edition_id)
       : "starter") as RegisteredTenantRecord["editionId"],
-    licenseStatus: (["trial", "active", "grace_period", "expired", "suspended"].includes(
+    licenseStatus: (["free_umkm", "trial", "active", "grace_period", "expired", "suspended"].includes(
       String(row.license_status),
     )
       ? String(row.license_status)
-      : "trial") as RegisteredTenantRecord["licenseStatus"],
+      : "free_umkm") as RegisteredTenantRecord["licenseStatus"],
     trialStartedAt: new Date(String(row.trial_started_at)).toISOString(),
     trialEndsAt: new Date(String(row.trial_ends_at)).toISOString(),
     licenseKey: row.license_key ? String(row.license_key) : null,
@@ -126,10 +128,24 @@ export async function recordTenantRegistration(input: {
   phone?: string;
   city?: string;
   platform: "web" | "android";
+  editionId?: "starter" | "pro" | "enterprise";
 }): Promise<RegisteredTenantRecord> {
   const email = input.email.trim().toLowerCase();
   const now = new Date();
-  const trialEnds = new Date(now.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000);
+  const requestedEdition: "starter" | "pro" | "enterprise" =
+    input.editionId === "pro" || input.editionId === "enterprise" ? input.editionId : "starter";
+  const trialDays =
+    requestedEdition === "enterprise"
+      ? ENTERPRISE_TRIAL_DAYS
+      : requestedEdition === "pro"
+        ? GROWTH_PRO_TRIAL_DAYS
+        : 0;
+  const trialEnds =
+    trialDays > 0
+      ? new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000)
+      : new Date("2099-12-31T23:59:59.000Z"); // Starter UMKM = Gratis Selamanya
+  const licenseStatus: RegisteredTenantRecord["licenseStatus"] =
+    trialDays > 0 ? "trial" : "free_umkm";
   const stableId = `ten-live-${createHash("sha256").update(email).digest("hex").slice(0, 12)}`;
 
   const fallbackRecord: RegisteredTenantRecord = {
@@ -140,8 +156,8 @@ export async function recordTenantRegistration(input: {
     phone: (input.phone ?? "").trim(),
     city: (input.city ?? "Indonesia").trim() || "Indonesia",
     platform: input.platform,
-    editionId: "starter",
-    licenseStatus: "trial",
+    editionId: requestedEdition,
+    licenseStatus,
     trialStartedAt: now.toISOString(),
     trialEndsAt: trialEnds.toISOString(),
     licenseKey: null,
@@ -174,7 +190,7 @@ export async function recordTenantRegistration(input: {
       const res = await pool.query(
         `INSERT INTO publisher_tenant_registrations
           (id, full_name, business_name, email, phone, city, platform, edition_id, license_status, trial_started_at, trial_ends_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'starter', 'trial', $8::timestamptz, $9::timestamptz)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz, $11::timestamptz)
          ON CONFLICT (email) DO UPDATE SET
            full_name = EXCLUDED.full_name,
            business_name = EXCLUDED.business_name,
@@ -191,6 +207,8 @@ export async function recordTenantRegistration(input: {
           fallbackRecord.phone,
           fallbackRecord.city,
           fallbackRecord.platform,
+          fallbackRecord.editionId,
+          fallbackRecord.licenseStatus,
           fallbackRecord.trialStartedAt,
           fallbackRecord.trialEndsAt,
         ],

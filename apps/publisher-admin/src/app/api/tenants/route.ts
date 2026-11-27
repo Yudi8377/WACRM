@@ -14,7 +14,7 @@ export interface LiveRegisteredTenant {
   city: string;
   platform: "web" | "android";
   editionId: "starter" | "pro" | "enterprise" | "sovereign";
-  licenseStatus: "trial" | "active" | "grace_period" | "expired" | "suspended";
+  licenseStatus: "free_umkm" | "trial" | "active" | "grace_period" | "expired" | "suspended";
   trialStartedAt: string;
   trialEndsAt: string;
   licenseKey: string | null;
@@ -67,8 +67,8 @@ const pushSchema = z.object({
     platform: z.enum(["web", "android"]).default("web"),
     editionId: z.enum(["starter", "pro", "enterprise", "sovereign"]).default("starter"),
     licenseStatus: z
-      .enum(["trial", "active", "grace_period", "expired", "suspended"])
-      .default("trial"),
+      .enum(["free_umkm", "trial", "active", "grace_period", "expired", "suspended"])
+      .default("free_umkm"),
     trialStartedAt: z.string(),
     trialEndsAt: z.string(),
     licenseKey: z.string().nullable().optional(),
@@ -81,7 +81,7 @@ const patchSchema = z.object({
   email: z.string().email().optional(),
   tenantId: z.string().min(3).max(120).optional(),
   editionId: z.enum(["starter", "pro", "enterprise", "sovereign"]),
-  licenseStatus: z.enum(["trial", "active", "grace_period", "expired", "suspended"]),
+  licenseStatus: z.enum(["free_umkm", "trial", "active", "grace_period", "expired", "suspended"]),
   licenseKey: z.string().max(100).optional().nullable(),
 });
 

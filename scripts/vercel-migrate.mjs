@@ -102,7 +102,18 @@ async function main() {
           END IF;
         END $$;
       `);
-      console.log(`[wacrm-migrate] Neon schema up-to-date (${tablesCount} tables, ${rlsCount} RLS tables, v4.0.0 9-agent constraint verified).`);
+      // Idempotently apply v4.5 telemetry, community feedback & market signals tables
+      const migration0010Path = path.join(
+        process.cwd(),
+        "db",
+        "migrations",
+        "0010_telemetry_feedback_economics.sql",
+      );
+      if (fs.existsSync(migration0010Path)) {
+        const sql0010 = fs.readFileSync(migration0010Path, "utf8");
+        await client.query(sql0010);
+      }
+      console.log(`[wacrm-migrate] Neon schema up-to-date (${tablesCount} tables, ${rlsCount} RLS tables, v4.5 intelligence tables verified).`);
       return;
     }
 

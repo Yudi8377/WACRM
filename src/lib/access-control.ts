@@ -18,10 +18,13 @@ export type WorkspaceTabId =
   | "channels"
   | "templates"
   | "analytics"
+  | "community"
   | "editions"
   | "settings";
 
 export const TRIAL_DURATION_DAYS = 14;
+export const GROWTH_PRO_TRIAL_DAYS = 14;
+export const ENTERPRISE_TRIAL_DAYS = 7;
 
 /**
  * Exact 1-to-1 mapping from the WACRM Feature Comparison Matrix:
@@ -291,6 +294,7 @@ export interface CommercialUserSession {
   email: string;
   displayName: string;
   businessName: string;
+  city?: string;
   role: MemberRole;
   editionId: AppEditionId;
   authProvider: "cloud_neon" | "workspace_local";
@@ -298,15 +302,20 @@ export interface CommercialUserSession {
   hasPaidLicense?: boolean;
   trialStartedAt?: string;
   trialEndsAt?: string;
+  trialEditionId?: "pro" | "enterprise" | null;
+  usedTrialEditions?: Array<"pro" | "enterprise">;
   platform?: "web" | "android";
   signedInAt: string;
 }
 
 export interface TrialStatusEvaluation {
   isTrial: boolean;
+  isFreeForever: boolean;
   isExpired: boolean;
   daysRemaining: number;
   totalTrialDays: number;
+  trialEditionId: "pro" | "enterprise" | null;
+  effectiveEditionId: AppEditionId;
   trialEndsAt: string | null;
   label: string;
 }
@@ -317,44 +326,79 @@ export function evaluateTrialStatus(
 ): TrialStatusEvaluation {
   if (!session) {
     return {
-      isTrial: true,
+      isTrial: false,
+      isFreeForever: true,
       isExpired: false,
-      daysRemaining: TRIAL_DURATION_DAYS,
-      totalTrialDays: TRIAL_DURATION_DAYS,
+      daysRemaining: 0,
+      totalTrialDays: 0,
+      trialEditionId: null,
+      effectiveEditionId: "starter",
       trialEndsAt: null,
-      label: `Trial Gratis ${TRIAL_DURATION_DAYS} Hari (Starter UMKM)`,
+      label: "Starter UMKM · Gratis Selamanya (Wajib Daftar)",
     };
   }
 
   if (session.hasPaidLicense || Boolean(session.licenseKey?.trim())) {
     return {
       isTrial: false,
+      isFreeForever: false,
       isExpired: false,
       daysRemaining: 0,
-      totalTrialDays: TRIAL_DURATION_DAYS,
+      totalTrialDays: 0,
+      trialEditionId: null,
+      effectiveEditionId: session.editionId,
       trialEndsAt: null,
       label: "Lisensi Resmi Aktif",
     };
   }
 
-  const startMs = Date.parse(session.trialStartedAt || session.signedInAt);
-  const fallbackEndMs =
-    (Number.isNaN(startMs) ? nowMs : startMs) + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000;
-  const parsedEndMs = session.trialEndsAt ? Date.parse(session.trialEndsAt) : fallbackEndMs;
-  const endMs = Number.isNaN(parsedEndMs) ? fallbackEndMs : parsedEndMs;
-  const diffMs = endMs - nowMs;
-  const isExpired = diffMs <= 0;
-  const daysRemaining = isExpired ? 0 : Math.max(1, Math.ceil(diffMs / (24 * 60 * 60 * 1000)));
+  // Growth Pro (14-day Trial) & Enterprise AI Suite (7-day Trial)
+  const trialTier: "pro" | "enterprise" | null =
+    session.editionId === "pro" || session.editionId === "enterprise"
+      ? session.editionId
+      : session.trialEditionId === "pro" || session.trialEditionId === "enterprise"
+        ? session.trialEditionId
+        : null;
 
+  if (trialTier) {
+    const totalDays =
+      trialTier === "enterprise" ? ENTERPRISE_TRIAL_DAYS : GROWTH_PRO_TRIAL_DAYS;
+    const tierName = getEditionById(trialTier).name;
+    const startMs = Date.parse(session.trialStartedAt || session.signedInAt);
+    const fallbackEndMs =
+      (Number.isNaN(startMs) ? nowMs : startMs) + totalDays * 24 * 60 * 60 * 1000;
+    const parsedEndMs = session.trialEndsAt ? Date.parse(session.trialEndsAt) : fallbackEndMs;
+    const endMs = Number.isNaN(parsedEndMs) ? fallbackEndMs : parsedEndMs;
+    const diffMs = endMs - nowMs;
+    const isExpired = diffMs <= 0;
+    const daysRemaining = isExpired ? 0 : Math.max(1, Math.ceil(diffMs / (24 * 60 * 60 * 1000)));
+
+    return {
+      isTrial: true,
+      isFreeForever: isExpired,
+      isExpired,
+      daysRemaining,
+      totalTrialDays: totalDays,
+      trialEditionId: trialTier,
+      effectiveEditionId: isExpired ? "starter" : trialTier,
+      trialEndsAt: new Date(endMs).toISOString(),
+      label: isExpired
+        ? `Masa Trial ${totalDays} Hari ${tierName} Berakhir — Kembali ke Starter UMKM (Gratis Selamanya)`
+        : `Trial Gratis ${totalDays} Hari ${tierName} · Sisa ${daysRemaining} Hari`,
+    };
+  }
+
+  // Starter UMKM: FREE FOREVER (no trial expiry, still requires registration!)
   return {
-    isTrial: true,
-    isExpired,
-    daysRemaining,
-    totalTrialDays: TRIAL_DURATION_DAYS,
-    trialEndsAt: new Date(endMs).toISOString(),
-    label: isExpired
-      ? "Masa Trial 14 Hari Berakhir — Aktivasi License Key Diperlukan"
-      : `Trial Gratis Versi UMKM · Sisa ${daysRemaining} dari ${TRIAL_DURATION_DAYS} Hari`,
+    isTrial: false,
+    isFreeForever: true,
+    isExpired: false,
+    daysRemaining: 0,
+    totalTrialDays: 0,
+    trialEditionId: null,
+    effectiveEditionId: "starter",
+    trialEndsAt: null,
+    label: "Starter UMKM · Gratis Selamanya (Tanpa Batas Trial)",
   };
 }
 
@@ -378,8 +422,11 @@ export interface LocalCommercialAccount {
   role: MemberRole;
   editionId: AppEditionId;
   passwordHash: string;
+  city?: string;
   trialStartedAt?: string;
   trialEndsAt?: string;
+  trialEditionId?: "pro" | "enterprise" | null;
+  usedTrialEditions?: Array<"pro" | "enterprise">;
   hasPaidLicense?: boolean;
   licenseKey?: string | null;
   platform?: "web" | "android";
@@ -502,6 +549,7 @@ export function registerLocalCommercialAccount(input: {
   displayName: string;
   businessName: string;
   phone?: string;
+  city?: string;
   platform?: "web" | "android";
   editionId?: AppEditionId;
 }): { ok: boolean; account?: LocalCommercialAccount; error?: string } {
@@ -517,19 +565,32 @@ export function registerLocalCommercialAccount(input: {
     return { ok: false, error: "Email sudah terdaftar. Silakan masuk atau gunakan Lupa Password." };
   }
   const now = new Date();
-  const trialEnds = new Date(now.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000);
+  // Sovereign NEVER self-signups; Starter UMKM = Free Forever; Pro = 14d trial; Enterprise = 7d trial
+  const chosenEdition: "starter" | "pro" | "enterprise" =
+    input.editionId === "pro" || input.editionId === "enterprise" ? input.editionId : "starter";
+  const trialDays =
+    chosenEdition === "enterprise"
+      ? ENTERPRISE_TRIAL_DAYS
+      : chosenEdition === "pro"
+        ? GROWTH_PRO_TRIAL_DAYS
+        : 0;
+  const trialEnds =
+    trialDays > 0 ? new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000).toISOString() : undefined;
+
   const account: LocalCommercialAccount = {
     id: `local-${Date.now()}`,
     email: normalizedEmail,
     displayName: input.displayName.trim() || normalizedEmail.split("@")[0],
     businessName: input.businessName.trim() || "Usaha Baru WACRM",
     phone: input.phone?.trim() || "",
+    city: input.city?.trim() || "Indonesia",
     role: "owner",
-    // Always enforce Starter UMKM Trial on self-signup until official License Key is activated
-    editionId: input.editionId ?? "starter",
+    editionId: chosenEdition,
     passwordHash: hashCommercialPassword(normalizedEmail, input.password),
-    trialStartedAt: now.toISOString(),
-    trialEndsAt: trialEnds.toISOString(),
+    trialStartedAt: trialDays > 0 ? now.toISOString() : undefined,
+    trialEndsAt: trialEnds,
+    trialEditionId: chosenEdition === "starter" ? null : chosenEdition,
+    usedTrialEditions: chosenEdition === "starter" ? [] : [chosenEdition],
     hasPaidLicense: false,
     licenseKey: null,
     platform: input.platform ?? detectClientPlatform(),
@@ -596,9 +657,18 @@ export function loadCommercialSession(): CommercialUserSession | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CommercialUserSession;
     if (!parsed.email || !parsed.role || !parsed.editionId) return null;
-    // Strict commercial guard: unlicensed Trial sessions cannot hold a paid edition
-    if (parsed.hasPaidLicense === false && !parsed.licenseKey) {
-      return { ...parsed, editionId: "starter", hasPaidLicense: false, licenseKey: null };
+    // Strict commercial guard: Sovereign ALWAYS needs a verified License Key;
+    // Growth Pro (14d) & Enterprise (7d) trials are only valid while non-expired.
+    if (!parsed.hasPaidLicense && !parsed.licenseKey) {
+      if (parsed.editionId === "sovereign") {
+        return { ...parsed, editionId: "starter", hasPaidLicense: false, licenseKey: null };
+      }
+      if (parsed.editionId === "pro" || parsed.editionId === "enterprise") {
+        const endMs = parsed.trialEndsAt ? Date.parse(parsed.trialEndsAt) : 0;
+        if (!endMs || Number.isNaN(endMs) || endMs <= Date.now()) {
+          return { ...parsed, editionId: "starter", hasPaidLicense: false, licenseKey: null };
+        }
+      }
     }
     return parsed;
   } catch {
@@ -651,6 +721,54 @@ export function upgradeCommercialSessionWithLicense(
   return upgraded;
 }
 
+export function startCommercialEditionTrial(
+  session: CommercialUserSession,
+  targetEdition: "pro" | "enterprise",
+): { ok: boolean; session: CommercialUserSession; error?: string; trialDays: number } {
+  const trialDays =
+    targetEdition === "enterprise" ? ENTERPRISE_TRIAL_DAYS : GROWTH_PRO_TRIAL_DAYS;
+  const used = new Set(session.usedTrialEditions ?? []);
+  if (used.has(targetEdition)) {
+    return {
+      ok: false,
+      session,
+      trialDays,
+      error: `Akun Anda sudah pernah menggunakan masa Trial ${trialDays} Hari untuk ${getEditionById(targetEdition).name}. Masukkan License Key resmi untuk mengaktifkan kembali.`,
+    };
+  }
+  const now = new Date();
+  const endsAt = new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000).toISOString();
+  used.add(targetEdition);
+  const next: CommercialUserSession = {
+    ...session,
+    editionId: targetEdition,
+    hasPaidLicense: false,
+    licenseKey: null,
+    trialEditionId: targetEdition,
+    trialStartedAt: now.toISOString(),
+    trialEndsAt: endsAt,
+    usedTrialEditions: [...used],
+  };
+  saveCommercialSession(next);
+
+  const accounts = loadLocalAccounts();
+  const idx = accounts.findIndex((a) => a.email.toLowerCase() === session.email.toLowerCase());
+  if (idx >= 0) {
+    accounts[idx] = {
+      ...accounts[idx],
+      editionId: targetEdition,
+      hasPaidLicense: false,
+      licenseKey: null,
+      trialEditionId: targetEdition,
+      trialStartedAt: now.toISOString(),
+      trialEndsAt: endsAt,
+      usedTrialEditions: [...used],
+    };
+    saveLocalAccounts(accounts);
+  }
+  return { ok: true, session: next, trialDays };
+}
+
 export function revertCommercialSessionToTrial(
   session: CommercialUserSession,
 ): CommercialUserSession {
@@ -659,6 +777,8 @@ export function revertCommercialSessionToTrial(
     editionId: "starter",
     licenseKey: null,
     hasPaidLicense: false,
+    trialEditionId: null,
+    trialEndsAt: undefined,
   };
   saveCommercialSession(reverted);
 
@@ -670,6 +790,8 @@ export function revertCommercialSessionToTrial(
       editionId: "starter",
       licenseKey: null,
       hasPaidLicense: false,
+      trialEditionId: null,
+      trialEndsAt: undefined,
     };
     saveLocalAccounts(accounts);
   }

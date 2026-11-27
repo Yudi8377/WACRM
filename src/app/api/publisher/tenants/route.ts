@@ -13,7 +13,7 @@ const patchTenantSchema = z.object({
   email: z.string().trim().email().optional(),
   tenantId: z.string().trim().min(3).max(120).optional(),
   editionId: z.enum(["starter", "pro", "enterprise", "sovereign"]),
-  licenseStatus: z.enum(["trial", "active", "grace_period", "expired", "suspended"]),
+  licenseStatus: z.enum(["free_umkm", "trial", "active", "grace_period", "expired", "suspended"]),
   licenseKey: z.string().trim().max(100).optional().nullable(),
 });
 
@@ -29,6 +29,9 @@ export async function GET(request: Request) {
   const now = Date.now();
   const summary = {
     total: tenants.length,
+    freeUmkm: tenants.filter(
+      (t) => t.licenseStatus === "free_umkm" || (t.editionId === "starter" && !t.licenseKey),
+    ).length,
     activeTrials: tenants.filter(
       (t) => t.licenseStatus === "trial" && Date.parse(t.trialEndsAt) > now,
     ).length,

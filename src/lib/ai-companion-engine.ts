@@ -1,4 +1,5 @@
-import { formatIdr, type StoreBusinessProfile } from "@/lib/crm-types";
+import { answerAppFaqWithMultiAgent } from "@/lib/community-faq";
+import { formatIdr, type AppEditionId, type StoreBusinessProfile } from "@/lib/crm-types";
 import type { WorkspaceSnapshot } from "@/lib/workspace-adapter";
 
 export type CompanionPendingAction =
@@ -25,9 +26,46 @@ export type CompanionPendingAction =
 export interface CompanionTurnInput {
   userText: string;
   activeTab: string;
+  editionId?: AppEditionId;
+  userName?: string;
   snapshot: WorkspaceSnapshot;
   storeProfile: StoreBusinessProfile;
   pendingAction: CompanionPendingAction | null;
+  now?: Date;
+}
+
+function getIndonesianTimeOfDayGreeting(now: Date): {
+  period: "pagi" | "siang" | "sore" | "malam";
+  greeting: string;
+  warmWish: string;
+} {
+  const hour = now.getHours();
+  if (hour >= 4 && hour < 11) {
+    return {
+      period: "pagi",
+      greeting: "Selamat pagi",
+      warmWish: "Semoga pagi ini penuh energi positif dan rezeki yang lancar ya",
+    };
+  }
+  if (hour >= 11 && hour < 15) {
+    return {
+      period: "siang",
+      greeting: "Selamat siang",
+      warmWish: "Semoga aktivitas siang ini berjalan mulus dan orderan terus mengalir ya",
+    };
+  }
+  if (hour >= 15 && hour < 18) {
+    return {
+      period: "sore",
+      greeting: "Selamat sore",
+      warmWish: "Semoga sore ini tetap semangat dan semua pesanan terkirim rapi ya",
+    };
+  }
+  return {
+    period: "malam",
+    greeting: "Selamat malam",
+    warmWish: "Jangan lupa istirahat juga ya, biar saya bantu jaga operasional bisnis Anda",
+  };
 }
 
 export interface CompanionTurnResult {
@@ -50,15 +88,165 @@ export function processCompanionTurn(input: CompanionTurnInput): CompanionTurnRe
   const raw = input.userText.trim();
   const lower = raw.toLowerCase();
   const storeName = input.storeProfile.businessName;
+  const now = input.now ?? new Date();
+  const tod = getIndonesianTimeOfDayGreeting(now);
+  const caller = input.userName?.trim()
+    ? `Kak ${input.userName.trim().split(/\s+/)[0]}`
+    : "Kak";
 
   // 1. Check explicit end-of-session cue ("cukup", "sudah cukup", "selesai", "berhenti")
   if (/^(?:cukup|sudah\s*cukup|selesai|berhenti|stop|terima\s*kasih\s*cukup|udah\s*cukup)[\s!.,?]*$/i.test(raw)) {
-    const text =
-      "Baik, sesi asisten suara dihentikan sementara. Saya tetap siaga 24 jam jika kapan saja Anda butuh bantuan, analisis, atau panduan lagi. Semangat menjalankan usaha hari ini!";
+    const text = `Baik ${caller}, sesi asisten suara saya jeda dulu ya. Saya selalu siaga 24 jam kapan saja ${caller} butuh teman ngobrol, analisis, atau bantuan bisnis untuk ${storeName}. Sehat dan sukses selalu ya!`;
     return {
       replyText: text,
       speechText: text,
       shouldEndSession: true,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: null,
+    };
+  }
+
+  // 1b. Warm Human Everyday Greetings & Small Talk (natural, friendly, empathetic!)
+  if (/(ass?alamu\s*'?alaikum|salam\s*sejahtera)/i.test(lower)) {
+    const text = `Waalaikumsalam warahmatullahi wabarakatuh, ${caller}! ${tod.greeting}. Alhamdulillah senang sekali bisa menyapa ${caller} hari ini. ${tod.warmWish}. Ada yang bisa saya bantu untuk ${storeName} sekarang, atau mau ngobrol santai dulu?`;
+    return {
+      replyText: text,
+      speechText: text,
+      shouldEndSession: false,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: null,
+    };
+  }
+
+  if (
+    /(apa\s*kabar|gimana\s*kabar|bagaimana\s*kabar|kabar\s*kamu|kamu\s*sehat|sehat\s*kan|how\s*are\s*you)/i.test(
+      lower,
+    )
+  ) {
+    const text = `Alhamdulillah kabar saya sangat baik dan penuh semangat hari ini, ${caller}! Terima kasih sudah menanyakan dengan ramah. Bagaimana kabar ${caller} sendiri dan tim di ${storeName}? Semoga sehat selalu ya. Kalau ada pekerjaan yang ingin saya ringankan hari ini, tinggal bilang saja ya!`;
+    return {
+      replyText: text,
+      speechText: text,
+      shouldEndSession: false,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: null,
+    };
+  }
+
+  if (
+    /^(?:selamat\s*(?:pagi|siang|sore|malam)|pagi|siang|sore|malam|halo+|hai+|helo+|hello+|hey+|permisi|p)[!.,?\s]*(?:kak|ai|asisten|sari|nadia|bima|sayang|bro|sis|boss|bos)?[!.,?\s]*$/i.test(
+      raw,
+    )
+  ) {
+    const greetedPeriod = /pagi/i.test(lower)
+      ? "Selamat pagi"
+      : /siang/i.test(lower)
+        ? "Selamat siang"
+        : /sore/i.test(lower)
+          ? "Selamat sore"
+          : /malam/i.test(lower)
+            ? "Selamat malam"
+            : tod.greeting;
+    const text = `${greetedPeriod}, ${caller}! Senang sekali mendengar suara Anda. ${tod.warmWish}. Saya siap menemani ${storeName} — mau saya cek prospek yang belum di-follow up, ringkasan omzet hari ini, atau kita ngobrol santai dulu?`;
+    return {
+      replyText: text,
+      speechText: text,
+      shouldEndSession: false,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: null,
+    };
+  }
+
+  if (
+    /(lagi\s*capek|capek\s*banget|lelah|pusing|stres|penat|ngantuk|jualan\s*sepi|sepi\s*banget|omzet\s*turun|lagi\s*sedih|curhat)/i.test(
+      lower,
+    )
+  ) {
+    const isQuietSales = /(sepi|omzet\s*turun)/i.test(lower);
+    const text = isQuietSales
+      ? `Saya mengerti sekali rasanya saat penjualan sedang agak melambat, ${caller}. Tidak apa-apa, naik-turun dalam usaha itu wajar dan ${caller} sudah luar biasa bertahan sejauh ini. Mau saya bantu cek prospek lama yang bisa kita sapa hangat ulang hari ini atau siapkan ide promo ringan untuk ${storeName}?`
+      : `Wah, terdengar hari ini cukup padat ya ${caller}. Tarik napas pelan dulu dan sempatkan minum air hangat ya — kesehatan ${caller} jauh lebih penting daripada apa pun. Urusan cek stok, rekap tagihan, atau follow up pelanggan biar saya yang bantu ringankan pelan-pelan.`;
+    return {
+      replyText: text,
+      speechText: text,
+      shouldEndSession: false,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: null,
+    };
+  }
+
+  if (/(alhamdulillah\s*laris|lagi\s*ramai|orderan\s*banyak|senang\s*banget|alhamdulillah\s*lancar|syukur)/i.test(lower)) {
+    const text = `Wah, ikut senang sekali mendengarnya, ${caller}! Alhamdulillah, kerja keras ${caller} dan tim ${storeName} benar-benar membuahkan hasil. Semoga berkah dan makin laris manis ya! Mau saya bantu cek stok gudang supaya tidak kehabisan barang terlaris?`;
+    return {
+      replyText: text,
+      speechText: text,
+      shouldEndSession: false,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: null,
+    };
+  }
+
+  if (
+    /^(?:terima\s*kasih|makasih|thanks|thank\s*you|sip|mantap|keren|bagus|hebat|oke\s*makasih|ok\s*makasih)/i.test(
+      raw,
+    ) ||
+    (/\b(?:terima\s*kasih|makasih|thank\s*you)\b/i.test(lower) && !/\?/.test(raw))
+  ) {
+    const text = `Sama-sama, ${caller}! Senang sekali bisa membantu. Kalau nanti butuh apa-apa lagi — mau tanya bisnis, panduan aplikasi, atau sekadar menyapa — saya selalu ada di sini 24 jam ya!`;
+    return {
+      replyText: text,
+      speechText: text,
+      shouldEndSession: false,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: null,
+    };
+  }
+
+  if (/(siapa\s*kamu|kamu\s*siapa|nama\s*kamu|namamu\s*siapa|bisa\s*bantu\s*apa|lagi\s*apa)/i.test(lower)) {
+    const text = `Saya Asisten Pribadi & Pemandu Suara AI 24/7 untuk ${storeName}, ${caller}! Saya dibuat agar bisa menjadi partner ngobrol yang ramah sekaligus membantu pekerjaan nyata: menyapa & follow up prospek, cek tagihan belum lunas, pantau stok ERP, baca laporan laba rugi, memandu setup WhatsApp Meta, sampai menjawab pertanyaan seputar aplikasi WACRM. Mau coba tanya sesuatu sekarang?`;
+    return {
+      replyText: text,
+      speechText: text,
+      shouldEndSession: false,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: null,
+    };
+  }
+
+  if (/(jam\s*berapa|tanggal\s*berapa|hari\s*apa\s*sekarang|sekarang\s*jam)/i.test(lower)) {
+    const dateStr = now.toLocaleDateString("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    const timeStr = now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+    const text = `Sekarang hari ${dateStr}, pukul ${timeStr}, ${caller}. ${tod.warmWish}. Ada agenda usaha yang ingin kita selesaikan sebelum jam berikutnya?`;
+    return {
+      replyText: text,
+      speechText: text,
+      shouldEndSession: false,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: null,
+    };
+  }
+
+  if (/(motivasi|semangati|ide\s*promo|tips\s*laris|cara\s*naikkan\s*omzet|saran\s*bisnis)/i.test(lower)) {
+    const topProduct = input.snapshot.products[0]?.name || "produk unggulan Anda";
+    const text = `Semangat terus ya, ${caller}! Bisnis hebat selalu tumbuh dari pelayanan yang hangat dan konsisten. Untuk ${storeName} hari ini, saran praktis saya: buat paket bundling hemat untuk "${topProduct}", balas chat pelanggan di bawah 1 menit, dan kirim sapaan ramah ke pelanggan lama di jam istirahat (11.00–13.00) atau malam (19.00–20.30). Mau saya bantu cek prospek yang bisa disapa sekarang?`;
+    return {
+      replyText: text,
+      speechText: text,
+      shouldEndSession: false,
       nextPendingAction: null,
       executeAction: null,
       navigateToTab: null,
@@ -462,7 +650,24 @@ export function processCompanionTurn(input: CompanionTurnInput): CompanionTurnRe
     };
   }
 
-  // 10. Context-Aware Help / Greeting for the Business Owner
+  // 10. Multi-Agent App FAQ fallback (handles any question about WACRM features, trials, voice, printing, etc.)
+  if (/(cara|bagaimana|kenapa|mengapa|apa\s*itu|apakah|berapa|gratis|trial|fitur|bantuan|faq|tidak\s*bisa|bisa\s*tidak)/i.test(lower)) {
+    const faq = answerAppFaqWithMultiAgent({
+      question: raw,
+      editionId: input.editionId ?? "starter",
+      businessName: storeName,
+    });
+    return {
+      replyText: `[${faq.agentBadge}] ${faq.answer}`,
+      speechText: faq.speechAnswer,
+      shouldEndSession: false,
+      nextPendingAction: null,
+      executeAction: null,
+      navigateToTab: null,
+    };
+  }
+
+  // 11. Warm Context-Aware Help for the Business Owner
   const screenTips: Record<string, string> = {
     channels:
       "Anda sedang di menu Kanal Omnichannel. Saya bisa memandu pengisian WABA ID, Phone Number ID, dan System User Access Token untuk Meta WhatsApp Cloud API langkah demi langkah.",
@@ -476,16 +681,18 @@ export function processCompanionTurn(input: CompanionTurnInput): CompanionTurnRe
       "Anda sedang di SEO & Katalog Publik AI. Klik produk mana saja untuk audit skor SEO katalog & konten akuisisi klik-ke-WhatsApp.",
     templates:
       "Anda sedang di Balasan Cepat & Template Pesan. Gunakan AI Generator di bagian atas untuk menghasilkan pintasan /slash dan template resmi siap approve Meta dalam satu klik.",
+    community:
+      "Anda sedang di Pusat FAQ AI & Testimoni. Anda bisa menanyakan apa saja tentang aplikasi WACRM atau berbagi pengalaman dan testimoni berfoto untuk usaha Anda.",
     editions:
-      "Anda sedang di Edisi & Lisensi. Masukkan License Key resmi dari aplikasi WACRM Publisher HQ untuk mengaktifkan edisi & kuota workspace Anda.",
+      "Anda sedang di Edisi & Lisensi. Starter UMKM gratis selamanya, Growth Pro punya Trial 14 Hari, Enterprise AI Suite punya Trial 7 Hari, dan Sovereign menggunakan License Key resmi.",
     settings:
       "Anda sedang di Pengaturan Usaha. Ubah Nama Toko, Alamat, No. Telp, dan Footer di sini agar seluruh Invoice, Label Pengiriman QR, dan Laporan tercetak atas nama usaha Anda sendiri.",
   };
 
   const tip =
     screenTips[input.activeTab] ||
-    `Halo! Saya Asisten Pribadi AI 24/7 untuk ${storeName}. Anda dapat menanyakan: 'Apakah hari ini ada prospek yang belum kita follow up?', 'Cek tagihan belum lunas', 'Cek stok menipis', 'Ringkasan omzet & laba', atau 'Panduan hubungkan WhatsApp Cloud API Meta'.`;
-  const text = `${tip} Silakan bicara atau ketik perintah Anda — saya akan terus menyimak sampai Anda bilang 'cukup'.`;
+    `${tod.greeting}, ${caller}! Saya Asisten Pribadi AI 24/7 untuk ${storeName}. Kita bisa ngobrol santai seperti "Apa kabar?", atau langsung tanya bisnis seperti "Cek prospek yang belum di-follow up", "Cek tagihan belum lunas", "Cek stok menipis", dan "Ringkasan laba hari ini".`;
+  const text = `${tip} Silakan bicara atau ketik apa saja ya — saya menyimak dengan hangat sampai ${caller} bilang "cukup".`;
   return {
     replyText: text,
     speechText: text,

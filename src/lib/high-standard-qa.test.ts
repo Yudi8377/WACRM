@@ -250,12 +250,12 @@ describe("High-Standard QA 2 — Real-Time Signup Sync (Web & Android) + 14-Day 
       tenant: { editionId: string; licenseStatus: string; platform: string };
     };
     expect(webBody.ok).toBe(true);
-    expect(webBody.trialDays).toBe(TRIAL_DURATION_DAYS);
+    expect(webBody.trialDays).toBe(0);
     expect(webBody.tenant.editionId).toBe("starter");
-    expect(webBody.tenant.licenseStatus).toBe("trial");
+    expect(webBody.tenant.licenseStatus).toBe("free_umkm");
     expect(webBody.tenant.platform).toBe("web");
 
-    // 2. Android APK user signs up (detected via WACRM-Android User-Agent)
+    // 2. Android APK user signs up for 14-day Growth Pro Trial (detected via WACRM-Android User-Agent)
     const androidRes = await registerTenantPost(
       new Request("http://localhost/api/auth/register-tenant", {
         method: "POST",
@@ -269,15 +269,19 @@ describe("High-Standard QA 2 — Real-Time Signup Sync (Web & Android) + 14-Day 
           businessName: "Kopi Lereng Kelud",
           email: "agus@kopikelud.id",
           phone: "085611223344",
+          editionId: "pro",
         }),
       }),
     );
     expect(androidRes.status).toBe(201);
     const androidBody = (await androidRes.json()) as {
-      tenant: { platform: string; editionId: string };
+      trialDays: number;
+      tenant: { platform: string; editionId: string; licenseStatus: string };
     };
+    expect(androidBody.trialDays).toBe(TRIAL_DURATION_DAYS);
     expect(androidBody.tenant.platform).toBe("android");
-    expect(androidBody.tenant.editionId).toBe("starter");
+    expect(androidBody.tenant.editionId).toBe("pro");
+    expect(androidBody.tenant.licenseStatus).toBe("trial");
 
     // 3. Publisher HQ pulls live registrations with shared secret
     const syncRes = await publisherTenantsGet(
@@ -289,14 +293,15 @@ describe("High-Standard QA 2 — Real-Time Signup Sync (Web & Android) + 14-Day 
     expect(syncRes.status).toBe(200);
     const syncData = (await syncRes.json()) as {
       ok: boolean;
-      summary: { total: number; webSignups: number; androidSignups: number; activeTrials: number };
+      summary: { total: number; webSignups: number; androidSignups: number; activeTrials: number; freeUmkm: number };
       tenants: Array<{ email: string; platform: string; licenseStatus: string }>;
     };
     expect(syncData.ok).toBe(true);
     expect(syncData.summary.total).toBe(2);
     expect(syncData.summary.webSignups).toBe(1);
     expect(syncData.summary.androidSignups).toBe(1);
-    expect(syncData.summary.activeTrials).toBe(2);
+    expect(syncData.summary.freeUmkm).toBe(1);
+    expect(syncData.summary.activeTrials).toBe(1);
 
     // 4. Publisher HQ issues License Key & syncs upgrade back via PATCH
     const patchRes = await publisherTenantsPatch(
@@ -323,11 +328,14 @@ describe("High-Standard QA 2 — Real-Time Signup Sync (Web & Android) + 14-Day 
     expect(patchData.tenant.licenseKey).toBe("WACRM-PRO-2711-0010-TESTKEY1");
   });
 
-  it("enforces 14-day Trial countdown, expiration lock, and Starter UMKM preview restrictions", () => {
+  it("enforces Starter UMKM Free Forever, Growth Pro 14-day Trial, Enterprise 7-day Trial, and Starter restrictions", () => {
     const startMs = Date.parse("2026-11-01T00:00:00.000Z");
-    const endMs = startMs + 14 * 24 * 60 * 60 * 1000;
-    const trialSession: CommercialUserSession = {
-      userId: "u-trial-1",
+    const endProMs = startMs + 14 * 24 * 60 * 60 * 1000;
+    const endEntMs = startMs + 7 * 24 * 60 * 60 * 1000;
+
+    // 1. Starter UMKM = FREE FOREVER (no trial expiry limit!)
+    const starterSession: CommercialUserSession = {
+      userId: "u-free-1",
       email: "umkm@tokoku.id",
       displayName: "Pemilik UMKM",
       businessName: "Toko UMKM",
@@ -336,39 +344,67 @@ describe("High-Standard QA 2 — Real-Time Signup Sync (Web & Android) + 14-Day 
       authProvider: "workspace_local",
       hasPaidLicense: false,
       trialStartedAt: new Date(startMs).toISOString(),
-      trialEndsAt: new Date(endMs).toISOString(),
+      trialEndsAt: new Date(startMs).toISOString(),
       platform: "android",
       signedInAt: new Date(startMs).toISOString(),
     };
+    const starterStatus = evaluateTrialStatus(starterSession, startMs + 365 * 24 * 60 * 60 * 1000);
+    expect(starterStatus.isFreeForever).toBe(true);
+    expect(starterStatus.isTrial).toBe(false);
+    expect(starterStatus.isExpired).toBe(false);
 
-    // Day 1
-    const day1 = evaluateTrialStatus(trialSession, startMs + 1000);
-    expect(day1.isTrial).toBe(true);
-    expect(day1.isExpired).toBe(false);
-    expect(day1.daysRemaining).toBe(14);
+    // 2. Growth Pro = 14-Day Trial
+    const proTrialSession: CommercialUserSession = {
+      ...starterSession,
+      editionId: "pro",
+      trialEditionId: "pro",
+      trialEndsAt: new Date(endProMs).toISOString(),
+    };
+    const proDay1 = evaluateTrialStatus(proTrialSession, startMs + 1000);
+    expect(proDay1.isTrial).toBe(true);
+    expect(proDay1.isExpired).toBe(false);
+    expect(proDay1.daysRemaining).toBe(14);
+    expect(proDay1.effectiveEditionId).toBe("pro");
 
-    // Day 15 (expired!)
-    const day15 = evaluateTrialStatus(trialSession, endMs + 60_000);
-    expect(day15.isExpired).toBe(true);
-    expect(day15.daysRemaining).toBe(0);
+    // Day 15 (expired -> falls back gracefully to Starter UMKM Free Forever!)
+    const proDay15 = evaluateTrialStatus(proTrialSession, endProMs + 60_000);
+    expect(proDay15.isExpired).toBe(true);
+    expect(proDay15.daysRemaining).toBe(0);
+    expect(proDay15.effectiveEditionId).toBe("starter");
+
+    // 3. Enterprise AI Suite = 7-Day Trial
+    const entTrialSession: CommercialUserSession = {
+      ...starterSession,
+      editionId: "enterprise",
+      trialEditionId: "enterprise",
+      trialEndsAt: new Date(endEntMs).toISOString(),
+    };
+    const entDay1 = evaluateTrialStatus(entTrialSession, startMs + 1000);
+    expect(entDay1.isTrial).toBe(true);
+    expect(entDay1.daysRemaining).toBe(7);
+    expect(entDay1.effectiveEditionId).toBe("enterprise");
+    const entDay8 = evaluateTrialStatus(entTrialSession, endEntMs + 60_000);
+    expect(entDay8.isExpired).toBe(true);
+    expect(entDay8.effectiveEditionId).toBe("starter");
 
     // Paid License Key lifts trial expiration immediately
     const licensed = evaluateTrialStatus({
-      ...trialSession,
+      ...proTrialSession,
       editionId: "pro",
       hasPaidLicense: true,
       licenseKey: "WACRM-PRO-2711-0010-VALIDKEY",
-    }, endMs + 60_000);
+    }, endProMs + 60_000);
     expect(licensed.isTrial).toBe(false);
     expect(licensed.isExpired).toBe(false);
 
-    // Starter UMKM allows core UMKM tabs (including AI tab with 2 basic agents) and restricts higher-tier tabs to Preview-Only
+    // Starter UMKM allows core UMKM tabs + Community FAQ tab and strictly locks higher-tier tabs
     expect(evaluateTabAccess("starter", "owner", "inbox").allowed).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "pos").allowed).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "master").allowed).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "contacts").allowed).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "channels").allowed).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "ai").allowed).toBe(true);
+    expect(evaluateTabAccess("starter", "owner", "community").allowed).toBe(true);
 
     expect(evaluateTabAccess("starter", "owner", "erp").lockedByEdition).toBe(true);
     expect(evaluateTabAccess("starter", "owner", "seo_growth").lockedByEdition).toBe(true);

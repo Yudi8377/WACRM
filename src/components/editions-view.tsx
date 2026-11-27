@@ -33,12 +33,16 @@ interface EditionsViewProps {
   workspaceName: string;
   currentEditionId: AppEditionId;
   activeLicense?: StoredClientLicense | null;
+  isTrialActive?: boolean;
+  trialEndsAt?: string | null;
+  usedTrialEditions?: Array<"pro" | "enterprise">;
   activeAgentsCount: number;
   membersCount?: number;
   contactsCount?: number;
   productsCount: number;
   channelsCount: number;
   onSelectEdition: (editionId: AppEditionId, verifiedLicenseKey?: string, maxSeats?: number) => void;
+  onStartTrial?: (editionId: "pro" | "enterprise") => void;
   onClearLicense?: () => void;
   onToast?: (msg: string, tone?: "success" | "error") => void;
 }
@@ -55,12 +59,16 @@ export function EditionsView({
   workspaceName,
   currentEditionId,
   activeLicense,
+  isTrialActive = false,
+  trialEndsAt = null,
+  usedTrialEditions = [],
   activeAgentsCount,
   membersCount = 1,
   contactsCount = 0,
   productsCount,
   channelsCount,
   onSelectEdition,
+  onStartTrial,
   onClearLicense,
   onToast,
 }: EditionsViewProps) {
@@ -432,52 +440,78 @@ export function EditionsView({
                 </ul>
               </div>
 
-              <button
-                type="button"
-                disabled={isCurrent}
-                onClick={() => {
-                  if (ed.id === "starter" || effectiveStoredLicense?.editionId === ed.id) {
-                    onSelectEdition(
-                      ed.id,
-                      effectiveStoredLicense?.editionId === ed.id
-                        ? effectiveStoredLicense.licenseKey
-                        : undefined,
-                      effectiveStoredLicense?.editionId === ed.id
-                        ? effectiveStoredLicense.maxSeats
-                        : undefined,
-                    );
-                  } else {
-                    const inputEl = document.getElementById("wacrm-license-key-input");
-                    inputEl?.scrollIntoView({ behavior: "smooth", block: "center" });
-                    inputEl?.focus();
-                    onToast?.(
-                      `Edisi ${ed.name} memerlukan License Key resmi dari WACRM Publisher HQ. Masukkan kunci lisensi Anda di kolom aktivasi di atas.`,
-                      "error",
-                    );
-                  }
-                }}
-                className={`mt-5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
-                  isCurrent
-                    ? "cursor-default border border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
-                    : ed.id === "starter" || effectiveStoredLicense?.editionId === ed.id
-                      ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
-                      : "border border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
-                }`}
-              >
-                {isCurrent ? (
-                  <>
-                    <Check className="h-3.5 w-3.5" /> Edisi Aktif Saat Ini
-                  </>
-                ) : ed.id === "starter" ? (
-                  "Gunakan Edisi Starter UMKM"
-                ) : effectiveStoredLicense?.editionId === ed.id ? (
-                  `Aktifkan Lisensi ${ed.name}`
-                ) : (
-                  <>
-                    <Lock className="h-3.5 w-3.5" /> Butuh License Key {ed.name}
-                  </>
-                )}
-              </button>
+              <div className="mt-5 space-y-2">
+                {(ed.id === "pro" || ed.id === "enterprise") &&
+                  !isCurrent &&
+                  !effectiveStoredLicense &&
+                  onStartTrial &&
+                  !usedTrialEditions.includes(ed.id) && (
+                    <button
+                      type="button"
+                      onClick={() => onStartTrial(ed.id as "pro" | "enterprise")}
+                      className={`inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${
+                        ed.id === "enterprise"
+                          ? "bg-violet-500 text-white hover:bg-violet-400"
+                          : "bg-cyan-500 text-slate-950 hover:bg-cyan-400"
+                      }`}
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Mulai Trial Gratis {ed.trialDays} Hari
+                    </button>
+                  )}
+
+                <button
+                  type="button"
+                  disabled={isCurrent}
+                  onClick={() => {
+                    if (ed.id === "starter" || effectiveStoredLicense?.editionId === ed.id) {
+                      onSelectEdition(
+                        ed.id,
+                        effectiveStoredLicense?.editionId === ed.id
+                          ? effectiveStoredLicense.licenseKey
+                          : undefined,
+                        effectiveStoredLicense?.editionId === ed.id
+                          ? effectiveStoredLicense.maxSeats
+                          : undefined,
+                      );
+                    } else {
+                      const inputEl = document.getElementById("wacrm-license-key-input");
+                      inputEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      inputEl?.focus();
+                      onToast?.(
+                        `Edisi ${ed.name} memerlukan License Key resmi dari WACRM Publisher HQ. Masukkan kunci lisensi Anda di kolom aktivasi di atas.`,
+                        "error",
+                      );
+                    }
+                  }}
+                  className={`inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
+                    isCurrent
+                      ? "cursor-default border border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
+                      : ed.id === "starter" || effectiveStoredLicense?.editionId === ed.id
+                        ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
+                        : "border border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+                  }`}
+                >
+                  {isCurrent ? (
+                    <>
+                      <Check className="h-3.5 w-3.5" />{" "}
+                      {isTrialActive && trialEndsAt
+                        ? `Trial Aktif (s.d. ${new Date(trialEndsAt).toLocaleDateString("id-ID")})`
+                        : ed.id === "starter"
+                          ? "Aktif · Gratis Selamanya"
+                          : "Edisi Aktif Saat Ini"}
+                    </>
+                  ) : ed.id === "starter" ? (
+                    "Kembali ke Starter UMKM (Gratis Selamanya)"
+                  ) : effectiveStoredLicense?.editionId === ed.id ? (
+                    `Aktifkan Lisensi ${ed.name}`
+                  ) : (
+                    <>
+                      <Lock className="h-3.5 w-3.5" /> Aktivasi License Key {ed.name}
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           );
         })}

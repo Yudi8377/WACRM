@@ -140,9 +140,9 @@ export default function SignUpPage() {
           <span className="text-lg font-extrabold tracking-tight text-white">WACRM</span>
         </Link>
 
-        <h1 className="mt-6 text-2xl font-extrabold text-white">Buat akun WACRM</h1>
+        <h1 className="mt-6 text-2xl font-extrabold text-white">Daftar Starter UMKM Gratis Selamanya</h1>
         <p className="mt-1.5 text-sm text-slate-400">
-          Mulai workspace bisnis omnichannel Anda &amp; upgrade kapan saja via License Key resmi.
+          Gratis tanpa batas trial untuk Starter UMKM (wajib daftar), atau aktifkan Trial 14 Hari Growth Pro &amp; Trial 7 Hari Enterprise di dalam aplikasi.
         </p>
 
         <form onSubmit={submit} className="mt-6 space-y-4">

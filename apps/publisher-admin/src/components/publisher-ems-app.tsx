@@ -10,8 +10,10 @@ import {
   KeyRound,
   LayoutDashboard,
   Lock,
+  PieChart,
   RefreshCw,
   Settings,
+  TrendingUp,
 } from "lucide-react";
 import {
   buildInitialPublisherState,
@@ -31,7 +33,13 @@ import type {
   PublisherCompanyProfile,
   PublisherEmsState,
 } from "@/lib/publisher-types";
+import type {
+  CommunityFeedbackItem,
+  PublisherIntelligenceReport,
+} from "@/lib/intelligence-types";
 import { OverviewView } from "./overview-view";
+import { UsageVocView } from "./usage-voc-view";
+import { EconomicRadarView } from "./economic-radar-view";
 import { LicenseManagerView } from "./license-manager-view";
 import { MasterDataView } from "./master-data-view";
 import { PublisherCrmView } from "./publisher-crm-view";
@@ -41,6 +49,8 @@ import { PublisherSettingsView } from "./publisher-settings-view";
 
 type PublisherTabId =
   | "overview"
+  | "usage_voc"
+  | "economics"
   | "licenses"
   | "master"
   | "crm"
@@ -55,6 +65,8 @@ const NAV_ITEMS: Array<{
   icon: typeof LayoutDashboard;
 }> = [
   { id: "overview", label: "Executive Command", shortLabel: "Overview", icon: LayoutDashboard },
+  { id: "usage_voc", label: "Analitik & Suara User", shortLabel: "Analitik", icon: PieChart },
+  { id: "economics", label: "Ekonomi & Tren Pasar", shortLabel: "Ekonomi", icon: TrendingUp },
   { id: "licenses", label: "License Management", shortLabel: "Lisensi", icon: KeyRound },
   { id: "master", label: "Master Data", shortLabel: "Master", icon: Database },
   { id: "crm", label: "Publisher CRM B2B", shortLabel: "CRM B2B", icon: Briefcase },
@@ -68,6 +80,8 @@ export function PublisherEmsApp() {
   const [state, setState] = useState<PublisherEmsState>(() => buildInitialPublisherState());
   const [hydrated, setHydrated] = useState(false);
   const [syncingLive, setSyncingLive] = useState(false);
+  const [intelligence, setIntelligence] = useState<PublisherIntelligenceReport | null>(null);
+  const [loadingIntel, setLoadingIntel] = useState(false);
   const [liveSyncInfo, setLiveSyncInfo] = useState<{ count: number; lastSyncedAt: string | null }>({
     count: 0,
     lastSyncedAt: null,
@@ -106,7 +120,7 @@ export function PublisherEmsApp() {
             city: string;
             platform: "web" | "android";
             editionId: EditionId;
-            licenseStatus: "trial" | "active" | "grace_period" | "expired" | "suspended";
+            licenseStatus: "free_umkm" | "trial" | "active" | "grace_period" | "expired" | "suspended";
             trialStartedAt: string;
             trialEndsAt: string;
             licenseKey: string | null;
@@ -167,28 +181,58 @@ export function PublisherEmsApp() {
 
               const hasLic = mergedLicenses.some((l) => l.tenantId === tenantId);
               if (!hasLic) {
+                const defaultKey =
+                  reg.licenseKey ||
+                  (reg.editionId === "starter"
+                    ? `FREE-UMKM-FOREVER-${tenantId.slice(-4).toUpperCase()}`
+                    : reg.editionId === "pro"
+                      ? `TRIAL-PRO-14D-${tenantId.slice(-4).toUpperCase()}`
+                      : `TRIAL-ENT-7D-${tenantId.slice(-4).toUpperCase()}`);
+                const defaultNote =
+                  reg.editionId === "starter"
+                    ? `Starter UMKM Gratis Selamanya via ${reg.platform === "android" ? "Android APK" : "Web"}`
+                    : reg.editionId === "pro"
+                      ? `Trial 14 Hari Growth Pro via ${reg.platform === "android" ? "Android APK" : "Web"}`
+                      : `Trial 7 Hari Enterprise AI via ${reg.platform === "android" ? "Android APK" : "Web"}`;
                 mergedLicenses.unshift({
                   id: `lic-live-${tenantId}`,
-                  licenseKey: reg.licenseKey || `TRIAL-UMKM-14D-${tenantId.slice(-4).toUpperCase()}`,
+                  licenseKey: defaultKey,
                   tenantId,
                   tenantName: mappedTenant.companyName,
                   domain: "wacrm-seven-dusky.vercel.app",
                   editionId: reg.editionId,
-                  status: reg.licenseStatus === "active" ? "active" : "trial",
-                  billingCycle: reg.licenseStatus === "active" ? "monthly" : "trial",
-                  maxSeats: reg.editionId === "starter" ? 2 : 10,
+                  status:
+                    reg.licenseStatus === "active"
+                      ? "active"
+                      : reg.licenseStatus === "free_umkm"
+                        ? "active"
+                        : "trial",
+                  billingCycle:
+                    reg.licenseStatus === "active"
+                      ? "monthly"
+                      : reg.licenseStatus === "free_umkm"
+                        ? "perpetual"
+                        : "trial",
+                  maxSeats: reg.editionId === "starter" ? 2 : reg.editionId === "pro" ? 10 : 50,
                   usedSeats: 1,
                   maxAiAgents: reg.editionId === "starter" ? 2 : 11,
-                  maxBranches: reg.editionId === "starter" ? 1 : 5,
-                  monthlyValueIdr: reg.licenseStatus === "active" ? 249000 : 0,
+                  maxBranches: reg.editionId === "starter" ? 1 : reg.editionId === "pro" ? 5 : 25,
+                  monthlyValueIdr:
+                    reg.licenseStatus === "active"
+                      ? reg.editionId === "pro"
+                        ? 890000
+                        : reg.editionId === "enterprise"
+                          ? 2490000
+                          : 0
+                      : 0,
                   issuedAt: reg.trialStartedAt,
                   expiresAt: reg.trialEndsAt,
                   lastHeartbeatAt: reg.createdAt,
                   entitlements:
                     reg.editionId === "starter"
-                      ? ["inbox_wa", "pos_umkm", "master_data", "preview_locked_premium"]
+                      ? ["starter_umkm_free_forever", "inbox_wa", "pos_umkm", "master_data"]
                       : ["inbox_omnichannel", "erp", "pos", "accounting", "ai_agents", "seo_studio"],
-                  notes: `Pendaftar otomatis via ${reg.platform === "android" ? "Aplikasi Android APK" : "Web wacrm-seven-dusky.vercel.app"} (Trial 14 Hari UMKM)`,
+                  notes: defaultNote,
                 });
               }
             }
@@ -218,12 +262,74 @@ export function PublisherEmsApp() {
     [showToast, updateState],
   );
 
+  const syncIntelligenceReport = useCallback(
+    async (silent = false) => {
+      setLoadingIntel(true);
+      try {
+        const res = await fetch("/api/intelligence", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const payload = (await res.json()) as {
+          ok?: boolean;
+          report?: PublisherIntelligenceReport | null;
+        };
+        if (payload.report) {
+          setIntelligence(payload.report);
+          if (!silent) {
+            showToast("Analitik penggunaan, suara user & statistik ekonomi berhasil disinkronkan!");
+          }
+        }
+      } catch {
+        if (!silent) {
+          showToast("Gagal menarik laporan intelijen dari server WACRM.", "error");
+        }
+      } finally {
+        setLoadingIntel(false);
+      }
+    },
+    [showToast],
+  );
+
+  const handleUpdateFeedbackStatus = useCallback(
+    async (feedbackId: string, actionStatus: CommunityFeedbackItem["actionStatus"]) => {
+      setIntelligence((prev) =>
+        prev
+          ? {
+              ...prev,
+              voiceOfCustomer: {
+                ...prev.voiceOfCustomer,
+                recentFeedback: prev.voiceOfCustomer.recentFeedback.map((f) =>
+                  f.id === feedbackId ? { ...f, actionStatus } : f,
+                ),
+                testimonials: prev.voiceOfCustomer.testimonials.map((t) =>
+                  t.id === feedbackId ? { ...t, actionStatus } : t,
+                ),
+              },
+            }
+          : prev,
+      );
+      try {
+        const res = await fetch("/api/intelligence", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ feedbackId, actionStatus }),
+        });
+        if (res.ok) {
+          showToast(`Status tindak lanjut diperbarui menjadi "${actionStatus}".`);
+        }
+      } catch {
+        showToast("Status tersimpan lokal, gagal sinkron ke Neon.", "error");
+      }
+    },
+    [showToast],
+  );
+
   useEffect(() => {
     const loaded = loadPublisherState();
     setState(loaded);
     setHydrated(true);
     void syncLiveRegistrations(true);
-  }, [syncLiveRegistrations]);
+    void syncIntelligenceReport(true);
+  }, [syncLiveRegistrations, syncIntelligenceReport]);
 
   function handleIssueLicense(input: {
     tenantId: string;
@@ -409,8 +515,27 @@ export function PublisherEmsApp() {
                 state={state}
                 onNavigate={(next) => setTab(next as PublisherTabId)}
                 onQuickCollectOverdue={handleMarkInvoicePaid}
-                onSyncLive={() => void syncLiveRegistrations(false)}
+                onSyncLive={() => {
+                  void syncLiveRegistrations(false);
+                  void syncIntelligenceReport(true);
+                }}
                 syncingLive={syncingLive}
+              />
+            )}
+            {tab === "usage_voc" && (
+              <UsageVocView
+                report={intelligence}
+                loading={loadingIntel}
+                onRefresh={() => void syncIntelligenceReport(false)}
+                onUpdateFeedbackStatus={handleUpdateFeedbackStatus}
+              />
+            )}
+            {tab === "economics" && (
+              <EconomicRadarView
+                report={intelligence}
+                loading={loadingIntel}
+                onRefresh={() => void syncIntelligenceReport(false)}
+                onToast={showToast}
               />
             )}
             {tab === "licenses" && (
