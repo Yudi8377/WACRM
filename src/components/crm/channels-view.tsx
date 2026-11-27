@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Check, Copy, Link2, Plus, Power, ShieldCheck, Trash2, X } from "lucide-react";
+import { Check, Copy, Link2, Mic, Plus, Power, ShieldCheck, Trash2, X } from "lucide-react";
 import { CHANNEL_META, type ChannelRecord, type ChannelType } from "@/lib/crm-types";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
@@ -9,10 +9,11 @@ interface ChannelsViewProps {
   adapter: WorkspaceAdapter;
   channels: ChannelRecord[];
   onRefresh: () => Promise<void>;
+  onAskCompanion?: (prompt: string, speakImmediately?: boolean) => void;
   onToast: (message: string, tone?: "success" | "error") => void;
 }
 
-export function ChannelsView({ adapter, channels, onRefresh, onToast }: ChannelsViewProps) {
+export function ChannelsView({ adapter, channels, onRefresh, onAskCompanion, onToast }: ChannelsViewProps) {
   const [modalMode, setModalMode] = useState<"none" | "meta_whatsapp" | "custom">("none");
   const [copiedUrl, setCopiedUrl] = useState(false);
 
@@ -244,12 +245,27 @@ export function ChannelsView({ adapter, channels, onRefresh, onToast }: Channels
       {modalMode === "meta_whatsapp" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <h3 className="text-base font-bold text-slate-900">Hubungkan WhatsApp Cloud API (Meta)</h3>
               <button type="button" onClick={() => setModalMode("none")} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100">
                 <X className="h-4 w-4" />
               </button>
             </div>
+            {onAskCompanion && (
+              <button
+                type="button"
+                onClick={() =>
+                  onAskCompanion(
+                    "Pandu saya langkah demi langkah mengisi WABA ID, Phone Number ID, dan System User Access Token untuk Hubungkan WhatsApp Cloud API Meta",
+                    true,
+                  )
+                }
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-100"
+              >
+                <Mic className="h-4 w-4 text-emerald-600" />
+                Aktifkan Panduan Suara AI Companion (Step-by-Step)
+              </button>
+            )}
             <form onSubmit={handleConnectMeta} className="mt-4 space-y-3.5">
               <label className="block text-xs font-semibold text-slate-700">
                 WABA ID (WhatsApp Business Account ID)
@@ -288,7 +304,7 @@ export function ChannelsView({ adapter, channels, onRefresh, onToast }: Channels
                 />
               </label>
               <p className="text-[11px] text-slate-500">
-                Server akan memvalidasi token terhadap Graph API Meta lalu mengenkripsinya sebelum disimpan di Neon PostgreSQL.
+                Server akan memvalidasi token terhadap Graph API Meta lalu mengenkripsinya secara aman sebelum disimpan.
               </p>
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setModalMode("none")} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600">

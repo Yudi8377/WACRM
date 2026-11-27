@@ -7,7 +7,7 @@ describe("Enterprise Autonomous Suite Demo Adapter (AI + POS QR + ERP + Accounti
     await adapter.resetDemo?.();
     const snap = await adapter.loadAll();
 
-    expect(snap.aiAgents.length).toBe(5);
+    expect(snap.aiAgents.length).toBe(8);
     expect(snap.aiKnowledge.length).toBeGreaterThanOrEqual(7);
     expect(snap.products.length).toBeGreaterThanOrEqual(6);
     expect(snap.suppliers.length).toBeGreaterThanOrEqual(3);

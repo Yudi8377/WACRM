@@ -18,7 +18,11 @@ import android.os.Bundle
 import android.os.Environment
 import android.print.PrintAttributes
 import android.print.PrintManager
+import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
 import android.util.Base64
+import org.json.JSONObject
+import java.util.Locale
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.URLUtil
@@ -53,6 +57,24 @@ class MainActivity : AppCompatActivity() {
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var printWebView: WebView? = null
     private var pendingBluetoothPrint: Pair<String, String>? = null
+    private var textToSpeech: TextToSpeech? = null
+    private var ttsReady: Boolean = false
+    private var pendingSpeech: Pair<String, String>? = null
+
+    private val voiceRecognizerLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                val matches = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                val transcript = matches?.firstOrNull()?.trim()
+                if (!transcript.isNullOrEmpty()) {
+                    val quoted = JSONObject.quote(transcript)
+                    webView.evaluateJavascript(
+                        "window.__wacrmOnVoiceResult && window.__wacrmOnVoiceResult($quoted);",
+                        null
+                    )
+                }
+            }
+        }
 
     private val bluetoothPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -443,9 +465,65 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    fun speakCompanionText(text: String, lang: String) {
+        if (textToSpeech == null) {
+            pendingSpeech = Pair(text, lang)
+            textToSpeech = TextToSpeech(this) { status ->
+                ttsReady = status == TextToSpeech.SUCCESS
+                if (ttsReady) {
+                    val queued = pendingSpeech
+                    pendingSpeech = null
+                    if (queued != null) {
+                        speakCompanionText(queued.first, queued.second)
+                    }
+                }
+            }
+            return
+        }
+        if (!ttsReady) {
+            pendingSpeech = Pair(text, lang)
+            return
+        }
+        try {
+            val locale = Locale.forLanguageTag(lang)
+            textToSpeech?.language = locale
+            textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "wacrm-companion")
+        } catch (_: Exception) {
+            // ignore TTS fallback errors
+        }
+    }
+
+    fun stopCompanionSpeech() {
+        try {
+            textToSpeech?.stop()
+        } catch (_: Exception) {
+            // ignore
+        }
+    }
+
+    fun startVoiceRecognition(lang: String) {
+        try {
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Bicara dengan AI Companion WACRM...")
+            }
+            voiceRecognizerLauncher.launch(intent)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Layanan pengenalan suara tidak tersedia di perangkat ini.", Toast.LENGTH_LONG).show()
+        }
+    }
+
     override fun onPause() {
         super.onPause()
         CookieManager.getInstance().flush()
+    }
+
+    override fun onDestroy() {
+        textToSpeech?.stop()
+        textToSpeech?.shutdown()
+        textToSpeech = null
+        super.onDestroy()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

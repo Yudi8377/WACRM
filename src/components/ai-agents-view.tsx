@@ -32,10 +32,13 @@ interface AiAgentsViewProps {
 
 const ROLE_LABELS: Record<string, string> = {
   cs_sales: "Auto-Reply CS & Sales 24/7",
-  order_pos: "Ekstraksi Order, POS & QR Invoice",
+  order_pos: "Ekstraksi Order, POS & Label QR",
   knowledge_learner: "Pembelajar Pengetahuan Otonom",
   fraud_sentinel: "Deteksi Fraud & Anti-Penipuan",
   system_guardian: "Keamanan & Self-Healing Sistem",
+  companion_guide: "Asisten Pribadi Suara & Teks 24/7",
+  followup_hunter: "Follow-Up & Retensi Prospek",
+  procurement_forecast: "Prediksi Stok & Restok Supplier",
 };
 
 const SOURCE_LABELS: Record<string, string> = {

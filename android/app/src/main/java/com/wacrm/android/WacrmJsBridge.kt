@@ -70,6 +70,31 @@ class WacrmJsBridge(
     fun getAppVersion(): String = BuildConfig.VERSION_NAME
 
     @JavascriptInterface
+    fun speakText(text: String?, lang: String?) {
+        val safe = text?.trim()?.take(1800) ?: return
+        if (safe.isEmpty()) return
+        val safeLang = lang?.trim()?.ifEmpty { "id-ID" } ?: "id-ID"
+        activity.runOnUiThread {
+            activity.speakCompanionText(safe, safeLang)
+        }
+    }
+
+    @JavascriptInterface
+    fun stopSpeaking() {
+        activity.runOnUiThread {
+            activity.stopCompanionSpeech()
+        }
+    }
+
+    @JavascriptInterface
+    fun startVoiceInput(lang: String?) {
+        val safeLang = lang?.trim()?.ifEmpty { "id-ID" } ?: "id-ID"
+        activity.runOnUiThread {
+            activity.startVoiceRecognition(safeLang)
+        }
+    }
+
+    @JavascriptInterface
     fun openSettings() {
         activity.runOnUiThread {
             activity.showServerSettingsDialog()

@@ -81,7 +81,27 @@ async function main() {
     const rlsCount = check.rows[0]?.rls_count ?? 0;
 
     if (tablesCount >= 28 && rlsCount >= 24 && process.env.FORCE_MIGRATE !== "true") {
-      console.log(`[wacrm-migrate] Neon schema already up-to-date (${tablesCount} tables, ${rlsCount} RLS tables).`);
+      // Idempotently upgrade ai_agents CHECK constraint to v3.0.0 8-agent roles if needed
+      await client.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = 'ai_agents'::regclass
+              AND conname = 'ai_agents_agent_key_check'
+              AND pg_get_constraintdef(oid) NOT LIKE '%companion_guide%'
+          ) THEN
+            ALTER TABLE ai_agents DROP CONSTRAINT ai_agents_agent_key_check;
+            ALTER TABLE ai_agents ADD CONSTRAINT ai_agents_agent_key_check CHECK (
+              agent_key IN (
+                'cs_sales','order_pos','knowledge_learner','fraud_sentinel',
+                'system_guardian','companion_guide','followup_hunter','procurement_forecast'
+              )
+            );
+          END IF;
+        END $$;
+      `);
+      console.log(`[wacrm-migrate] Neon schema up-to-date (${tablesCount} tables, ${rlsCount} RLS tables, v3.0.0 8-agent constraint verified).`);
       return;
     }
 

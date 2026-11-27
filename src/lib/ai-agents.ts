@@ -39,6 +39,20 @@ export interface FraudEvaluation {
 export interface MultiAgentReplyPlan {
   replyText: string;
   confidence: number;
+  detectedIntent:
+    | "fraud_blocked"
+    | "human_escalation"
+    | "order_checkout"
+    | "greeting"
+    | "gratitude_closing"
+    | "app_multiuser_faq"
+    | "operational_faq"
+    | "order_tracking"
+    | "product_catalog"
+    | "knowledge_faq"
+    | "clarification";
+  escalationRequired: boolean;
+  escalationReason: string | null;
   extractedOrder: ExtractedOrderDraft | null;
   fraud: FraudEvaluation;
   learnedKnowledgeCandidate: {
@@ -182,12 +196,12 @@ export function evaluateFraudRisk(params: {
   const lower = params.message.toLowerCase();
 
   if (
-    /(edit bukti|transfer palsu|kirim.*tanpa\s*(?:bayar|transfer)|tanpa\s*(?:bayar|transfer)|refund dobel|kode\s*otp|otp\s*admin|password\s*admin|bypass|hack|sql injection|drop table)/i.test(
+    /(edit bukti|transfer palsu|kirim.*tanpa\s*(?:bayar|transfer)|tanpa\s*(?:bayar|transfer)|refund dobel|kode\s*otp|otp\s*admin|password\s*admin|bypass|hack|sql injection|drop table|ignore previous instructions|reveal system prompt|<script)/i.test(
       lower,
     )
   ) {
     riskScore += 72;
-    reasons.push("Terdeteksi pola rekayasa sosial / indikasi manipulasi pembayaran atau permintaan kredensial/OTP.");
+    reasons.push("Terdeteksi pola rekayasa sosial, prompt injection, atau indikasi manipulasi pembayaran/kredensial.");
   }
   if (/(diskon\s*(?:70|75|80|85|90|95|100)%|gratis semua|harga 0)/i.test(lower)) {
     riskScore += 48;
@@ -223,41 +237,94 @@ export function evaluateFraudRisk(params: {
   };
 }
 
+const STOP_WORDS = new Set([
+  "yang", "dan", "atau", "dengan", "untuk", "dari", "pada", "dalam", "bisa", "apakah",
+  "kak", "kakak", "admin", "saya", "kami", "kita", "anda", "ini", "itu", "ada", "tidak",
+  "boleh", "mohon", "tolong", "terima", "kasih", "halo", "hai", "selamat", "pagi", "siang",
+  "sore", "malam", "aplikasi", "android", "wacrm", "dipakai", "bersamaan", "oleh", "agen",
+]);
+
+function significantTokens(text: string): string[] {
+  return tokenize(text).filter((t) => t.length >= 3 && !STOP_WORDS.has(t));
+}
+
 /**
- * RAG Knowledge Retrieval across ai_knowledge_items + ERP catalog.
+ * Checks whether a message requires Human Admin decision/authority (credentials, refunds,
+ * custom B2B contracts, heavy complaints, account/token changes, or tax/legal approvals).
+ */
+export function evaluateHumanEscalation(message: string): {
+  required: boolean;
+  reason: string | null;
+} {
+  const lower = message.toLowerCase();
+  if (/(kredensial|token|api\s*key|waba|reset\s*password|ganti\s*rekening|ubah\s*rekening|akses\s*owner|hak\s*akses)/i.test(lower)) {
+    return {
+      required: true,
+      reason: "Permintaan terkait kredensial, akses akun, atau perubahan rekening memerlukan verifikasi & persetujuan langsung dari Admin manusia.",
+    };
+  }
+  if (/(refund|pengembalian\s*dana|komplain\s*berat|barang\s*rusak|cacat|salah\s*kirim|klaim\s*asuransi|kecewa\s*berat|lapor\s*polisi)/i.test(lower)) {
+    return {
+      required: true,
+      reason: "Keluhan/klaim pengembalian dana (refund) memerlukan keputusan langsung dari Supervisor/Admin.",
+    };
+  }
+  if (/(kontrak\s*khusus|nego\s*harga|harga\s*khusus\s*distributor|faktur\s*pajak|ppn\s*faktur|tempo\s*(?:30|45|60)\s*hari|batal\s*(?:pesanan|order)\s*(?:sudah|telah)\s*kirim)/i.test(lower)) {
+    return {
+      required: true,
+      reason: "Negosiasi kontrak khusus, termin kredit, atau faktur pajak memerlukan persetujuan manajemen/Admin.",
+    };
+  }
+  if (/(bicara\s*dengan\s*(?:admin|manusia|owner|cs\s*asli)|hubungkan\s*(?:ke\s*)?admin|operator\s*manusia)/i.test(lower)) {
+    return {
+      required: true,
+      reason: "Pelanggan secara eksplisit meminta berbicara langsung dengan Admin manusia.",
+    };
+  }
+  return { required: false, reason: null };
+}
+
+/**
+ * Strict RAG Knowledge Retrieval:
+ * Separates SOP/FAQ knowledge from Product Catalog matching so incidental description words
+ * (like "aplikasi Android") NEVER hijack a general question with an unrelated product pitch!
  */
 export function retrieveRelevantKnowledge(
   query: string,
   knowledgeItems: AiKnowledgeItemRecord[],
   products: ErpProductRecord[],
 ): { matchedKnowledge: AiKnowledgeItemRecord[]; matchedProducts: ErpProductRecord[] } {
-  const qTokens = tokenize(query);
+  const qTokens = significantTokens(query);
 
+  // Only search NON-product knowledge (SOP, FAQ, autonomous learning) for general queries
   const scoredKnowledge = knowledgeItems
+    .filter((item) => item.sourceType !== "product")
     .map((item) => {
       const hay = `${item.title} ${item.content} ${item.tags.join(" ")}`.toLowerCase();
       let score = 0;
       for (const tok of qTokens) {
-        if (hay.includes(tok)) score += 1;
+        if (hay.includes(tok)) score += 2;
       }
       return { item, score };
     })
-    .filter((s) => s.score > 0)
+    .filter((s) => s.score >= 2)
     .sort((a, b) => b.score - a.score)
     .slice(0, 3)
     .map((s) => s.item);
 
+  // Match products ONLY against SKU, Product Name, and Category (weighted) — NEVER stray words in description
   const matchedProducts = products
     .filter((p) => p.isActive)
     .map((p) => {
-      const hay = `${p.sku} ${p.name} ${p.category} ${p.description}`.toLowerCase();
+      const titleHay = `${p.sku} ${p.name} ${p.category}`.toLowerCase();
       let score = 0;
+      if (qTokens.some((tok) => p.sku.toLowerCase() === tok)) score += 5;
       for (const tok of qTokens) {
-        if (hay.includes(tok)) score += 1;
+        if (titleHay.includes(tok)) score += 2;
       }
       return { p, score };
     })
-    .filter((s) => s.score > 0)
+    .filter((s) => s.score >= 2)
     .sort((a, b) => b.score - a.score)
     .slice(0, 4)
     .map((s) => s.p);
@@ -266,7 +333,10 @@ export function retrieveRelevantKnowledge(
 }
 
 /**
- * Orchestrates the 5 Autonomous AI Agents for an incoming customer message.
+ * Orchestrates the 8-Agent Enterprise Autonomous Swarm for an incoming customer message.
+ * Handles greetings naturally, answers multi-user/app/operational questions accurately,
+ * extracts POS orders + QR automatically, blocks fraud, and escalates credential/sensitive
+ * decisions to a human Admin immediately!
  */
 export function orchestrateMultiAgentReply(params: {
   incomingMessage: string;
@@ -278,33 +348,20 @@ export function orchestrateMultiAgentReply(params: {
   agents: AiAgentRecord[];
 }): MultiAgentReplyPlan {
   const trace: MultiAgentReplyPlan["agentTrace"] = [];
-  const lower = params.incomingMessage.toLowerCase();
+  const rawMsg = params.incomingMessage.trim();
+  const lower = rawMsg.toLowerCase();
+  const storeName = params.workspaceName.trim() || "Toko Kami";
 
-  // 1. Knowledge Learner RAG Retrieval
-  const { matchedKnowledge, matchedProducts } = retrieveRelevantKnowledge(
-    params.incomingMessage,
-    params.knowledgeItems,
-    params.products,
-  );
-  trace.push({
-    agentKey: "knowledge_learner",
-    agentName: "Generative Knowledge Agent",
-    action: `Menarik ${matchedKnowledge.length} memori pengetahuan & ${matchedProducts.length} data produk ERP relevan.`,
-    status: "ok",
-  });
-
-  // 2. Order & POS Extraction
-  const extractedOrder = extractOrderFromChat(
-    params.incomingMessage,
+  // 1. Fraud & Security Sentinel Check FIRST
+  const extractedOrderCandidate = extractOrderFromChat(
+    rawMsg,
     params.products,
     params.customerName,
     params.customerPhone,
   );
-
-  // 3. Fraud & Security Sentinel Check
   const fraud = evaluateFraudRisk({
-    message: params.incomingMessage,
-    extractedOrder,
+    message: rawMsg,
+    extractedOrder: extractedOrderCandidate,
   });
   trace.push({
     agentKey: "fraud_sentinel",
@@ -317,11 +374,13 @@ export function orchestrateMultiAgentReply(params: {
     status: fraud.blocked ? "blocked" : fraud.riskScore >= 40 ? "warning" : "ok",
   });
 
-  // If blocked by Fraud Sentinel, send safe protective response and DO NOT create POS order!
   if (fraud.blocked) {
     return {
-      replyText: `Halo ${params.customerName}, demi keamanan transaksi, permintaan ini perlu diverifikasi langsung oleh tim supervisi kami (${fraud.reasons[0] ?? "proteksi anti-fraud aktif"}). Silakan gunakan metode pembayaran QRIS/Transfer resmi melalui invoice terverifikasi WACRM.`,
-      confidence: 0.96,
+      replyText: `Halo Kak ${params.customerName}, demi keamanan bersama, permintaan ini ditahan otomatis oleh sistem keamanan kami (${fraud.reasons[0] ?? "proteksi anti-fraud aktif"}) dan diteruskan ke Admin untuk verifikasi. Silakan gunakan metode pembayaran resmi yang tertera pada invoice ${storeName}.`,
+      confidence: 0.97,
+      detectedIntent: "fraud_blocked",
+      escalationRequired: true,
+      escalationReason: fraud.reasons[0] ?? "Indikasi fraud/manipulasi terdeteksi.",
       extractedOrder: null,
       fraud,
       learnedKnowledgeCandidate: null,
@@ -330,30 +389,138 @@ export function orchestrateMultiAgentReply(params: {
         {
           agentKey: "cs_sales",
           agentName: "CS & Sales Autonomous Agent",
-          action: "Mengirim respons proteksi keamanan otomatis (transaksi mencurigakan ditahan).",
+          action: "Mengirim respons proteksi keamanan & eskalasi otomatis ke Admin.",
           status: "blocked",
         },
       ],
     };
   }
 
-  // 4. Order POS & Invoice Generation
-  let replyText = "";
-  let confidence = 0.88;
+  // 2. Human Authority / Credential Escalation Gate
+  const escalation = evaluateHumanEscalation(rawMsg);
+  if (escalation.required) {
+    trace.push({
+      agentKey: "system_guardian",
+      agentName: "Authority & Escalation Guard",
+      action: `Mendeteksi keputusan di luar wewenang AI → Diteruskan ke antrean Admin (${escalation.reason}).`,
+      status: "warning",
+    });
+    return {
+      replyText: `Halo Kak ${params.customerName}, terima kasih sudah menghubungi ${storeName}. Terkait permintaan Kakak mengenai hal ini, diperlukan verifikasi dan keputusan langsung dari Admin kami.\n\nSaya sudah langsung meneruskan pesan Kakak ke antrean prioritas Admin agar segera ditangani. Mohon ditunggu sebentar ya Kak!`,
+      confidence: 0.95,
+      detectedIntent: "human_escalation",
+      escalationRequired: true,
+      escalationReason: escalation.reason,
+      extractedOrder: null,
+      fraud,
+      learnedKnowledgeCandidate: null,
+      agentTrace: [
+        ...trace,
+        {
+          agentKey: "cs_sales",
+          agentName: "CS & Sales Autonomous Agent",
+          action: "Mengonfirmasi eskalasi ramah ke Admin manusia (tanpa mengambil keputusan kredensial sepihak).",
+          status: "warning",
+        },
+      ],
+    };
+  }
 
-  if (extractedOrder) {
+  // 3. Knowledge & Product RAG Retrieval (strictly separated)
+  const { matchedKnowledge, matchedProducts } = retrieveRelevantKnowledge(
+    rawMsg,
+    params.knowledgeItems,
+    params.products,
+  );
+  trace.push({
+    agentKey: "knowledge_learner",
+    agentName: "Generative Knowledge Agent",
+    action: `Menarik ${matchedKnowledge.length} FAQ/SOP relevan & ${matchedProducts.length} produk cocok.`,
+    status: "ok",
+  });
+
+  // 4. Contextual Intent Classification & Natural Response Generation
+  let replyText = "";
+  let confidence = 0.9;
+  let detectedIntent: MultiAgentReplyPlan["detectedIntent"] = "clarification";
+  let extractedOrder: ExtractedOrderDraft | null = null;
+
+  const isPureGreeting =
+    /^(?:ass?alam\w*|selamat\s*(?:pagi|siang|sore|malam)|pagi|siang|sore|malam|halo|hai|hello|hi|permisi|p|tes|test)[\s!.,?kakminbupak]*$/i.test(
+      rawMsg,
+    );
+  const isGreetingPrefix =
+    /(ass?alam\w*|selamat\s*(?:pagi|siang|sore|malam))/i.test(lower);
+  const isGratitudeClosing =
+    /^(?:terima\s*kasih|makasih|thanks|thank\s*you|oke\s*(?:kak|min|sip|makasih)?|siap\s*kak|noted|baik\s*kak|sudah\s*terima|mantap)[\s!.,?]*$/i.test(
+      rawMsg,
+    );
+  const isMultiUserAppQuestion =
+    /(?:(?:aplikasi|sistem|android|web|crm).*(?:bersamaan|bareng|multi|beberapa|agen|cs|admin|staff|user))|(?:(?:\d+|banyak|beberapa)\s*(?:agen|cs|admin|kasir|user|orang).*(?:bersamaan|bareng|sekaligus|login|pakai))|(?:bisa\s*dipakai.*(?:\d+|banyak|beberapa)\s*(?:agen|admin|cs|orang))/i.test(
+      lower,
+    );
+  const isOperationalFaq =
+    /(jam\s*(?:buka|operasional|kerja)|buka\s*jam|lokasi|alamat\s*toko|ongkir|ekspedisi|kurir|pengiriman|metode\s*bayar|pembayaran|cara\s*(?:pesan|order|beli)|garansi|bisa\s*cod|hari\s*minggu)/i.test(
+      lower,
+    );
+  const isOrderTracking =
+    /(cek\s*resi|status\s*(?:pesanan|order|kirim)|sudah\s*dikirim|resi\s*#?inv|kapan\s*sampai|lacak\s*paket)/i.test(
+      lower,
+    );
+  const isExplicitCatalogInquiry =
+    /(harga|katalog|daftar\s*(?:produk|barang|harga)|produk\s*apa|ready\s*stok|stok\s*(?:masih|ada|berapa)|jual\s*apa|promo|diskon\s*grosir)/i.test(
+      lower,
+    );
+
+  // Determine exact greeting salutation matching time/culture
+  const greetingSalutation = /ass?alam/i.test(lower)
+    ? `Waalaikumsalam warahmatullahi wabarakatuh Kak ${params.customerName}!`
+    : /selamat\s*pagi|\bpagi\b/i.test(lower)
+      ? `Selamat pagi Kak ${params.customerName}!`
+      : /selamat\s*siang|\bsiang\b/i.test(lower)
+        ? `Selamat siang Kak ${params.customerName}!`
+        : /selamat\s*sore|\bsore\b/i.test(lower)
+          ? `Selamat sore Kak ${params.customerName}!`
+          : /selamat\s*malam|\bmalam\b/i.test(lower)
+            ? `Selamat malam Kak ${params.customerName}!`
+            : `Halo Kak ${params.customerName}!`;
+
+  if (isPureGreeting) {
+    detectedIntent = "greeting";
+    replyText = `${greetingSalutation} Selamat datang di ${storeName}. Ada yang bisa kami bantu hari ini? Kakak bisa menanyakan info produk & stok, cek pengiriman, atau langsung kirim detail pesanan agar segera kami proses.`;
+    confidence = 0.96;
+  } else if (isGratitudeClosing) {
+    detectedIntent = "gratitude_closing";
+    replyText = `Sama-sama Kak ${params.customerName}! Senang sekali bisa membantu. Jika nanti butuh pemesanan ulang, cek resi, atau pertanyaan lainnya, silakan langsung chat kami kembali ya Kak. Semoga harinya menyenangkan!`;
+    confidence = 0.96;
+  } else if (isMultiUserAppQuestion) {
+    detectedIntent = "app_multiuser_faq";
+    replyText = [
+      `${greetingSalutation} Ya, tentu bisa Kak! Aplikasi mendukung penggunaan oleh banyak agen CS/Admin secara bersamaan (baik 5 agen maupun lebih) di perangkat Android maupun Desktop secara real-time.`,
+      "",
+      `Keunggulan akses multi-agen kami:`,
+      `• Sinkronisasi instan antara HP Android dan Komputer Desktop dalam satu kotak masuk bersama.`,
+      `• Pembagian peran & hak akses (Owner, Admin, Supervisor, Agent, Viewer) yang aman.`,
+      `• Fitur penugasan (Assign Agent) dan catatan internal tim agar antar CS tidak saling tumpang tindih saat membalas pelanggan.`,
+      "",
+      `Apakah Kakak ingin kami bantu siapkan akun tim atau jadwal demo penggunaan bersama?`,
+    ].join("\n");
+    confidence = 0.96;
+  } else if (extractedOrderCandidate) {
+    detectedIntent = "order_checkout";
+    extractedOrder = extractedOrderCandidate;
     const itemLines = extractedOrder.items
       .map((i) => `• ${i.product.name} (${i.quantity} ${i.product.unit}) = ${formatIdr(i.product.unitPrice * i.quantity)}`)
       .join("\n");
     trace.push({
       agentKey: "order_pos",
       agentName: "POS, Invoice & QR Agent",
-      action: `Mengekstrak pesanan ${extractedOrder.customerName} (${extractedOrder.items.length} item, Total ${formatIdr(extractedOrder.totalAmount)}) → Invoice & QR otomatis siap.`,
+      action: `Mengekstrak pesanan ${extractedOrder.customerName} (${extractedOrder.items.length} item, Total ${formatIdr(extractedOrder.totalAmount)}) → Invoice & Label QR otomatis siap.`,
       status: "ok",
     });
 
     replyText = [
-      `Halo Kak ${extractedOrder.customerName}! Pesanan Kakak sudah langsung kami proses otomatis oleh sistem AI ${params.workspaceName}:`,
+      `${greetingSalutation} Pesanan Kakak sudah langsung kami catat secara otomatis di sistem ${storeName}:`,
       "",
       itemLines,
       `PPN 11%: ${formatIdr(extractedOrder.taxAmount)}`,
@@ -361,54 +528,81 @@ export function orchestrateMultiAgentReply(params: {
       `Alamat Kirim: ${extractedOrder.shippingAddress}`,
       `Metode Bayar: ${PAYMENT_METHOD_LABELS[extractedOrder.paymentMethod]}`,
       "",
-      `Invoice resmi & Kode QR Pembayaran otomatis telah dibuat di POS dan stok ERP sudah kami kunci untuk Kakak. Silakan scan QR pada invoice atau balas jika ingin menambah pesanan!`,
+      `Invoice resmi & Label QR pesanan otomatis sudah dibuat dan stok barang telah kami amankan. Setelah pembayaran masuk, invoice lunas & resi QR pengiriman langsung terbit otomatis!`,
     ].join("\n");
     confidence = 0.95;
-  } else if (/(harga|katalog|daftar|produk|ready|stok|jual|promo)/i.test(lower)) {
-    const list = (matchedProducts.length > 0 ? matchedProducts : params.products.slice(0, 4))
-      .map((p) => `• ${p.name} (${p.sku}): ${formatIdr(p.unitPrice)}/${p.unit} — Stok: ${p.stockQty > 0 ? `${p.stockQty} tersedia` : "Habis"}`)
+  } else if (isOrderTracking) {
+    detectedIntent = "order_tracking";
+    replyText = `${greetingSalutation} Untuk pengecekan status pesanan atau nomor resi, Kakak bisa kirimkan nomor Invoice (contoh: INV-2026...) atau scan kode QR pada label pesanan Kakak. Tim kami & sistem ${storeName} siap membantu memastikan pengiriman Kakak aman sampai tujuan!`;
+    confidence = 0.92;
+  } else if (isExplicitCatalogInquiry || matchedProducts.length > 0) {
+    detectedIntent = "product_catalog";
+    const list = (matchedProducts.length > 0 ? matchedProducts : params.products.filter((p) => p.isActive).slice(0, 5))
+      .map((p) => `• ${p.name} (${p.sku}): ${formatIdr(p.unitPrice)}/${p.unit} — Stok: ${p.stockQty > 0 ? `${p.stockQty} ${p.unit} tersedia` : "Sedang Habis"}`)
       .join("\n");
     replyText = [
-      `Halo Kak ${params.customerName}! Berikut info produk & stok real-time dari gudang ERP ${params.workspaceName}:`,
+      `${greetingSalutation} Berikut info produk & ketersediaan stok terbaru di ${storeName}:`,
       "",
       list,
       "",
-      `Untuk langsung pesan & mendapatkan Invoice + QR Pembayaran otomatis, cukup balas dengan format: nama, alamat pengiriman, jumlah & nama produk, serta metode bayar (QRIS/Transfer/COD).`,
+      `Untuk langsung memesan, Kakak cukup balas dengan menyebutkan jumlah & nama barang, alamat pengiriman, serta metode pembayaran (QRIS / Transfer Bank / COD).`,
     ].join("\n");
+    confidence = 0.94;
+  } else if (isOperationalFaq) {
+    detectedIntent = "operational_faq";
+    const sopHint = matchedKnowledge[0]?.content;
+    replyText = sopHint
+      ? `${greetingSalutation} ${sopHint}\n\nAda informasi lain yang masih perlu kami bantu jelaskan, Kak?`
+      : [
+          `${greetingSalutation} Berikut informasi layanan ${storeName}:`,
+          `• Layanan Chat & Order Otomatis aktif 24/7 (pengiriman same-day untuk order terkonfirmasi sebelum pukul 15.00 WIB).`,
+          `• Ekspedisi tersedia: JNE, J&T, SiCepat, dan Kurir Toko Same-Day.`,
+          `• Pembayaran: QRIS, Transfer Bank (BCA/Mandiri), Tunai, dan COD (sesuai ketentuan wilayah).`,
+          "",
+          `Apakah Kakak ingin mengecek ongkir ke kota tujuan atau langsung membuat pesanan?`,
+        ].join("\n");
     confidence = 0.93;
   } else if (matchedKnowledge.length > 0) {
+    detectedIntent = "knowledge_faq";
     const top = matchedKnowledge[0];
-    replyText = `Halo Kak ${params.customerName}! ${top.content}\n\nJika Kakak ingin langsung memesan atau butuh bantuan lebih lanjut, silakan balas chat ini — AI Agent ${params.workspaceName} siap memproses order & invoice secara otomatis 24/7.`;
+    replyText = `${greetingSalutation} ${top.content}\n\nJika ada detail lain yang ingin ditanyakan atau ingin langsung dibantu Admin, silakan balas pesan ini ya Kak.`;
     confidence = 0.9;
   } else {
-    const topProd = params.products[0];
-    replyText = `Halo Kak ${params.customerName}, terima kasih telah menghubungi ${params.workspaceName}! Asisten AI kami aktif 24 jam. Kakak bisa menanyakan katalog/stok${topProd ? ` (misalnya ${topProd.name} — ${formatIdr(topProd.unitPrice)})` : ""}, cek ongkir, atau langsung ketik pesanan beserta alamat agar kami buatkan Invoice & Kode QR otomatis.`;
-    confidence = 0.84;
+    detectedIntent = "clarification";
+    replyText = isGreetingPrefix
+      ? `${greetingSalutation} Terima kasih sudah menghubungi ${storeName}. Supaya kami bisa membantu dengan tepat, apakah Kakak ingin menanyakan info produk/stok, status pesanan, penggunaan layanan, atau ingin berbicara dengan Admin kami?`
+      : `Halo Kak ${params.customerName}, terima kasih sudah menghubungi ${storeName}. Supaya jawaban kami tepat sesuai kebutuhan Kakak, boleh dijelaskan sedikit apakah ini terkait informasi produk/harga, pengiriman pesanan, atau bantuan teknis? Jika butuh penanganan khusus dari Admin, cukup ketik "Hubungkan ke Admin" ya Kak.`;
+    confidence = 0.85;
   }
 
   trace.push({
     agentKey: "cs_sales",
     agentName: "CS & Sales Autonomous Agent",
-    action: "Menyusun & mengirim balasan otomatis berbasis pengetahuan produk + konteks percakapan.",
+    action: `Intent terdeteksi: ${detectedIntent} → balasan kontekstual dikirim otomatis tanpa klik manual.`,
     status: "ok",
   });
 
-  // 5. Autonomous Generative Learning Candidate
+  // 5. Autonomous Generative Learning Candidate (only for genuine FAQ patterns, never greetings)
   let learnedKnowledgeCandidate: MultiAgentReplyPlan["learnedKnowledgeCandidate"] = null;
-  if (params.incomingMessage.length >= 24 && !extractedOrder) {
+  if (
+    rawMsg.length >= 24 &&
+    !extractedOrder &&
+    detectedIntent !== "greeting" &&
+    detectedIntent !== "gratitude_closing"
+  ) {
     const alreadyKnown = params.knowledgeItems.some((k) =>
-      k.content.toLowerCase().includes(params.incomingMessage.slice(0, 30).toLowerCase()),
+      k.content.toLowerCase().includes(rawMsg.slice(0, 30).toLowerCase()),
     );
     if (!alreadyKnown && /(berapa|apakah|bisa|bagaimana|kapan|garansi|ongkir|diskon|cabang|jam buka)/i.test(lower)) {
       learnedKnowledgeCandidate = {
-        title: `FAQ Otomatis: ${params.incomingMessage.slice(0, 64)}`,
-        content: `Pertanyaan pelanggan "${params.incomingMessage.slice(0, 200)}" telah dianalisis AI dan dijawab dengan referensi katalog ERP (${params.products.length} SKU aktif).`,
-        tags: ["autonomous_learning", "faq", ...tokenize(params.incomingMessage).slice(0, 3)],
+        title: `FAQ Otomatis: ${rawMsg.slice(0, 64)}`,
+        content: `Pertanyaan pelanggan "${rawMsg.slice(0, 180)}" dijawab sesuai kategori ${detectedIntent}.`,
+        tags: ["autonomous_learning", "faq", detectedIntent, ...significantTokens(rawMsg).slice(0, 3)],
       };
       trace.push({
         agentKey: "knowledge_learner",
         agentName: "Generative Knowledge Agent",
-        action: "Mempelajari pola pertanyaan baru dan memperbarui basis pengetahuan secara otonom.",
+        action: "Mempelajari pola pertanyaan baru dan memperbarui memori FAQ secara otonom.",
         status: "healed",
       });
     }
@@ -417,6 +611,9 @@ export function orchestrateMultiAgentReply(params: {
   return {
     replyText,
     confidence,
+    detectedIntent,
+    escalationRequired: false,
+    escalationReason: null,
     extractedOrder,
     fraud,
     learnedKnowledgeCandidate,
@@ -584,6 +781,7 @@ export function buildOrderRecord(params: {
   customerName: string;
   customerPhone: string | null;
   shippingAddress: string;
+  shippingCourier?: string | null;
   channel: ChannelType;
   paymentMethod: PaymentMethod;
   paymentStatus?: PosOrderRecord["paymentStatus"];
@@ -625,6 +823,9 @@ export function buildOrderRecord(params: {
     workspaceName: params.workspaceName,
   });
 
+  const paymentStatus = params.paymentStatus ?? (params.paymentMethod === "cash" ? "paid" : "unpaid");
+  const trackingCode = `RESI-${invoiceNumber.replace(/^INV-/, "")}`;
+
   return {
     id: params.id,
     invoiceNumber,
@@ -639,11 +840,14 @@ export function buildOrderRecord(params: {
     taxAmount,
     totalAmount,
     paymentMethod: params.paymentMethod,
-    paymentStatus: params.paymentStatus ?? (params.paymentMethod === "cash" ? "paid" : "unpaid"),
+    paymentStatus,
     orderStatus: "confirmed",
     qrPayload,
     aiGenerated: params.aiGenerated,
     fraudRiskScore: params.fraudRiskScore ?? 5,
+    shippingCourier: params.shippingCourier ?? "JNE Reguler",
+    trackingCode,
+    paidAt: paymentStatus === "paid" ? now : null,
     notes: params.notes ?? null,
     items: orderItems,
     createdAt: now,
@@ -652,7 +856,7 @@ export function buildOrderRecord(params: {
 }
 
 /**
- * Default 5-Agent Swarm definitions bootstrapped for every workspace.
+ * Default 8-Agent Enterprise Swarm definitions bootstrapped for every workspace.
  */
 export function buildDefaultAiAgents(): Array<Omit<AiAgentRecord, "id">> {
   return [
@@ -719,6 +923,45 @@ export function buildDefaultAiAgents(): Array<Omit<AiAgentRecord, "id">> {
       confidenceThreshold: 0.9,
       systemPrompt: "Verifikasi keseimbangan jurnal, deteksi stok di bawah minimum, rekonsiliasi data desktop-mobile, dan jalankan perbaikan otomatis.",
       actionsExecuted: 37,
+      lastRunAt: new Date().toISOString(),
+    },
+    {
+      agentKey: "companion_guide",
+      name: "Asisten Pribadi & Pemandu Suara AI 24/7",
+      roleDescription: "Companion interaktif berbasis suara & teks yang memandu pengisian form (termasuk Meta WhatsApp Cloud API), menganalisis data bisnis real-time, mengingatkan tugas, dan mengeksekusi perintah pengguna tanpa putus hingga kata 'cukup'.",
+      enabled: true,
+      autoReplyEnabled: true,
+      autonomousLearning: true,
+      autonomousHealing: false,
+      confidenceThreshold: 0.82,
+      systemPrompt: "Bimbing pengguna langkah demi langkah dengan suara ramah bahasa Indonesia, analisis prospek/omzet/stok, tawarkan konfirmasi aksi, dan eksekusi perintah secara langsung.",
+      actionsExecuted: 53,
+      lastRunAt: new Date().toISOString(),
+    },
+    {
+      agentKey: "followup_hunter",
+      name: "Agen Follow-Up & Retensi Prospek",
+      roleDescription: "Mendeteksi prospek yang belum ditindaklanjuti, tagihan belum lunas, dan pelanggan VIP yang waktunya repeat order, lalu menyiapkan & mengeksekusi pesan follow-up personal.",
+      enabled: true,
+      autoReplyEnabled: true,
+      autonomousLearning: true,
+      autonomousHealing: false,
+      confidenceThreshold: 0.78,
+      systemPrompt: "Identifikasi prospek aktif & invoice tertunda, ajukan ringkasan ke pemilik usaha, dan kirim pesan follow-up ramah otomatis setelah disetujui.",
+      actionsExecuted: 29,
+      lastRunAt: new Date().toISOString(),
+    },
+    {
+      agentKey: "procurement_forecast",
+      name: "Agen Prediksi Stok & Restok Supplier",
+      roleDescription: "Menganalisis kecepatan penjualan POS terhadap stok ERP, memprediksi kehabisan barang, dan menyusun rekomendasi pengadaan (PO) ke supplier terkait.",
+      enabled: true,
+      autoReplyEnabled: false,
+      autonomousLearning: true,
+      autonomousHealing: true,
+      confidenceThreshold: 0.84,
+      systemPrompt: "Pantau rasio penjualan vs stok minimum gudang ERP dan berikan rekomendasi kuantitas restok optimal per supplier.",
+      actionsExecuted: 24,
       lastRunAt: new Date().toISOString(),
     },
   ];

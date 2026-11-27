@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Building2, Download, Mail, MessageCircle, Pencil, Phone, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
+import { Building2, Download, Mail, MessageCircle, Pencil, Phone, Plus, Trash2, X } from "lucide-react";
+import { CrudToolbar, PaginationBar } from "@/components/crud-toolbar";
 import { LIFECYCLE_LABELS, type ContactRecord, type LifecycleStage } from "@/lib/crm-types";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
+
+const PAGE_SIZE = 6;
 
 interface ContactsViewProps {
   adapter: WorkspaceAdapter;
@@ -26,6 +29,8 @@ const emptyForm = {
 export function ContactsView({ adapter, contacts, onRefresh, onStartChat, onToast }: ContactsViewProps) {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ContactRecord | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -40,6 +45,7 @@ export function ContactsView({ adapter, contacts, onRefresh, onStartChat, onToas
     }
     return true;
   });
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   function openCreate() {
     setEditing(null);
@@ -159,52 +165,60 @@ export function ContactsView({ adapter, contacts, onRefresh, onStartChat, onToas
               <Download className="h-4 w-4" />
               Ekspor CSV
             </button>
-            <button
-              type="button"
-              onClick={openCreate}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700"
-            >
-              <UserPlus className="h-4 w-4" />
-              Tambah Kontak
-            </button>
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative flex-1 sm:max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari nama, telepon, perusahaan, label..."
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-500 focus:bg-white"
-            />
-          </div>
-          <div className="flex flex-wrap gap-1.5">
+        {/* Standard Business CRUD Toolbar */}
+        <CrudToolbar
+          searchValue={search}
+          onSearchChange={(v) => {
+            setSearch(v);
+            setPage(1);
+          }}
+          searchPlaceholder="Cari nama, telepon, perusahaan, label..."
+          onAddNew={openCreate}
+          addNewLabel="Tambah Baru"
+          hasSelection={Boolean(selectedContactId)}
+          onEditSelected={() => {
+            const c = contacts.find((x) => x.id === selectedContactId);
+            if (c) openEdit(c);
+          }}
+          onDeleteSelected={() => {
+            const c = contacts.find((x) => x.id === selectedContactId);
+            if (c) void handleDelete(c);
+          }}
+          onRefresh={() => void onRefresh()}
+        />
+
+        {/* Stage Filters */}
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setStageFilter("all");
+              setPage(1);
+            }}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+              stageFilter === "all" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            Semua ({contacts.length})
+          </button>
+          {(Object.keys(LIFECYCLE_LABELS) as LifecycleStage[]).map((stage) => (
             <button
+              key={stage}
               type="button"
-              onClick={() => setStageFilter("all")}
+              onClick={() => {
+                setStageFilter(stage);
+                setPage(1);
+              }}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                stageFilter === "all" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                stageFilter === stage ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
-              Semua ({contacts.length})
+              {LIFECYCLE_LABELS[stage].label}
             </button>
-            {(Object.keys(LIFECYCLE_LABELS) as LifecycleStage[]).map((stage) => (
-              <button
-                key={stage}
-                type="button"
-                onClick={() => setStageFilter(stage)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                  stageFilter === stage ? "bg-emerald-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                {LIFECYCLE_LABELS[stage].label}
-              </button>
-            ))}
-          </div>
+          ))}
         </div>
 
         {/* Contact Grid / List */}
@@ -220,11 +234,17 @@ export function ContactsView({ adapter, contacts, onRefresh, onStartChat, onToas
             </button>
           </div>
         ) : (
+          <>
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((contact) => (
+            {paginated.map((contact) => (
               <article
                 key={contact.id}
-                className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-xs transition hover:border-emerald-200"
+                onClick={() => setSelectedContactId(contact.id)}
+                className={`flex cursor-pointer flex-col justify-between rounded-2xl border bg-white p-4 shadow-xs transition ${
+                  selectedContactId === contact.id
+                    ? "border-emerald-500 ring-2 ring-emerald-500/20"
+                    : "border-slate-200 hover:border-emerald-200"
+                }`}
               >
                 <div>
                   <div className="flex items-start justify-between gap-2">
@@ -306,6 +326,13 @@ export function ContactsView({ adapter, contacts, onRefresh, onStartChat, onToas
               </article>
             ))}
           </div>
+          <PaginationBar
+            page={page}
+            pageSize={PAGE_SIZE}
+            totalItems={filtered.length}
+            onPageChange={setPage}
+          />
+          </>
         )}
       </div>
 

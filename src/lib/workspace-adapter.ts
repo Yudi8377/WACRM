@@ -179,12 +179,26 @@ export interface WorkspaceAdapter {
     address?: string;
     paymentTerms?: string;
   }): Promise<ErpSupplierRecord>;
+  updateSupplier?(
+    supplierId: string,
+    input: Partial<{
+      name: string;
+      contactPerson: string;
+      phone: string;
+      email: string;
+      address: string;
+      paymentTerms: string;
+      status: "active" | "inactive";
+    }>,
+  ): Promise<ErpSupplierRecord>;
+  deleteSupplier?(supplierId: string): Promise<void>;
 
   // POS Orders & Invoice / QR Generator
   createPosOrder(input: {
     customerName: string;
     customerPhone?: string | null;
     shippingAddress: string;
+    shippingCourier?: string | null;
     channel?: ChannelType;
     paymentMethod: PaymentMethod;
     paymentStatus?: PaymentStatus;
@@ -205,7 +219,13 @@ export interface WorkspaceAdapter {
   }): Promise<PosOrderRecord>;
   updatePosOrder(
     orderId: string,
-    input: Partial<{ paymentStatus: PaymentStatus; orderStatus: OrderStatus }>,
+    input: Partial<{
+      paymentStatus: PaymentStatus;
+      orderStatus: OrderStatus;
+      shippingAddress: string;
+      shippingCourier: string;
+      notes: string;
+    }>,
   ): Promise<void>;
   deletePosOrder(orderId: string): Promise<void>;
 
@@ -475,6 +495,18 @@ export function createApiWorkspaceAdapter(
         body: JSON.stringify(input),
       });
       return res.supplier;
+    },
+    async updateSupplier(supplierId, input) {
+      const res = await apiJson<{ supplier: ErpSupplierRecord }>(`${base}/erp/suppliers`, {
+        method: "PATCH",
+        body: JSON.stringify({ id: supplierId, ...input }),
+      });
+      return res.supplier;
+    },
+    async deleteSupplier(supplierId) {
+      await apiJson(`${base}/erp/suppliers?supplierId=${encodeURIComponent(supplierId)}`, {
+        method: "DELETE",
+      });
     },
     async createPosOrder(input) {
       const res = await apiJson<{ order: PosOrderRecord }>(`${base}/pos/orders`, {
