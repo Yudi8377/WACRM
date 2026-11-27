@@ -19,6 +19,7 @@ const registerTenantSchema = z.object({
   city: z.string().trim().max(80).optional().default("Indonesia"),
   platform: z.enum(["web", "android"]).optional(),
   editionId: z.enum(["starter", "pro", "enterprise"]).optional().default("starter"),
+  password: z.string().min(8).max(128).optional(),
 });
 
 export async function POST(request: Request) {
@@ -56,6 +57,7 @@ export async function POST(request: Request) {
     city: parsed.data.city || "Indonesia",
     platform: detectedPlatform,
     editionId: parsed.data.editionId,
+    password: parsed.data.password,
   });
 
   const resolvedTrialDays =

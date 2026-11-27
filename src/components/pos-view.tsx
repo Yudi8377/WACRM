@@ -18,6 +18,7 @@ import {
 import { CrudToolbar, PaginationBar } from "@/components/crud-toolbar";
 import { CodTrackingHub } from "@/components/cod-tracking-hub";
 import { UniversalPrintPanel } from "@/components/universal-print-panel";
+import { SovereignPosSuite } from "@/components/sovereign-corporate-panels";
 import {
   formatIdr,
   PAYMENT_METHOD_LABELS,
@@ -1261,6 +1262,14 @@ export function PosView({
       )}
         </>
       )}
+
+      {/* Sovereign Corporate POS Register (Cashier Z-Report, Split Bill & VIP Loyalty) */}
+      <SovereignPosSuite
+        editionId={editionId}
+        businessName={storeProfile.businessName}
+        orders={orders}
+        onToast={onToast}
+      />
     </div>
   );
 }

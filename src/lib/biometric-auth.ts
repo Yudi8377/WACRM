@@ -361,14 +361,19 @@ function createProfileRecord(
  */
 export async function enrollBiometricForSession(
   session: CommercialUserSession,
-  options?: { pinCode?: string; forceDevicePin?: boolean },
+  options?: {
+    pinCode?: string;
+    forceDevicePin?: boolean;
+    /** Pass pre-detected capability from component mount so navigator.credentials.create() executes synchronously inside the user tap gesture without expiring transient user activation! */
+    capability?: BiometricCapability | null;
+  },
 ): Promise<{
   ok: boolean;
   profile?: EnrolledBiometricProfile;
   error?: string;
   fallbackPinSuggested?: boolean;
 }> {
-  const cap = await detectBiometricCapability();
+  const cap = options?.capability ?? (await detectBiometricCapability());
   const email = session.email.trim().toLowerCase();
   if (!email) {
     return {
@@ -469,15 +474,19 @@ export async function enrollBiometricForSession(
     lastError = firstErr;
     const errName = firstErr instanceof Error ? firstErr.name : "";
     // Many Android OEMs (Xiaomi/Oppo/Vivo/Samsung older Chrome) fail on `residentKey: "preferred"`
-    // Retry cleanly without residentKey constraint.
-    if (errName === "NotSupportedError" || errName === "ConstraintError" || errName === "TypeError") {
+    // or strict `authenticatorAttachment: "platform"`. Retry progressively with relaxed constraints.
+    if (
+      errName === "NotSupportedError" ||
+      errName === "ConstraintError" ||
+      errName === "TypeError" ||
+      errName === "NotAllowedError"
+    ) {
       try {
         credential = (await navigator.credentials.create({
           publicKey: {
             ...basePublicKey,
             challenge: toExactArrayBuffer(randomChallenge(32)),
             authenticatorSelection: {
-              authenticatorAttachment: "platform",
               userVerification: "preferred",
             },
           },

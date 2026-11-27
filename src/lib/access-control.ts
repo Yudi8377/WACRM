@@ -735,6 +735,63 @@ export function upgradeCommercialSessionWithLicense(
   return upgraded;
 }
 
+/**
+ * Ensures an account verified via Neon Cloud / Better Auth is cached in local commercial
+ * account storage so subsequent sign-ins (even offline or after Sign Out) recognize the email.
+ */
+export function upsertLocalCommercialAccountFromCloud(input: {
+  id: string;
+  email: string;
+  password?: string;
+  displayName: string;
+  businessName: string;
+  phone?: string;
+  city?: string;
+  role?: MemberRole;
+  editionId: AppEditionId;
+  hasPaidLicense?: boolean;
+  licenseKey?: string | null;
+  trialStartedAt?: string;
+  trialEndsAt?: string;
+  platform?: "web" | "android";
+}): LocalCommercialAccount {
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const accounts = loadLocalAccounts();
+  const idx = accounts.findIndex((a) => a.email.toLowerCase() === normalizedEmail);
+  const existing = idx >= 0 ? accounts[idx] : null;
+  const nowIso = new Date().toISOString();
+
+  const merged: LocalCommercialAccount = {
+    id: existing?.id || input.id || `cloud-${Date.now()}`,
+    email: normalizedEmail,
+    displayName: input.displayName || existing?.displayName || normalizedEmail.split("@")[0],
+    businessName: input.businessName || existing?.businessName || "Toko WACRM",
+    phone: input.phone ?? existing?.phone ?? "",
+    city: input.city ?? existing?.city ?? "Indonesia",
+    role: input.role ?? existing?.role ?? "owner",
+    editionId: input.editionId || existing?.editionId || "starter",
+    passwordHash: input.password
+      ? hashCommercialPassword(normalizedEmail, input.password)
+      : existing?.passwordHash || hashCommercialPassword(normalizedEmail, `cloud-${Date.now()}`),
+    trialStartedAt: input.trialStartedAt ?? existing?.trialStartedAt,
+    trialEndsAt: input.trialEndsAt ?? existing?.trialEndsAt,
+    trialEditionId: existing?.trialEditionId ?? (input.editionId === "pro" || input.editionId === "enterprise" ? input.editionId : null),
+    usedTrialEditions: existing?.usedTrialEditions ?? [],
+    hasPaidLicense: Boolean(input.hasPaidLicense || existing?.hasPaidLicense),
+    licenseKey: input.licenseKey ?? existing?.licenseKey ?? null,
+    platform: input.platform ?? existing?.platform ?? detectClientPlatform(),
+    createdAt: existing?.createdAt || nowIso,
+  };
+
+  if (idx >= 0) {
+    accounts[idx] = merged;
+  } else {
+    accounts.unshift(merged);
+  }
+  saveLocalAccounts(accounts);
+  return merged;
+}
+
 export function startCommercialEditionTrial(
   session: CommercialUserSession,
   targetEdition: "pro" | "enterprise",

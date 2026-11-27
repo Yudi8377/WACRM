@@ -3,8 +3,15 @@
 import { useState, type FormEvent } from "react";
 import { Building2, Download, KeyRound, Mail, MessageCircle, Pencil, Phone, Plus, Trash2, X } from "lucide-react";
 import { CrudToolbar, PaginationBar } from "@/components/crud-toolbar";
+import { SovereignCrmSuite } from "@/components/sovereign-corporate-panels";
 import { evaluateEditionQuota } from "@/lib/access-control";
-import { LIFECYCLE_LABELS, type AppEditionId, type ContactRecord, type LifecycleStage } from "@/lib/crm-types";
+import {
+  LIFECYCLE_LABELS,
+  type AppEditionId,
+  type ContactRecord,
+  type LifecycleStage,
+  type PosOrderRecord,
+} from "@/lib/crm-types";
 import { getEditionById } from "@/lib/editions";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
@@ -13,7 +20,9 @@ const PAGE_SIZE = 6;
 interface ContactsViewProps {
   adapter: WorkspaceAdapter;
   editionId?: AppEditionId;
+  businessName?: string;
   contacts: ContactRecord[];
+  orders?: PosOrderRecord[];
   onUpgradeRequest?: () => void;
   onRefresh: () => Promise<void>;
   onStartChat: (contact: ContactRecord) => Promise<void>;
@@ -33,7 +42,9 @@ const emptyForm = {
 export function ContactsView({
   adapter,
   editionId = "starter",
+  businessName = "WACRM Workspace",
   contacts,
+  orders = [],
   onUpgradeRequest,
   onRefresh,
   onStartChat,
@@ -387,6 +398,17 @@ export function ContactsView({
       </div>
 
       {/* CREATE / EDIT MODAL */}
+      {/* Sovereign Corporate Deep CRM Suite (Sales Pipeline Kanban, RFM & CLV) */}
+      <div className="px-4 pb-6 md:px-6">
+        <SovereignCrmSuite
+          editionId={editionId}
+          businessName={businessName}
+          contacts={contacts}
+          orders={orders}
+          onToast={(msg, tone) => onToast(msg, tone === "error" ? "error" : "success")}
+        />
+      </div>
+
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">

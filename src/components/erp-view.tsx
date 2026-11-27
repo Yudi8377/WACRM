@@ -34,12 +34,16 @@ import {
   renderErpReportPrintHtml,
 } from "@/lib/printer";
 import { loadLocalMasterData, normalizeProductGroup } from "@/lib/store-profile";
+import { SovereignErpSuite } from "@/components/sovereign-corporate-panels";
+import type { AppEditionId, PosOrderRecord } from "@/lib/crm-types";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 interface ErpViewProps {
   adapter: WorkspaceAdapter;
+  editionId?: AppEditionId;
   storeProfile: StoreBusinessProfile;
   products: ErpProductRecord[];
+  orders?: PosOrderRecord[];
   suppliers: ErpSupplierRecord[];
   movements: ErpStockMovementRecord[];
   onOpenQrGenerator?: (sku?: string) => void;
@@ -51,8 +55,10 @@ const PAGE_SIZE = 6;
 
 export function ErpView({
   adapter,
+  editionId = "starter",
   storeProfile,
   products,
+  orders = [],
   suppliers,
   movements,
   onOpenQrGenerator,
@@ -666,6 +672,15 @@ export function ErpView({
       <PaginationBar dark page={page} pageSize={PAGE_SIZE} totalItems={totalItems} onPageChange={setPage} />
 
       {/* Sub-Module Modal */}
+      {/* Sovereign Corporate Deep ERP Suite (ABC Valuation, MRP ROP/EOQ, Transfers & PO) */}
+      <SovereignErpSuite
+        editionId={editionId}
+        businessName={storeProfile.businessName}
+        products={products}
+        orders={orders}
+        onToast={onToast}
+      />
+
       {modalMode !== "none" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
           <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white shadow-2xl">

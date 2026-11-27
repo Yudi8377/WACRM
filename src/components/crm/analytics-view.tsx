@@ -13,6 +13,7 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
+import { ReportExportHub } from "@/components/report-export-hub";
 import {
   CHANNEL_META,
   LIFECYCLE_LABELS,
@@ -250,6 +251,41 @@ export function AnalyticsView({
             </div>
           </div>
         </section>
+
+        {/* Report Export & Desktop Transfer Hub (Excel / PDF / CSV / JSON via USB, Bluetooth, Wi-Fi) */}
+        <ReportExportHub
+          heading="Ekspor Laporan Analitik & SWOT (Excel / PDF / CSV / JSON) ke Desktop"
+          buildPayload={() => ({
+            reportTitle: `Laporan Analitik Omnichannel & SWOT — ${activeEdition.name}`,
+            subtitle: `Resolusi ${resolutionRate}% · ${analytics.totalContacts} Kontak · ${analytics.connectedChannels} Kanal Aktif`,
+            businessName: "WACRM Commercial Workspace",
+            filenameBase: "laporan-analitik-omnichannel",
+            kpis: [
+              { label: "Total Percakapan", value: `${analytics.totalConversations}` },
+              { label: "Tingkat Resolusi", value: `${resolutionRate}%` },
+              { label: "Kontak CRM", value: `${analytics.totalContacts}` },
+              { label: "Pesan 24 Jam", value: `${analytics.messagesLast24h}` },
+            ],
+            sheets: [
+              {
+                sheetName: "Distribusi Kanal",
+                headers: ["Kanal", "Jumlah Percakapan"],
+                rows: analytics.byChannel.map((c) => [
+                  CHANNEL_META[c.channel]?.label || c.channel,
+                  c.count,
+                ]),
+              },
+              {
+                sheetName: "Tahap Siklus Hidup",
+                headers: ["Tahap Pelanggan", "Jumlah Kontak"],
+                rows: analytics.byStage.map((s) => [
+                  LIFECYCLE_LABELS[s.stage]?.label || s.stage,
+                  s.count,
+                ]),
+              },
+            ],
+          })}
+        />
       </div>
     </div>
   );

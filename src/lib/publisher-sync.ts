@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { getDbPool, isDatabaseConfigured } from "@/lib/db";
 
 export const TRIAL_DURATION_DAYS = 14;
@@ -24,6 +24,7 @@ export interface RegisteredTenantRecord {
 
 const globalRegStore = globalThis as unknown as {
   __wacrmRegisteredTenants?: Map<string, RegisteredTenantRecord>;
+  __wacrmRegisteredPasswordHashes?: Map<string, string>;
   __wacrmRegTableReady?: boolean;
 };
 
@@ -34,8 +35,37 @@ function getMemoryRegistry(): Map<string, RegisteredTenantRecord> {
   return globalRegStore.__wacrmRegisteredTenants;
 }
 
+function getMemoryPasswordRegistry(): Map<string, string> {
+  if (!globalRegStore.__wacrmRegisteredPasswordHashes) {
+    globalRegStore.__wacrmRegisteredPasswordHashes = new Map();
+  }
+  return globalRegStore.__wacrmRegisteredPasswordHashes;
+}
+
 export function resetMemoryTenantRegistryForTest(): void {
   globalRegStore.__wacrmRegisteredTenants?.clear();
+  globalRegStore.__wacrmRegisteredPasswordHashes?.clear();
+}
+
+export function hashTenantPassword(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const derived = scryptSync(password, salt, 32).toString("hex");
+  return `scrypt:${salt}:${derived}`;
+}
+
+export function verifyTenantPassword(password: string, storedHash: string): boolean {
+  const parts = storedHash.split(":");
+  if (parts.length !== 3 || parts[0] !== "scrypt") return false;
+  const [, salt, hexDigest] = parts;
+  if (!salt || !hexDigest) return false;
+  try {
+    const derived = scryptSync(password, salt, 32);
+    const expected = Buffer.from(hexDigest, "hex");
+    if (derived.length !== expected.length) return false;
+    return timingSafeEqual(derived, expected);
+  } catch {
+    return false;
+  }
 }
 
 export function getPublisherSyncSecret(): string {
@@ -83,9 +113,11 @@ async function ensureRegistrationTable(): Promise<boolean> {
         trial_started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         trial_ends_at TIMESTAMPTZ NOT NULL DEFAULT (now() + interval '14 days'),
         license_key TEXT,
+        password_hash TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
+      ALTER TABLE publisher_tenant_registrations ADD COLUMN IF NOT EXISTS password_hash TEXT;
       CREATE INDEX IF NOT EXISTS idx_pub_tenant_reg_created
         ON publisher_tenant_registrations (created_at DESC);
     `);
@@ -129,8 +161,11 @@ export async function recordTenantRegistration(input: {
   city?: string;
   platform: "web" | "android";
   editionId?: "starter" | "pro" | "enterprise";
+  password?: string;
 }): Promise<RegisteredTenantRecord> {
   const email = input.email.trim().toLowerCase();
+  const passwordHash =
+    input.password && input.password.length >= 8 ? hashTenantPassword(input.password) : null;
   const now = new Date();
   const requestedEdition: "starter" | "pro" | "enterprise" =
     input.editionId === "pro" || input.editionId === "enterprise" ? input.editionId : "starter";
@@ -168,6 +203,9 @@ export async function recordTenantRegistration(input: {
   // Always save to in-memory registry for immediate local availability
   const mem = getMemoryRegistry();
   const existingMem = mem.get(email);
+  if (passwordHash) {
+    getMemoryPasswordRegistry().set(email, passwordHash);
+  }
   if (!existingMem) {
     mem.set(email, fallbackRecord);
   } else {
@@ -189,14 +227,15 @@ export async function recordTenantRegistration(input: {
       const pool = getDbPool();
       const res = await pool.query(
         `INSERT INTO publisher_tenant_registrations
-          (id, full_name, business_name, email, phone, city, platform, edition_id, license_status, trial_started_at, trial_ends_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz, $11::timestamptz)
+          (id, full_name, business_name, email, phone, city, platform, edition_id, license_status, trial_started_at, trial_ends_at, password_hash)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz, $11::timestamptz, $12)
          ON CONFLICT (email) DO UPDATE SET
            full_name = EXCLUDED.full_name,
            business_name = EXCLUDED.business_name,
            phone = CASE WHEN EXCLUDED.phone <> '' THEN EXCLUDED.phone ELSE publisher_tenant_registrations.phone END,
            city = CASE WHEN EXCLUDED.city <> '' THEN EXCLUDED.city ELSE publisher_tenant_registrations.city END,
            platform = EXCLUDED.platform,
+           password_hash = COALESCE(EXCLUDED.password_hash, publisher_tenant_registrations.password_hash),
            updated_at = now()
          RETURNING *`,
         [
@@ -211,6 +250,7 @@ export async function recordTenantRegistration(input: {
           fallbackRecord.licenseStatus,
           fallbackRecord.trialStartedAt,
           fallbackRecord.trialEndsAt,
+          passwordHash,
         ],
       );
       if (res.rows[0]) {
@@ -296,4 +336,101 @@ export async function updateRegisteredTenantLicense(input: {
   };
   mem.set(updated.email, updated);
   return updated;
+}
+
+export async function updateRegisteredTenantPassword(
+  emailRaw: string,
+  newPassword: string,
+): Promise<boolean> {
+  const email = emailRaw.trim().toLowerCase();
+  if (!email || newPassword.length < 8) return false;
+  const hash = hashTenantPassword(newPassword);
+  getMemoryPasswordRegistry().set(email, hash);
+
+  const dbReady = await ensureRegistrationTable();
+  if (dbReady) {
+    try {
+      const pool = getDbPool();
+      const res = await pool.query(
+        `UPDATE publisher_tenant_registrations
+            SET password_hash = $2, updated_at = now()
+          WHERE lower(email) = $1
+          RETURNING id`,
+        [email, hash],
+      );
+      return (res.rowCount ?? 0) > 0;
+    } catch {
+      return false;
+    }
+  }
+  return getMemoryRegistry().has(email);
+}
+
+/**
+ * Verifies a returning commercial user's email & password durably against Neon PostgreSQL
+ * (`publisher_tenant_registrations`) so signing back in after Sign Out works across all
+ * devices (Android APK, mobile browser, desktop, or after cache clear).
+ */
+export async function authenticateRegisteredTenant(
+  emailRaw: string,
+  password: string,
+): Promise<{ ok: boolean; tenant?: RegisteredTenantRecord; error?: string }> {
+  const email = emailRaw.trim().toLowerCase();
+  if (!email || !password) {
+    return { ok: false, error: "Masukkan email dan kata sandi Anda." };
+  }
+
+  const dbReady = await ensureRegistrationTable();
+  if (dbReady) {
+    try {
+      const pool = getDbPool();
+      const res = await pool.query(
+        `SELECT * FROM publisher_tenant_registrations WHERE lower(email) = $1 LIMIT 1`,
+        [email],
+      );
+      const row = res.rows[0] as Record<string, unknown> | undefined;
+      if (row) {
+        const storedHash = row.password_hash ? String(row.password_hash) : "";
+        if (storedHash) {
+          if (!verifyTenantPassword(password, storedHash)) {
+            return {
+              ok: false,
+              error: "Kata sandi tidak cocok untuk email ini. Klik 'Lupa Sandi' untuk mereset.",
+            };
+          }
+        } else if (password.length >= 8) {
+          // Legacy pre-v5.1 account registered before password_hash column existed:
+          // bind scrypt hash cleanly on first verified return sign-in.
+          const migratedHash = hashTenantPassword(password);
+          await pool
+            .query(
+              `UPDATE publisher_tenant_registrations SET password_hash = $2, updated_at = now() WHERE lower(email) = $1`,
+              [email, migratedHash],
+            )
+            .catch(() => undefined);
+          getMemoryPasswordRegistry().set(email, migratedHash);
+        } else {
+          return {
+            ok: false,
+            error: "Kata sandi minimal 8 karakter.",
+          };
+        }
+        const tenant = mapRow(row);
+        getMemoryRegistry().set(email, tenant);
+        return { ok: true, tenant };
+      }
+    } catch {
+      // Fall through to memory registry
+    }
+  }
+
+  const memTenant = getMemoryRegistry().get(email);
+  if (!memTenant) {
+    return { ok: false, error: "Email belum terdaftar di server." };
+  }
+  const memHash = getMemoryPasswordRegistry().get(email);
+  if (memHash && !verifyTenantPassword(password, memHash)) {
+    return { ok: false, error: "Kata sandi tidak cocok. Klik 'Lupa Sandi' untuk mereset." };
+  }
+  return { ok: true, tenant: memTenant };
 }

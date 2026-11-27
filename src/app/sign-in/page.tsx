@@ -18,6 +18,7 @@ import {
   authenticateLocalCommercialAccount,
   resetLocalCommercialPassword,
   saveCommercialSession,
+  upsertLocalCommercialAccountFromCloud,
 } from "@/lib/access-control";
 import { authClient } from "@/lib/auth-client";
 import { saveTenantEdition } from "@/lib/editions";
@@ -88,6 +89,70 @@ export default function SignInPage() {
         });
         router.replace("/");
         return;
+      }
+
+      // Check Neon Commercial Tenant Registry too (works across devices / cleared cache)
+      try {
+        const commRes = await fetch("/api/auth/commercial-signin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: normalizedEmail, password }),
+        });
+        if (commRes.ok) {
+          const commData = (await commRes.json()) as {
+            ok?: boolean;
+            tenant?: {
+              id: string;
+              fullName: string;
+              businessName: string;
+              email: string;
+              city?: string;
+              editionId: "starter" | "pro" | "enterprise" | "sovereign";
+              licenseStatus: string;
+              licenseKey?: string | null;
+              trialStartedAt?: string;
+              trialEndsAt?: string;
+            };
+          };
+          if (commData.ok && commData.tenant) {
+            const t = commData.tenant;
+            const hasPaid = Boolean(t.licenseKey && t.licenseStatus === "active");
+            const strictEdition = hasPaid ? t.editionId : t.editionId === "sovereign" ? "starter" : t.editionId;
+            upsertLocalCommercialAccountFromCloud({
+              id: t.id,
+              email: t.email,
+              password,
+              displayName: t.fullName,
+              businessName: t.businessName,
+              city: t.city,
+              editionId: strictEdition,
+              hasPaidLicense: hasPaid,
+              licenseKey: t.licenseKey ?? null,
+              trialStartedAt: t.trialStartedAt,
+              trialEndsAt: t.trialEndsAt,
+            });
+            saveTenantEdition("demo-workspace", strictEdition);
+            saveCommercialSession({
+              userId: t.id,
+              email: t.email,
+              displayName: t.fullName,
+              businessName: t.businessName,
+              city: t.city,
+              role: "owner",
+              editionId: strictEdition,
+              authProvider: "cloud_neon",
+              hasPaidLicense: hasPaid,
+              licenseKey: t.licenseKey ?? null,
+              trialStartedAt: t.trialStartedAt,
+              trialEndsAt: t.trialEndsAt,
+              signedInAt: new Date().toISOString(),
+            });
+            router.replace("/");
+            return;
+          }
+        }
+      } catch {
+        // continue to Better Auth below
       }
 
       const result = await authClient.signIn.email({ email: normalizedEmail, password });

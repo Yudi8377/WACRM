@@ -6,6 +6,7 @@ import {
   Bot,
   Camera,
   CheckCircle2,
+  ChevronDown,
   HelpCircle,
   Heart,
   Image as ImageIcon,
@@ -111,15 +112,10 @@ export function CommunityHubView({
 }: CommunityHubViewProps) {
   const [subTab, setSubTab] = useState<"faq" | "feedback" | "testimonials">("faq");
 
-  // --- Multi-Agent FAQ State ---
+  // --- Multi-Agent FAQ State (Dropdown Accordion + Custom AI Q&A) ---
   const [faqInput, setFaqInput] = useState("");
-  const [faqHistory, setFaqHistory] = useState<MultiAgentFaqAnswer[]>(() => [
-    answerAppFaqWithMultiAgent({
-      question: PRESET_APP_FAQS[0].question,
-      editionId,
-      businessName,
-    }),
-  ]);
+  const [openFaqId, setOpenFaqId] = useState<string | null>(PRESET_APP_FAQS[0]?.id ?? null);
+  const [faqHistory, setFaqHistory] = useState<MultiAgentFaqAnswer[]>([]);
 
   // --- Community Feed State ---
   const [loadingFeed, setLoadingFeed] = useState(true);
@@ -386,126 +382,237 @@ export function CommunityHubView({
         </div>
       </div>
 
-      {/* SUB-TAB 1: MULTI-AGENT AI FAQ */}
+      {/* SUB-TAB 1: MULTI-AGENT AI FAQ (INTERACTIVE DROPDOWN ACCORDION!) */}
       {subTab === "faq" && (
-        <div className="grid gap-5 lg:grid-cols-12">
-          {/* Left: Ask AI + Quick Preset Questions */}
-          <div className="space-y-4 lg:col-span-5">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleAskFaq(faqInput);
-              }}
-              className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4"
-            >
-              <label className="text-xs font-bold text-emerald-300">
-                Tanyakan Apa Saja Tentang Aplikasi WACRM
-              </label>
-              <p className="mt-0.5 text-[11px] text-slate-400">
-                Pertanyaan otomatis diteruskan ke Agen AI spesialis (Lisensi, Meta WA, POS/Printer, ERP/Akuntansi, Voice AI, atau Keamanan).
-              </p>
-              <div className="mt-3 flex gap-2">
-                <input
-                  value={faqInput}
-                  onChange={(e) => setFaqInput(e.target.value)}
-                  placeholder="Contoh: Cara aktifkan suara AI atau aturan Trial 14 hari..."
-                  className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none"
-                />
+        <div className="space-y-5">
+          {/* Top: Ask Custom Question to Multi-Agent AI */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleAskFaq(faqInput);
+            }}
+            className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4"
+          >
+            <label className="text-xs font-bold text-emerald-300">
+              Tanyakan Apa Saja Tentang Aplikasi WACRM
+            </label>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              Pertanyaan otomatis diteruskan ke Agen AI spesialis (Lisensi, Meta WA, POS/Printer, ERP/Akuntansi, Voice AI, atau Keamanan).
+            </p>
+            <div className="mt-3 flex gap-2">
+              <input
+                value={faqInput}
+                onChange={(e) => setFaqInput(e.target.value)}
+                placeholder="Contoh: Cara aktifkan suara AI atau aturan Trial 14 hari..."
+                className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-xs text-white focus:border-emerald-500 focus:outline-none"
+              />
+              <button
+                type="submit"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-emerald-400"
+              >
+                <Send className="h-3.5 w-3.5" /> Tanya AI
+              </button>
+            </div>
+          </form>
+
+          {/* Custom AI Answers (shown immediately beneath search bar when user asks a custom question) */}
+          {faqHistory.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-cyan-300">
+                  Jawaban Langsung Multi-Agen AI ({faqHistory.length})
+                </span>
                 <button
-                  type="submit"
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-emerald-400"
+                  type="button"
+                  onClick={() => setFaqHistory([])}
+                  className="text-[11px] font-semibold text-slate-400 hover:text-white"
                 >
-                  <Send className="h-3.5 w-3.5" /> Tanya AI
+                  Bersihkan Riwayat
                 </button>
               </div>
-            </form>
-
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
-              <div className="text-xs font-bold text-white">Pertanyaan Populer (1-Klik)</div>
-              <div className="mt-2.5 space-y-2">
-                {PRESET_APP_FAQS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handleAskFaq(item.question)}
-                    className="flex w-full items-start justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/80 p-3 text-left transition hover:border-emerald-500/50 hover:bg-slate-900"
-                  >
-                    <div>
-                      <span className="inline-block rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300">
-                        {item.agentBadge}
-                      </span>
-                      <div className="mt-1 text-xs font-semibold text-slate-100">{item.question}</div>
-                    </div>
-                    <ArrowRight className="mt-1 h-3.5 w-3.5 shrink-0 text-slate-500" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Contextual Multi-Agent AI Answers */}
-          <div className="space-y-4 lg:col-span-7">
-            {faqHistory.map((ans, idx) => (
-              <div
-                key={`${ans.agentKey}-${idx}`}
-                className="rounded-2xl border border-emerald-500/30 bg-slate-900/95 p-5 shadow-lg"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">
-                      <Bot className="h-4 w-4" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-extrabold text-white">{ans.agentName}</div>
-                      <div className="text-[10px] text-emerald-300">
-                        {ans.agentBadge} · Kategori: {ans.category}
+              {faqHistory.map((ans, idx) => (
+                <div
+                  key={`${ans.agentKey}-${idx}`}
+                  className="rounded-2xl border border-emerald-500/35 bg-slate-900/95 p-4 shadow-lg"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">
+                        <Bot className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-extrabold text-white">{ans.agentName}</div>
+                        <div className="text-[10px] text-emerald-300">
+                          {ans.agentBadge} · Kategori: {ans.category}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      speakWarmIndonesian({ text: ans.speechAnswer, personaId: "warm_friendly" });
-                      onToast("Membacakan jawaban dengan suara hangat...");
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-3 py-1.5 text-[11px] font-bold text-cyan-200 hover:bg-cyan-500/25"
-                  >
-                    <Volume2 className="h-3.5 w-3.5" /> Dengarkan Suara AI
-                  </button>
-                </div>
-
-                <div className="mt-3 text-xs font-bold text-cyan-200">
-                  Pertanyaan: &ldquo;{ans.questionMatched}&rdquo;
-                </div>
-                <div className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-200">
-                  {ans.answer}
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-3">
-                  {ans.relatedTab && (
                     <button
                       type="button"
-                      onClick={() => onNavigateTab(ans.relatedTab!)}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-1.5 text-[11px] font-extrabold text-slate-950 hover:bg-emerald-400"
+                      onClick={() => {
+                        speakWarmIndonesian({ text: ans.speechAnswer, personaId: "warm_friendly" });
+                        onToast("Membacakan jawaban dengan suara hangat...");
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-3 py-1.5 text-[11px] font-bold text-cyan-200 hover:bg-cyan-500/25"
                     >
-                      {ans.relatedTabLabel || "Buka Menu Terkait"} <ArrowRight className="h-3 w-3" />
+                      <Volume2 className="h-3.5 w-3.5" /> Dengarkan Suara AI
                     </button>
-                  )}
-                  <div className="flex flex-wrap gap-1.5">
-                    {ans.followUpQuestions.map((fq) => (
+                  </div>
+                  <div className="mt-2.5 text-xs font-bold text-cyan-200">
+                    Pertanyaan: &ldquo;{ans.questionMatched}&rdquo;
+                  </div>
+                  <div className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-200">
+                    {ans.answer}
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2.5">
+                    {ans.relatedTab && (
                       <button
-                        key={fq}
                         type="button"
-                        onClick={() => handleAskFaq(fq)}
-                        className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-[10px] font-semibold text-slate-300 hover:border-emerald-500/40 hover:text-white"
+                        onClick={() => onNavigateTab(ans.relatedTab!)}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-1.5 text-[11px] font-extrabold text-slate-950 hover:bg-emerald-400"
                       >
-                        {fq}
+                        {ans.relatedTabLabel || "Buka Menu Terkait"} <ArrowRight className="h-3 w-3" />
                       </button>
-                    ))}
+                    )}
+                    <div className="flex flex-wrap gap-1.5">
+                      {ans.followUpQuestions.map((fq) => (
+                        <button
+                          key={fq}
+                          type="button"
+                          onClick={() => handleAskFaq(fq)}
+                          className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-[10px] font-semibold text-slate-300 hover:border-emerald-500/40 hover:text-white"
+                        >
+                          {fq}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
+              ))}
+            </div>
+          )}
+
+          {/* Popular Questions Accordion Dropdown (Answer expands DIRECTLY underneath clicked question!) */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/85 p-4 md:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-extrabold text-white">
+                  Pertanyaan Populer (Klik untuk Buka Jawaban di Bawahnya)
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Ketuk salah satu pertanyaan di bawah ini — jawaban lengkap langsung terbuka seperti dropdown tepat di bawah pertanyaan.
+                </p>
               </div>
-            ))}
+              <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-[10px] font-bold text-emerald-300">
+                {PRESET_APP_FAQS.length} Panduan Siap Pakai
+              </span>
+            </div>
+
+            <div className="mt-3.5 space-y-2.5">
+              {PRESET_APP_FAQS.map((item) => {
+                const isExpanded = openFaqId === item.id;
+                const ans = isExpanded
+                  ? answerAppFaqWithMultiAgent({
+                      question: item.question,
+                      editionId,
+                      businessName,
+                    })
+                  : null;
+                return (
+                  <div
+                    key={item.id}
+                    className={`overflow-hidden rounded-2xl border transition ${
+                      isExpanded
+                        ? "border-emerald-500/60 bg-slate-950 shadow-lg shadow-emerald-950/30"
+                        : "border-slate-800 bg-slate-950/75 hover:border-slate-700"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      aria-expanded={isExpanded}
+                      onClick={() => setOpenFaqId((prev) => (prev === item.id ? null : item.id))}
+                      className="flex w-full items-center justify-between gap-3 p-3.5 text-left transition hover:bg-slate-900/80"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <span className="inline-block rounded-md bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                          {item.agentBadge}
+                        </span>
+                        <div className="mt-1 text-xs font-bold text-slate-100 sm:text-sm">
+                          {item.question}
+                        </div>
+                      </div>
+                      <ChevronDown
+                        className={`h-4 w-4 shrink-0 text-emerald-400 transition-transform duration-200 ${
+                          isExpanded ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+
+                    {isExpanded && ans && (
+                      <div className="border-t border-slate-800/90 bg-slate-900/90 px-4 py-3.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5">
+                          <div className="flex items-center gap-2">
+                            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-300">
+                              <Bot className="h-3.5 w-3.5" />
+                            </div>
+                            <div>
+                              <div className="text-[11px] font-extrabold text-white">
+                                {ans.agentName}
+                              </div>
+                              <div className="text-[10px] text-emerald-300">
+                                Kategori: {ans.category}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              speakWarmIndonesian({
+                                text: ans.speechAnswer,
+                                personaId: "warm_friendly",
+                              });
+                              onToast("Membacakan jawaban dengan suara hangat...");
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-2.5 py-1.5 text-[11px] font-bold text-cyan-200 hover:bg-cyan-500/25"
+                          >
+                            <Volume2 className="h-3.5 w-3.5" /> Dengarkan Suara AI
+                          </button>
+                        </div>
+
+                        <div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-200">
+                          {ans.answer}
+                        </div>
+
+                        <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-3">
+                          {ans.relatedTab && (
+                            <button
+                              type="button"
+                              onClick={() => onNavigateTab(ans.relatedTab!)}
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-1.5 text-[11px] font-extrabold text-slate-950 hover:bg-emerald-400"
+                            >
+                              {ans.relatedTabLabel || "Buka Menu Terkait"}{" "}
+                              <ArrowRight className="h-3 w-3" />
+                            </button>
+                          )}
+                          <div className="flex flex-wrap gap-1.5">
+                            {ans.followUpQuestions.map((fq) => (
+                              <button
+                                key={fq}
+                                type="button"
+                                onClick={() => handleAskFaq(fq)}
+                                className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-[10px] font-semibold text-slate-300 hover:border-emerald-500/40 hover:text-white"
+                              >
+                                {fq}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

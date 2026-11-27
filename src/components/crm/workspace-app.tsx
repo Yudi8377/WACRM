@@ -971,6 +971,7 @@ export function WorkspaceApp({
                 <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
                   <SeoGrowthView
                     adapter={adapter}
+                    editionId={editionId}
                     storeProfile={storeProfile}
                     onUpdateStoreProfile={handleSaveStoreProfile}
                     products={snapshot.products}
@@ -1100,8 +1101,10 @@ export function WorkspaceApp({
                 <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
                   <ErpView
                     adapter={adapter}
+                    editionId={editionId}
                     storeProfile={storeProfile}
                     products={snapshot.products}
+                    orders={snapshot.orders}
                     suppliers={snapshot.suppliers}
                     movements={snapshot.stockMovements}
                     onOpenQrGenerator={(sku) => {
@@ -1125,9 +1128,11 @@ export function WorkspaceApp({
                 <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
                   <AccountingView
                     adapter={adapter}
+                    editionId={editionId}
                     storeProfile={storeProfile}
                     entries={snapshot.accountingEntries}
                     orders={snapshot.orders}
+                    products={snapshot.products}
                     report={snapshot.financialReport}
                     onRefresh={refresh}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
@@ -1138,7 +1143,9 @@ export function WorkspaceApp({
                 <ContactsView
                   adapter={adapter}
                   editionId={editionId}
+                  businessName={storeProfile.businessName || snapshot.workspaceName}
                   contacts={snapshot.contacts}
+                  orders={snapshot.orders}
                   onUpgradeRequest={() => setTab("editions")}
                   onRefresh={refresh}
                   onStartChat={handleStartChat}

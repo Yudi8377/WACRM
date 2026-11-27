@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isAuthConfigured } from "@/lib/auth";
 import { getDbPool } from "@/lib/db";
+import { updateRegisteredTenantPassword } from "@/lib/publisher-sync";
 import {
   checkRateLimit,
   evaluatePasswordStrength,
@@ -205,6 +206,9 @@ export async function POST(request: Request) {
       // Non-fatal: client-side commercial accounts still complete reset cleanly
     }
   }
+
+  // Sync new password into Neon commercial tenant registry too
+  await updateRegisteredTenantPassword(emailKey, data.newPassword).catch(() => false);
 
   return NextResponse.json({
     ok: true,

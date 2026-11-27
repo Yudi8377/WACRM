@@ -27,13 +27,17 @@ import {
   printViaWifiHtml,
   renderFinancialReportPrintHtml,
 } from "@/lib/printer";
+import { SovereignAccountingSuite } from "@/components/sovereign-corporate-panels";
+import type { AppEditionId, ErpProductRecord } from "@/lib/crm-types";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 interface AccountingViewProps {
   adapter: WorkspaceAdapter;
+  editionId?: AppEditionId;
   storeProfile: StoreBusinessProfile;
   entries: AccountingEntryRecord[];
   orders: PosOrderRecord[];
+  products?: ErpProductRecord[];
   report: FinancialReportSummary;
   onRefresh: () => Promise<void>;
   onToast: (message: string, tone?: "ok" | "error") => void;
@@ -43,9 +47,11 @@ const PAGE_SIZE = 8;
 
 export function AccountingView({
   adapter,
+  editionId = "starter",
   storeProfile,
   entries,
   orders,
+  products = [],
   report,
   onRefresh,
   onToast,
@@ -287,6 +293,17 @@ export function AccountingView({
       <PaginationBar dark page={page} pageSize={PAGE_SIZE} totalItems={filtered.length} onPageChange={setPage} />
 
       {/* Sub-Module Modal: Tambah Jurnal Baru */}
+      {/* Sovereign Corporate Deep Accounting Suite & Desktop Report Exporter */}
+      <SovereignAccountingSuite
+        editionId={editionId}
+        businessName={storeProfile.businessName}
+        summary={report}
+        orders={orders}
+        products={products}
+        entries={entries}
+        onToast={onToast}
+      />
+
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
           <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white shadow-2xl">

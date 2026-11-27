@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import jsQR from "jsqr";
 import {
   AlertTriangle,
   ArrowDownToLine,
@@ -151,9 +152,12 @@ export function QrScannerStudio({
 
   // Camera & scanner state
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const scanCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualCode, setManualCode] = useState("");
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
@@ -531,17 +535,30 @@ export function QrScannerStudio({
       layout: paperLayout,
     });
 
-    const printWin = window.open("", "_blank", "width=780,height=720");
-    if (printWin) {
-      printWin.document.write(
-        html.replace(
-          "</body>",
-          `<script>window.onload=function(){setTimeout(function(){window.print();},250);}</script></body>`,
-        ),
-      );
-      printWin.document.close();
+    const iframeId = "wacrm-qr-sticker-print-frame";
+    document.getElementById(iframeId)?.remove();
+    const iframe = document.createElement("iframe");
+    iframe.id = iframeId;
+    iframe.style.cssText =
+      "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;";
+    document.body.appendChild(iframe);
+    const frameDoc = iframe.contentWindow?.document;
+    if (frameDoc && iframe.contentWindow) {
+      frameDoc.open();
+      frameDoc.write(html);
+      frameDoc.close();
+      const target = iframe.contentWindow;
+      setTimeout(() => {
+        try {
+          target.focus();
+          target.print();
+        } catch {
+          window.print();
+        }
+        setTimeout(() => iframe.remove(), 45_000);
+      }, 260);
     } else {
-      onNotify("Popup diblokir browser — izinkan popup untuk membuka dialog cetak stiker.", "error");
+      window.print();
     }
 
     const printedIds = new Set(labelsToPrint.map((l) => l.id));
@@ -888,72 +905,228 @@ export function QrScannerStudio({
     ],
   );
 
-  async function startRearCamera() {
-    setCameraError(null);
-    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError(
-        "Kamera browser tidak didukung di lingkungan ini. Gunakan input scanner manual / USB Barcode Scanner atau tombol Simulasi Scan di bawah.",
-      );
-      return;
+  // Bind active MediaStream to <video> reliably AFTER React mounts the viewfinder tab (fixes blank rear camera!)
+  useEffect(() => {
+    if (!cameraActive || studioTab !== "camera_scanner") return;
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!video || !stream) return;
+    if (video.srcObject !== stream) {
+      video.srcObject = stream;
     }
+    video.setAttribute("playsinline", "true");
+    video.muted = true;
+    const tryPlay = () => {
+      void video.play().catch(() => undefined);
+    };
+    if (video.readyState >= 1) {
+      tryPlay();
+    } else {
+      video.onloadedmetadata = tryPlay;
+    }
+  }, [cameraActive, studioTab]);
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+  async function acquireCameraStream(facing: "environment" | "user"): Promise<MediaStream> {
+    const md = navigator.mediaDevices;
+    const attempts: MediaStreamConstraints[] = [
+      {
         video: {
-          facingMode: { ideal: "environment" }, // REAR CAMERA ON MOBILE PHONES!
+          facingMode: { exact: facing },
           width: { ideal: 1280 },
           height: { ideal: 720 },
         },
         audio: false,
-      });
+      },
+      {
+        video: { facingMode: { ideal: facing } },
+        audio: false,
+      },
+    ];
+
+    for (const constraints of attempts) {
+      try {
+        return await md.getUserMedia(constraints);
+      } catch {
+        // try next tier
+      }
+    }
+
+    // Tier 3: Enumerate explicit rear/front videoinput deviceId (helps Xiaomi/Samsung/Oppo multi-lens phones)
+    try {
+      const devices = await md.enumerateDevices();
+      const videoInputs = devices.filter((d) => d.kind === "videoinput");
+      if (videoInputs.length > 0) {
+        const match =
+          facing === "environment"
+            ? videoInputs.find((d) => /back|rear|environment/i.test(d.label)) ??
+              videoInputs[videoInputs.length - 1]
+            : videoInputs.find((d) => /front|user|selfie/i.test(d.label)) ?? videoInputs[0];
+        if (match?.deviceId) {
+          return await md.getUserMedia({
+            video: { deviceId: { exact: match.deviceId } },
+            audio: false,
+          });
+        }
+      }
+    } catch {
+      // fall through
+    }
+
+    // Tier 4: Generic camera fallback
+    return md.getUserMedia({ video: true, audio: false });
+  }
+
+  async function startRearCamera(requestedFacing: "environment" | "user" = cameraFacing) {
+    setCameraError(null);
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setCameraError(
+        "Kamera langsung tidak tersedia di browser ini. Gunakan tombol 'Foto QR (Kamera HP)' di bawah, atau input scanner USB/Bluetooth.",
+      );
+      return;
+    }
+
+    stopRearCamera();
+    setCameraFacing(requestedFacing);
+
+    try {
+      const stream = await acquireCameraStream(requestedFacing);
       streamRef.current = stream;
       setCameraActive(true);
 
-      requestAnimationFrame(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          void videoRef.current.play().catch(() => undefined);
-        }
-      });
+      // Attach immediately if already mounted (useEffect above also guarantees attachment after tab switch!)
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute("playsinline", "true");
+        videoRef.current.muted = true;
+        void videoRef.current.play().catch(() => undefined);
+      }
 
       const DetectorCtor = (
         window as unknown as {
           BarcodeDetector?: new (opts?: { formats?: string[] }) => BarcodeDetectorLike;
         }
       ).BarcodeDetector;
-
+      let nativeDetector: BarcodeDetectorLike | null = null;
       if (DetectorCtor) {
-        const detector = new DetectorCtor({
-          formats: ["qr_code", "ean_13", "ean_8", "code_128", "code_39"],
-        });
-        let lastCode = "";
-        let lastTime = 0;
+        try {
+          nativeDetector = new DetectorCtor({
+            formats: ["qr_code", "ean_13", "ean_8", "code_128", "code_39"],
+          });
+        } catch {
+          nativeDetector = null;
+        }
+      }
 
-        scanTimerRef.current = setInterval(() => {
-          const video = videoRef.current;
-          if (!video || video.readyState < 2) return;
-          detector
+      let lastCode = "";
+      let lastTime = 0;
+
+      const acceptCode = (raw: string) => {
+        const first = raw.trim();
+        if (!first) return;
+        const now = Date.now();
+        if (first === lastCode && now - lastTime < 2500) return;
+        lastCode = first;
+        lastTime = now;
+        handleDecodedQrValue(first);
+      };
+
+      // Universal real-time decoder: Native BarcodeDetector + jsQR canvas engine (works on 100% of phones & Android WebView!)
+      scanTimerRef.current = setInterval(() => {
+        const video = videoRef.current;
+        if (!video || video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+          return;
+        }
+        if (nativeDetector) {
+          nativeDetector
             .detect(video)
             .then((codes) => {
               const first = codes[0]?.rawValue?.trim();
-              if (!first) return;
-              const now = Date.now();
-              if (first === lastCode && now - lastTime < 2500) return;
-              lastCode = first;
-              lastTime = now;
-              handleDecodedQrValue(first);
+              if (first) {
+                acceptCode(first);
+                return;
+              }
+              decodeFrameWithJsQr(video, acceptCode);
             })
-            .catch(() => undefined);
-        }, 420);
-      } else {
-        setCameraError(
-          "Kamera belakang aktif! Browser desktop ini belum memiliki native BarcodeDetector API — arahkan ke kamera HP Android/Chrome untuk auto-decode, atau masukkan kode QR di kolom bawah.",
-        );
+            .catch(() => decodeFrameWithJsQr(video, acceptCode));
+        } else {
+          decodeFrameWithJsQr(video, acceptCode);
+        }
+      }, 280);
+    } catch (err) {
+      const errName = err instanceof Error ? err.name : "";
+      setCameraError(
+        errName === "NotAllowedError" || errName === "PermissionDeniedError"
+          ? "Izin kamera ditolak oleh HP/browser. Buka Pengaturan Aplikasi / ikon gembok browser → Izinkan Kamera, atau gunakan tombol 'Foto QR (Kamera HP)' di bawah."
+          : "Kamera belakang belum dapat dibuka langsung. Gunakan tombol 'Foto QR (Kamera HP)' untuk memotret QR dengan kamera belakang asli HP Anda.",
+      );
+    }
+  }
+
+  function decodeFrameWithJsQr(video: HTMLVideoElement, onCode: (code: string) => void) {
+    try {
+      const canvas = scanCanvasRef.current;
+      if (!canvas) return;
+      const targetW = Math.min(640, video.videoWidth);
+      const scale = targetW / video.videoWidth;
+      const targetH = Math.max(1, Math.round(video.videoHeight * scale));
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, targetW, targetH);
+      const imageData = ctx.getImageData(0, 0, targetW, targetH);
+      const decoded = jsQR(imageData.data, targetW, targetH, {
+        inversionAttempts: "attemptBoth",
+      });
+      if (decoded?.data) {
+        onCode(decoded.data);
       }
     } catch {
-      setCameraError(
-        "Izin kamera belakang ditolak atau perangkat tidak memiliki kamera. Anda tetap dapat memindai via scanner USB/Bluetooth atau klik Simulasi Scan.",
-      );
+      // ignore frame decode error
+    }
+  }
+
+  async function handleDecodeQrPhotoFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setCameraError(null);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Gagal membaca foto QR."));
+        reader.onload = () => resolve(String(reader.result));
+        reader.readAsDataURL(file);
+      });
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onerror = () => reject(new Error("Format foto tidak didukung."));
+        el.onload = () => resolve(el);
+        el.src = dataUrl;
+      });
+      const maxDim = 1024;
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * scale));
+      const h = Math.max(1, Math.round(img.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas tidak tersedia.");
+      ctx.drawImage(img, 0, 0, w, h);
+      const imgData = ctx.getImageData(0, 0, w, h);
+      const decoded = jsQR(imgData.data, w, h, { inversionAttempts: "attemptBoth" });
+      if (!decoded?.data) {
+        setCameraError(
+          "QR Code belum terbaca pada foto ini. Pastikan stiker QR fokus, cukup cahaya, lalu potret ulang.",
+        );
+        return;
+      }
+      handleDecodedQrValue(decoded.data);
+    } catch (err) {
+      setCameraError(err instanceof Error ? err.message : "Gagal membaca QR dari foto.");
     }
   }
 
@@ -1190,11 +1363,29 @@ export function QrScannerStudio({
         <div class="meta"><strong>Masuk:</strong> ${batch.receivedDate}${batch.expiryDate ? ` · <strong>EXP:</strong> ${batch.expiryDate}` : ""}</div>
         <div class="meta"><strong>Rak:</strong> ${batch.rackLocation}</div>
       </div>
-      <script>window.onload=function(){window.print();}</script></body></html>`;
-    const w = window.open("", "_blank", "width=420,height=520");
-    if (w) {
-      w.document.write(html);
-      w.document.close();
+      </body></html>`;
+    const iframeId = "wacrm-fifo-batch-print-frame";
+    document.getElementById(iframeId)?.remove();
+    const iframe = document.createElement("iframe");
+    iframe.id = iframeId;
+    iframe.style.cssText =
+      "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;";
+    document.body.appendChild(iframe);
+    const frameDoc = iframe.contentWindow?.document;
+    if (frameDoc && iframe.contentWindow) {
+      frameDoc.open();
+      frameDoc.write(html);
+      frameDoc.close();
+      const target = iframe.contentWindow;
+      setTimeout(() => {
+        try {
+          target.focus();
+          target.print();
+        } catch {
+          window.print();
+        }
+        setTimeout(() => iframe.remove(), 45_000);
+      }, 240);
     }
   }
 
@@ -2114,43 +2305,77 @@ export function QrScannerStudio({
           <div className="grid gap-5 lg:grid-cols-12">
         {/* Left: Rear Camera Viewfinder */}
         <div className="rounded-3xl border border-slate-800 bg-slate-900/95 p-5 lg:col-span-5">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="flex items-center gap-2 text-sm font-extrabold text-white">
               <ScanLine className="h-4 w-4 text-emerald-400" />
-              Jendela Scan Kamera Belakang
+              Jendela Scan Kamera {cameraFacing === "environment" ? "Belakang" : "Depan"}
             </h3>
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
-                cameraActive ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-400"
-              }`}
-            >
-              {cameraActive ? "KAMERA AKTIF" : "STANDBY"}
-            </span>
+            <div className="flex items-center gap-1.5">
+              {cameraActive && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void startRearCamera(cameraFacing === "environment" ? "user" : "environment")
+                  }
+                  className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-800 px-2.5 py-0.5 text-[10px] font-bold text-slate-200 hover:border-cyan-400"
+                  title="Tukar Kamera Belakang / Depan"
+                >
+                  <RefreshCw className="h-3 w-3" /> Putar Kamera
+                </button>
+              )}
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                  cameraActive ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-800 text-slate-400"
+                }`}
+              >
+                {cameraActive ? "KAMERA AKTIF · AUTO-QR" : "STANDBY"}
+              </span>
+            </div>
           </div>
+
+          <canvas ref={scanCanvasRef} className="hidden" />
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => void handleDecodeQrPhotoFile(e)}
+            className="hidden"
+          />
 
           <div className="relative mt-3 aspect-[4/3] overflow-hidden rounded-2xl border border-slate-700 bg-slate-950">
             <video
               ref={videoRef}
+              autoPlay
               playsInline
               muted
               className={`h-full w-full object-cover ${cameraActive ? "block" : "hidden"}`}
             />
             {!cameraActive && (
-              <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-                <QrCode className="h-12 w-12 text-emerald-400/70" />
-                <p className="mt-3 text-xs font-bold text-slate-200">
-                  Kamera Belakang Siap Memindai QR &amp; Barcode
+              <div className="flex h-full flex-col items-center justify-center p-5 text-center">
+                <QrCode className="h-11 w-11 text-emerald-400/70" />
+                <p className="mt-2.5 text-xs font-bold text-slate-200">
+                  Kamera Belakang Siap Memindai QR &amp; Barcode (Auto-Decode)
                 </p>
                 <p className="mt-1 text-[11px] text-slate-400">
-                  Klik &ldquo;Aktifkan Kamera Belakang HP&rdquo; di atas atau pindai langsung menggunakan scanner USB/Bluetooth di kolom bawah.
+                  Klik Buka Kamera Belakang untuk scan live, atau Foto QR langsung via Kamera HP.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => void startRearCamera()}
-                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-extrabold text-slate-950 hover:bg-emerald-400"
-                >
-                  <Camera className="h-4 w-4" /> Buka Kamera Belakang
-                </button>
+                <div className="mt-3.5 flex flex-wrap justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void startRearCamera("environment")}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 text-xs font-extrabold text-slate-950 hover:bg-emerald-400"
+                  >
+                    <Camera className="h-4 w-4" /> Buka Kamera Belakang
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/50 bg-cyan-500/15 px-3.5 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-500/25"
+                  >
+                    <Camera className="h-4 w-4" /> Foto QR (Kamera HP)
+                  </button>
+                </div>
               </div>
             )}
             {cameraActive && (
@@ -2159,6 +2384,18 @@ export function QrScannerStudio({
               </div>
             )}
           </div>
+          {cameraActive && (
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+              <span>Arahkan QR ke kotak hijau (auto-baca jsQR + Native Scanner)</span>
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                className="font-bold text-cyan-300 hover:underline"
+              >
+                📷 Atau Foto QR
+              </button>
+            </div>
+          )}
 
           {cameraError && (
             <div className="mt-3 rounded-xl border border-amber-500/35 bg-amber-500/10 p-3 text-[11px] text-amber-200">

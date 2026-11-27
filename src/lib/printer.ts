@@ -6,6 +6,7 @@ import {
   type PrinterPaperProfile,
   type StoreBusinessProfile,
 } from "@/lib/crm-types";
+import { buildPdfFromPrintableHtml } from "@/lib/pdf-generator";
 import { getDefaultStoreProfile } from "@/lib/store-profile";
 
 export interface PrintResult {
@@ -898,28 +899,94 @@ export function printViaWifiHtml(
     return {
       ok: true,
       method: "android_wifi",
-      message: `Dialog cetak WiFi Android dibuka untuk "${title}".`,
+      message: `Dialog cetak WiFi / PDF Android dibuka untuk "${title}".`,
     };
   }
 
-  const popup = window.open("", "_blank", "width=860,height=920");
-  if (!popup) {
-    window.print();
-    return {
-      ok: true,
-      method: "browser_wifi_print",
-      message: "Dialog cetak WiFi / PDF browser dibuka.",
-    };
+  const fullDoc = buildPrintableHtmlDocument(
+    title,
+    bodyHtml,
+    paperMode === "thermal58" ? "thermal58" : "a4",
+  );
+
+  // Popup-free same-origin hidden print iframe — works on Mobile Chrome, Safari, Edge & Desktop
+  // without popup blockers and WITHOUT printing the dark application shell!
+  try {
+    const existing = document.getElementById("wacrm-hidden-print-frame");
+    if (existing) existing.remove();
+
+    const iframe = document.createElement("iframe");
+    iframe.id = "wacrm-hidden-print-frame";
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "1px";
+    iframe.style.height = "1px";
+    iframe.style.border = "0";
+    iframe.style.opacity = "0";
+    iframe.style.pointerEvents = "none";
+    document.body.appendChild(iframe);
+
+    const frameDoc = iframe.contentWindow?.document;
+    if (frameDoc && iframe.contentWindow) {
+      frameDoc.open();
+      frameDoc.write(fullDoc);
+      frameDoc.close();
+      const targetWin = iframe.contentWindow;
+      setTimeout(() => {
+        try {
+          targetWin.focus();
+          targetWin.print();
+        } catch {
+          window.print();
+        }
+        setTimeout(() => iframe.remove(), 45_000);
+      }, 220);
+      return {
+        ok: true,
+        method: "browser_wifi_print",
+        message: `Preview & dialog cetak PDF / WiFi dibuka untuk "${title}". Pilih 'Simpan sebagai PDF' atau printer WiFi Anda.`,
+      };
+    }
+  } catch {
+    // fallback below
   }
-  popup.document.write(`<!DOCTYPE html>
+
+  window.print();
+  return {
+    ok: true,
+    method: "browser_wifi_print",
+    message: `Dialog cetak WiFi / PDF dibuka untuk "${title}".`,
+  };
+}
+
+/**
+ * Wraps any printable body HTML into a complete, crisp white-paper A4 / Thermal HTML document
+ * ready for live in-app `<iframe srcDoc>` PDF preview OR hidden-iframe printing.
+ */
+export function buildPrintableHtmlDocument(
+  title: string,
+  bodyHtml: string,
+  pageSize: "a4" | "thermal58" | "thermal80" = "a4",
+): string {
+  const pageCss =
+    pageSize === "thermal58"
+      ? "@page { size: 58mm auto; margin: 2mm; } body { width: 54mm; font-family: ui-monospace, monospace; font-size: 11px; margin: 0 auto; color: #0f172a; background: #fff; padding: 8px; }"
+      : pageSize === "thermal80"
+        ? "@page { size: 80mm auto; margin: 3mm; } body { width: 74mm; font-family: ui-monospace, monospace; font-size: 12px; margin: 0 auto; color: #0f172a; background: #fff; padding: 10px; }"
+        : "@page { size: A4 portrait; margin: 12mm; } body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #0f172a; background: #fff; font-size: 13px; margin: 0 auto; max-width: 794px; padding: 18px 20px; }";
+
+  return `<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escHtml(title)}</title>
   <style>
+    * { box-sizing: border-box; }
     ${pageCss}
     table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-    th, td { border-bottom: 1px solid #e2e8f0; padding: 6px 4px; text-align: left; }
+    th, td { border-bottom: 1px solid #e2e8f0; padding: 6px 5px; text-align: left; }
     th { font-weight: 700; background: #f8fafc; }
     .right { text-align: right; }
     .center { text-align: center; }
@@ -930,14 +997,45 @@ export function printViaWifiHtml(
 </head>
 <body>
   ${bodyHtml}
-  <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 250); };</script>
 </body>
-</html>`);
-  popup.document.close();
+</html>`;
+}
+
+/**
+ * Generates & downloads a genuine binary `.pdf` file (`%PDF-1.4`) directly from any printable HTML!
+ */
+export function downloadPrintableHtmlAsPdf(
+  title: string,
+  bodyHtml: string,
+  storeName?: string,
+): { ok: boolean; filename: string; message: string } {
+  if (typeof window === "undefined") {
+    return { ok: false, filename: "", message: "Hanya tersedia di browser/aplikasi." };
+  }
+  const pdfBytes = buildPdfFromPrintableHtml(
+    title,
+    bodyHtml,
+    storeName || getDefaultStoreProfile().businessName,
+  );
+  const safeName = title.replace(/[^a-zA-Z0-9_-]/g, "-").replace(/-+/g, "-").toLowerCase();
+  const filename = `${safeName || "dokumen-wacrm"}-${new Date().toISOString().slice(0, 10)}.pdf`;
+  const ab = pdfBytes.buffer.slice(
+    pdfBytes.byteOffset,
+    pdfBytes.byteOffset + pdfBytes.byteLength,
+  ) as ArrayBuffer;
+  const blob = new Blob([ab], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
   return {
     ok: true,
-    method: "browser_wifi_print",
-    message: `Dokumen "${title}" siap dicetak melalui Printer WiFi / Jaringan / PDF.`,
+    filename,
+    message: `File PDF asli "${filename}" berhasil diunduh!`,
   };
 }
 

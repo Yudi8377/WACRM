@@ -31,10 +31,13 @@ import {
   generateOmnichannelSeoPack,
 } from "@/lib/seo-engine";
 import { normalizeSocialChannelAccount } from "@/lib/store-profile";
+import { SovereignSeoSuite } from "@/components/sovereign-corporate-panels";
+import type { AppEditionId } from "@/lib/crm-types";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 interface SeoGrowthViewProps {
   adapter: WorkspaceAdapter;
+  editionId?: AppEditionId;
   storeProfile: StoreBusinessProfile;
   onUpdateStoreProfile?: (next: StoreBusinessProfile) => void;
   products: ErpProductRecord[];
@@ -55,6 +58,7 @@ const CHANNEL_TABS: Array<{ key: ChannelKey; label: string }> = [
 
 export function SeoGrowthView({
   adapter,
+  editionId = "starter",
   storeProfile,
   onUpdateStoreProfile,
   products,
@@ -850,6 +854,13 @@ export function SeoGrowthView({
           )}
         </div>
       </div>
+
+      {/* Sovereign Corporate High-Level SEO Suite (Technical Audit, CWV, Multi-Schema & Keyword ROI) */}
+      <SovereignSeoSuite
+        editionId={editionId}
+        businessName={storeProfile.businessName}
+        onToast={onToast}
+      />
     </div>
   );
 }

@@ -26,6 +26,7 @@ import {
   type CommercialUserSession,
 } from "@/lib/access-control";
 import {
+  authenticateWithBiometric,
   buildBiometricSessionFallback,
   detectBiometricCapability,
   enrollBiometricForSession,
@@ -194,7 +195,9 @@ export function SettingsView({
 
     setBusyBio(true);
     try {
+      // Pass pre-detected biometricCap so WebAuthn runs synchronously inside the tap gesture!
       const res = await enrollBiometricForSession(sess, {
+        capability: biometricCap,
         forceDevicePin: forcePin || biometricCap?.method === "device_pin",
         pinCode: pinCode.trim() || undefined,
       });
@@ -216,6 +219,38 @@ export function SettingsView({
           : biometricCap?.label || "Sidik Jari / Face ID";
       const okMsg = `Berhasil! ${methodName} aktif untuk ${res.profile.email} (${editionId.toUpperCase()}).`;
       setBioFeedback({ tone: "ok", text: okMsg });
+      onToast(okMsg);
+    } finally {
+      setBusyBio(false);
+    }
+  }
+
+  async function handleTestBiometric() {
+    if (!enrolledBio) return;
+    setBioFeedback(null);
+    setBusyBio(true);
+    try {
+      if (enrolledBio.method === "device_pin" && !pinCode.trim()) {
+        setShowPinFallback(true);
+        setBioFeedback({
+          tone: "error",
+          text: "Ketik PIN 6-Digit Anda di kotak di atas lalu klik 'Tes Verifikasi' untuk memverifikasi.",
+        });
+        return;
+      }
+      const res = await authenticateWithBiometric(
+        enrolledBio.email,
+        enrolledBio.method === "device_pin" ? pinCode.trim() : undefined,
+      );
+      if (!res.ok) {
+        const msg = res.error || "Tes verifikasi gagal.";
+        setBioFeedback({ tone: "error", text: msg });
+        onToast(msg, "error");
+        return;
+      }
+      const okMsg = `✓ Tes Biometrik BERHASIL untuk ${enrolledBio.email} (${enrolledBio.editionId.toUpperCase()})!`;
+      setBioFeedback({ tone: "ok", text: okMsg });
+      setPinCode("");
       onToast(okMsg);
     } finally {
       setBusyBio(false);
@@ -461,6 +496,16 @@ export function SettingsView({
                   className="inline-flex items-center gap-1 rounded-xl border border-cyan-300 bg-white px-3 py-2 text-xs font-bold text-cyan-800 hover:bg-cyan-50"
                 >
                   <Lock className="h-3.5 w-3.5" /> Gunakan PIN Cepat 6-Digit
+                </button>
+              )}
+              {enrolledBio && (
+                <button
+                  type="button"
+                  disabled={busyBio}
+                  onClick={() => void handleTestBiometric()}
+                  className="inline-flex items-center gap-1 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Tes Verifikasi
                 </button>
               )}
               {enrolledBio && (

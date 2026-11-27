@@ -33,6 +33,7 @@ import {
   resetLocalCommercialPassword,
   saveCommercialSession,
   TRIAL_DURATION_DAYS,
+  upsertLocalCommercialAccountFromCloud,
   type CommercialUserSession,
 } from "@/lib/access-control";
 import { authClient } from "@/lib/auth-client";
@@ -220,34 +221,137 @@ export function CommercialAuthGate({
               now.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,
             ).toISOString();
             const existingLocal = authenticateLocalCommercialAccount(cleanEmail, loginPassword).account;
-            activateSession({
-              userId: cloudRes.data.user.id,
+            const cached = upsertLocalCommercialAccountFromCloud({
+              id: cloudRes.data.user.id,
               email: cloudRes.data.user.email,
+              password: loginPassword,
               displayName: cloudRes.data.user.name || existingLocal?.displayName || cleanEmail.split("@")[0],
               businessName: existingLocal?.businessName || "Toko WACRM",
+              city: existingLocal?.city,
               role: existingLocal?.role || "owner",
               editionId: existingLocal?.editionId || "starter",
-              authProvider: "cloud_neon",
               hasPaidLicense: existingLocal?.hasPaidLicense ?? false,
               licenseKey: existingLocal?.licenseKey ?? null,
               trialStartedAt: existingLocal?.trialStartedAt || now.toISOString(),
               trialEndsAt: existingLocal?.trialEndsAt || trialEnd,
+              platform: clientPlatform,
+            });
+            activateSession({
+              userId: cached.id,
+              email: cached.email,
+              displayName: cached.displayName,
+              businessName: cached.businessName,
+              city: cached.city,
+              role: cached.role,
+              editionId: cached.editionId,
+              authProvider: "cloud_neon",
+              hasPaidLicense: Boolean(cached.hasPaidLicense),
+              licenseKey: cached.licenseKey ?? null,
+              trialStartedAt: cached.trialStartedAt,
+              trialEndsAt: cached.trialEndsAt,
               platform: clientPlatform,
               signedInAt: now.toISOString(),
             });
             return;
           }
         } catch {
-          // Fall back cleanly to local commercial account auth
+          // Fall back cleanly to Neon commercial tenant auth & local auth
         }
       }
 
-      // 2. Local registered commercial account auth
+      // 2. Try Durable Neon Commercial Tenant Registry Sign-In (works across devices & after cache clear!)
+      try {
+        const commRes = await fetch("/api/auth/commercial-signin", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email: cleanEmail, password: loginPassword }),
+        });
+        if (commRes.ok) {
+          const commData = (await commRes.json()) as {
+            ok?: boolean;
+            tenant?: {
+              id: string;
+              fullName: string;
+              businessName: string;
+              email: string;
+              phone?: string;
+              city?: string;
+              editionId: "starter" | "pro" | "enterprise" | "sovereign";
+              licenseStatus: string;
+              licenseKey?: string | null;
+              trialStartedAt?: string;
+              trialEndsAt?: string;
+            };
+          };
+          if (commData.ok && commData.tenant) {
+            const t = commData.tenant;
+            const hasPaid = Boolean(t.licenseKey && t.licenseStatus === "active");
+            const cached = upsertLocalCommercialAccountFromCloud({
+              id: t.id,
+              email: t.email,
+              password: loginPassword,
+              displayName: t.fullName,
+              businessName: t.businessName,
+              phone: t.phone,
+              city: t.city,
+              role: "owner",
+              editionId: t.editionId,
+              hasPaidLicense: hasPaid,
+              licenseKey: t.licenseKey ?? null,
+              trialStartedAt: t.trialStartedAt,
+              trialEndsAt: t.trialEndsAt,
+              platform: clientPlatform,
+            });
+            activateSession({
+              userId: cached.id,
+              email: cached.email,
+              displayName: cached.displayName,
+              businessName: cached.businessName,
+              city: cached.city,
+              role: cached.role,
+              editionId: cached.editionId,
+              authProvider: "cloud_neon",
+              hasPaidLicense: Boolean(cached.hasPaidLicense),
+              licenseKey: cached.licenseKey ?? null,
+              trialEditionId: cached.trialEditionId,
+              usedTrialEditions: cached.usedTrialEditions,
+              trialStartedAt: cached.trialStartedAt,
+              trialEndsAt: cached.trialEndsAt,
+              platform: clientPlatform,
+              signedInAt: new Date().toISOString(),
+            });
+            return;
+          }
+        }
+      } catch {
+        // Offline / transient network fallback below
+      }
+
+      // 3. Local registered commercial account auth (works offline too)
       const localRes = authenticateLocalCommercialAccount(cleanEmail, loginPassword);
       if (!localRes.ok || !localRes.account) {
         setError(localRes.error || "Email atau kata sandi tidak valid.");
         return;
       }
+
+      // Background sync to Neon so future cross-device sign-ins always recognize this email
+      fetch("/api/auth/register-tenant", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          fullName: localRes.account.displayName,
+          businessName: localRes.account.businessName,
+          email: localRes.account.email,
+          phone: localRes.account.phone || "",
+          city: localRes.account.city || "Indonesia",
+          platform: clientPlatform,
+          editionId:
+            localRes.account.editionId === "pro" || localRes.account.editionId === "enterprise"
+              ? localRes.account.editionId
+              : "starter",
+          password: loginPassword,
+        }),
+      }).catch(() => undefined);
 
       activateSession({
         userId: localRes.account.id,
@@ -333,6 +437,7 @@ export function CommercialAuthGate({
             city: cleanCity,
             platform: clientPlatform,
             editionId: regEdition,
+            password: regPassword,
           }),
         });
         if (regApiRes.ok) {
@@ -345,9 +450,9 @@ export function CommercialAuthGate({
         // Non-blocking fallback so user can still enter workspace immediately
       }
 
-      // 3. Also sync to Neon Cloud Better Auth if live DB configured & password >= 12 chars
+      // 3. Also sync to Neon Cloud Better Auth if live DB configured & password >= 8 chars
       let provider: "cloud_neon" | "workspace_local" = "workspace_local";
-      if (dbReady && regPassword.length >= 12) {
+      if (dbReady && regPassword.length >= 8) {
         try {
           const cloud = await authClient.signUp.email({
             name: cleanName,
