@@ -29,8 +29,10 @@ import {
 
 interface EditionsViewProps {
   tenantId: string;
+  accountEmail?: string | null;
   workspaceName: string;
   currentEditionId: AppEditionId;
+  activeLicense?: StoredClientLicense | null;
   activeAgentsCount: number;
   membersCount?: number;
   contactsCount?: number;
@@ -49,8 +51,10 @@ function formatLimit(val: number, unit: string): string {
 
 export function EditionsView({
   tenantId,
+  accountEmail,
   workspaceName,
   currentEditionId,
+  activeLicense,
   activeAgentsCount,
   membersCount = 1,
   contactsCount = 0,
@@ -62,8 +66,10 @@ export function EditionsView({
 }: EditionsViewProps) {
   const activeEdition = getEditionById(currentEditionId);
   const [storedLicense, setStoredLicense] = useState<StoredClientLicense | null>(() =>
-    loadStoredClientLicense(tenantId),
+    activeLicense !== undefined ? activeLicense : loadStoredClientLicense(tenantId, accountEmail),
   );
+  const effectiveStoredLicense =
+    activeLicense !== undefined ? activeLicense : storedLicense;
   const [licenseInput, setLicenseInput] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [verifyFeedback, setVerifyFeedback] = useState<{
@@ -103,11 +109,12 @@ export function EditionsView({
         expiresAt: data.expiresAt,
         activatedAt: new Date().toISOString().slice(0, 10),
         licensedTo: workspaceName,
+        licensedEmail: accountEmail?.trim().toLowerCase() ?? null,
         verificationMode: data.verificationMode,
         status: "active",
       };
 
-      saveStoredClientLicense(tenantId, nextLicense);
+      saveStoredClientLicense(tenantId, nextLicense, accountEmail);
       setStoredLicense(nextLicense);
       onSelectEdition(data.editionId, data.normalizedKey, data.maxSeats);
       setLicenseInput("");
@@ -124,7 +131,7 @@ export function EditionsView({
   }
 
   function handleClearLicense() {
-    clearStoredClientLicense(tenantId);
+    clearStoredClientLicense(tenantId, accountEmail);
     setStoredLicense(null);
     setVerifyFeedback(null);
     onClearLicense?.();
@@ -178,21 +185,21 @@ export function EditionsView({
             </p>
           </div>
 
-          {storedLicense ? (
+          {effectiveStoredLicense ? (
             <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-500/40 bg-emerald-950/40 px-4 py-3 text-xs">
               <div>
                 <div className="text-[10px] uppercase tracking-wider text-emerald-300">
-                  Lisensi Terverifikasi ({storedLicense.verificationMode === "publisher_live" ? "Live API" : "Signed Offline"})
+                  Lisensi Terverifikasi ({effectiveStoredLicense.verificationMode === "publisher_live" ? "Live API" : "Signed Offline"})
                 </div>
                 <div className="font-mono text-sm font-bold text-white">
-                  {storedLicense.licenseKey}
+                  {effectiveStoredLicense.licenseKey}
                 </div>
                 <div className="text-[11px] text-slate-300">
                   Kuota:{" "}
                   <strong>
-                    {storedLicense.maxSeats >= 9999 ? "Unlimited" : `${storedLicense.maxSeats} kursi`}
+                    {effectiveStoredLicense.maxSeats >= 9999 ? "Unlimited" : `${effectiveStoredLicense.maxSeats} kursi`}
                   </strong>{" "}
-                  · Berlaku s/d <strong>{storedLicense.expiresAt}</strong>
+                  · Berlaku s/d <strong>{effectiveStoredLicense.expiresAt}</strong>
                 </div>
               </div>
               <button
@@ -206,7 +213,7 @@ export function EditionsView({
           ) : (
             <div className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-xs text-slate-400">
               <Building2 className="h-4 w-4 text-indigo-400" />
-              Belum ada License Key terikat (Mode Evaluasi / Lokal)
+              Belum ada License Key terikat (Mode Trial 14 Hari Starter UMKM)
             </div>
           )}
         </div>
@@ -255,10 +262,10 @@ export function EditionsView({
             <span>Kursi Agen CS / Tim</span>
             <strong className="text-white">
               {membersCount} /{" "}
-              {storedLicense?.editionId === currentEditionId && storedLicense.maxSeats > 0
-                ? storedLicense.maxSeats >= 9999
+              {effectiveStoredLicense?.editionId === currentEditionId && effectiveStoredLicense.maxSeats > 0
+                ? effectiveStoredLicense.maxSeats >= 9999
                   ? "∞"
-                  : storedLicense.maxSeats
+                  : effectiveStoredLicense.maxSeats
                 : activeEdition.limits.maxAgents < 0
                   ? "∞"
                   : activeEdition.limits.maxAgents}
@@ -270,7 +277,7 @@ export function EditionsView({
               style={{
                 width: `${
                   activeEdition.limits.maxAgents < 0 ||
-                  (storedLicense?.editionId === currentEditionId && storedLicense.maxSeats >= 9999)
+                  (effectiveStoredLicense?.editionId === currentEditionId && effectiveStoredLicense.maxSeats >= 9999)
                     ? 25
                     : Math.min(
                         100,
@@ -278,9 +285,9 @@ export function EditionsView({
                           (membersCount /
                             Math.max(
                               1,
-                              storedLicense?.editionId === currentEditionId &&
-                                storedLicense.maxSeats > 0
-                                ? storedLicense.maxSeats
+                              effectiveStoredLicense?.editionId === currentEditionId &&
+                                effectiveStoredLicense.maxSeats > 0
+                                ? effectiveStoredLicense.maxSeats
                                 : activeEdition.limits.maxAgents,
                             )) *
                             100,
@@ -429,8 +436,16 @@ export function EditionsView({
                 type="button"
                 disabled={isCurrent}
                 onClick={() => {
-                  if (ed.id === "starter" || storedLicense?.editionId === ed.id) {
-                    onSelectEdition(ed.id, storedLicense?.editionId === ed.id ? storedLicense.licenseKey : undefined);
+                  if (ed.id === "starter" || effectiveStoredLicense?.editionId === ed.id) {
+                    onSelectEdition(
+                      ed.id,
+                      effectiveStoredLicense?.editionId === ed.id
+                        ? effectiveStoredLicense.licenseKey
+                        : undefined,
+                      effectiveStoredLicense?.editionId === ed.id
+                        ? effectiveStoredLicense.maxSeats
+                        : undefined,
+                    );
                   } else {
                     const inputEl = document.getElementById("wacrm-license-key-input");
                     inputEl?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -444,7 +459,7 @@ export function EditionsView({
                 className={`mt-5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
                   isCurrent
                     ? "cursor-default border border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
-                    : ed.id === "starter" || storedLicense?.editionId === ed.id
+                    : ed.id === "starter" || effectiveStoredLicense?.editionId === ed.id
                       ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
                       : "border border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
                 }`}
@@ -455,7 +470,7 @@ export function EditionsView({
                   </>
                 ) : ed.id === "starter" ? (
                   "Gunakan Edisi Starter UMKM"
-                ) : storedLicense?.editionId === ed.id ? (
+                ) : effectiveStoredLicense?.editionId === ed.id ? (
                   `Aktifkan Lisensi ${ed.name}`
                 ) : (
                   <>

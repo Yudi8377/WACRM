@@ -21,6 +21,7 @@ import {
 } from "@/lib/access-control";
 import { authClient } from "@/lib/auth-client";
 import { saveTenantEdition } from "@/lib/editions";
+import { clearLegacyUnscopedLicenseStorage } from "@/lib/license-crypto";
 import { evaluatePasswordStrength } from "@/lib/security";
 
 export default function SignInPage() {
@@ -64,20 +65,25 @@ export default function SignInPage() {
       const localRes = authenticateLocalCommercialAccount(normalizedEmail, password);
       if (localRes.ok && localRes.account) {
         const acc = localRes.account;
-        saveTenantEdition("demo-workspace", acc.editionId);
+        const hasVerifiedKey = Boolean(acc.hasPaidLicense && acc.licenseKey);
+        const strictEdition = hasVerifiedKey ? acc.editionId : "starter";
+        if (!hasVerifiedKey) {
+          clearLegacyUnscopedLicenseStorage("demo-workspace");
+        }
+        saveTenantEdition("demo-workspace", strictEdition);
         saveCommercialSession({
           userId: acc.id,
           email: acc.email,
           displayName: acc.displayName,
           businessName: acc.businessName,
           role: acc.role,
-          editionId: acc.editionId,
+          editionId: strictEdition,
           authProvider: "workspace_local",
-          hasPaidLicense: acc.hasPaidLicense,
+          hasPaidLicense: hasVerifiedKey,
           trialStartedAt: acc.trialStartedAt,
           trialEndsAt: acc.trialEndsAt,
           platform: acc.platform,
-          licenseKey: acc.licenseKey,
+          licenseKey: hasVerifiedKey ? acc.licenseKey : null,
           signedInAt: new Date().toISOString(),
         });
         router.replace("/");

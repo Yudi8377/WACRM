@@ -26,7 +26,15 @@ import {
   runSystemGuardianAudit,
 } from "@/lib/ai-agents";
 import type { AiAgentRecord, ErpProductRecord, PosOrderRecord } from "@/lib/crm-types";
-import { issueSignedLicenseKey, verifySignedLicenseKey } from "@/lib/license-crypto";
+import {
+  clearLegacyUnscopedLicenseStorage,
+  issueSignedLicenseKey,
+  licenseStorageKey,
+  loadStoredClientLicense,
+  resolveStrictSessionEntitlement,
+  saveStoredClientLicense,
+  verifySignedLicenseKey,
+} from "@/lib/license-crypto";
 import { renderShippingLabelPrintHtml } from "@/lib/printer";
 import {
   getPublisherSyncSecret,
@@ -656,5 +664,129 @@ describe("High-Standard QA 4 — Multi-Agent AI Intelligence, Fraud, Escalation 
     });
     expect(stage1.stage).toBe("idle_nudge");
     expect(stage2.suggestedProducts.length).toBeGreaterThan(0);
+  });
+
+  it("isolates licenses strictly per account so Owner Sovereign key can NEVER leak into a 14-day Trial UMKM account on the same browser", () => {
+    // Provide an in-memory localStorage mock on globalThis.window for Node Vitest
+    const storageMap = new Map<string, string>();
+    const mockLocalStorage = {
+      getItem: (key: string) => (storageMap.has(key) ? storageMap.get(key)! : null),
+      setItem: (key: string, value: string) => {
+        storageMap.set(key, String(value));
+      },
+      removeItem: (key: string) => {
+        storageMap.delete(key);
+      },
+      clear: () => {
+        storageMap.clear();
+      },
+    };
+    const originalWindow = (globalThis as { window?: unknown }).window;
+    (globalThis as { window?: unknown }).window = { localStorage: mockLocalStorage };
+
+    try {
+      const tenantId = "demo-workspace";
+      const ownerEmail = "dwahyudi8377@gmail.com";
+      const trialEmail = "umkm.trial.baru@toko.id";
+
+      const sovereignKey = issueSignedLicenseKey({
+        editionId: "sovereign",
+        expiryYear: 2029,
+        expiryMonth: 12,
+        maxSeats: 9999,
+      });
+
+      // 1. Simulate Owner activating Sovereign AND poisoning legacy unscoped v4 storage keys
+      saveStoredClientLicense(
+        tenantId,
+        {
+          licenseKey: sovereignKey,
+          editionId: "sovereign",
+          maxSeats: 9999,
+          expiresAt: "2029-12-31",
+          activatedAt: "2026-11-26",
+          licensedTo: "akvisio",
+          licensedEmail: ownerEmail,
+          verificationMode: "cryptographic_offline",
+          status: "active",
+        },
+        ownerEmail,
+      );
+      mockLocalStorage.setItem(
+        `wacrm_active_license_v4_${tenantId}`,
+        JSON.stringify({
+          licenseKey: sovereignKey,
+          editionId: "sovereign",
+          maxSeats: 9999,
+          expiresAt: "2029-12-31",
+          activatedAt: "2026-11-26",
+          licensedTo: "akvisio",
+          verificationMode: "cryptographic_offline",
+          status: "active",
+        }),
+      );
+      mockLocalStorage.setItem(`wacrm_tenant_edition_v4_${tenantId}`, "sovereign");
+
+      // 2. Brand-new 14-day Trial UMKM user logs in on the SAME browser
+      const trialEntitlement = resolveStrictSessionEntitlement({
+        tenantId,
+        accountEmail: trialEmail,
+        sessionLicenseKey: null,
+        sessionHasPaidLicense: false,
+        workspaceName: "Warung Kopi UMKM",
+      });
+      expect(trialEntitlement.editionId).toBe("starter");
+      expect(trialEntitlement.activeLicense).toBeNull();
+      expect(trialEntitlement.licenseMaxSeats).toBeNull();
+      expect(trialEntitlement.isLicensed).toBe(false);
+      expect(loadStoredClientLicense(tenantId, trialEmail)).toBeNull();
+
+      // 3. Even if someone tampers with trial's v5 slot by pasting Owner's record with Owner's email, it is rejected
+      mockLocalStorage.setItem(
+        licenseStorageKey(tenantId, trialEmail),
+        JSON.stringify({
+          licenseKey: sovereignKey,
+          editionId: "sovereign",
+          maxSeats: 9999,
+          expiresAt: "2029-12-31",
+          activatedAt: "2026-11-26",
+          licensedTo: "akvisio",
+          licensedEmail: ownerEmail,
+          verificationMode: "cryptographic_offline",
+          status: "active",
+        }),
+      );
+      expect(loadStoredClientLicense(tenantId, trialEmail)).toBeNull();
+
+      // 4. Legacy unscoped v4 storage is purged cleanly while preserving Owner's scoped v5 key
+      clearLegacyUnscopedLicenseStorage(tenantId);
+      expect(mockLocalStorage.getItem(`wacrm_active_license_v4_${tenantId}`)).toBeNull();
+      expect(mockLocalStorage.getItem(`wacrm_tenant_edition_v4_${tenantId}`)).toBeNull();
+
+      // 5. Owner signing back in STILL receives Sovereign Corporate cleanly
+      const ownerEntitlement = resolveStrictSessionEntitlement({
+        tenantId,
+        accountEmail: ownerEmail,
+        sessionLicenseKey: sovereignKey,
+        sessionHasPaidLicense: true,
+        workspaceName: "akvisio",
+      });
+      expect(ownerEntitlement.editionId).toBe("sovereign");
+      expect(ownerEntitlement.isLicensed).toBe(true);
+      expect(ownerEntitlement.licenseMaxSeats).toBe(9999);
+      expect(ownerEntitlement.activeLicense?.licenseKey).toBe(sovereignKey);
+
+      // 6. Confirm Starter UMKM locks knowledge_learner (Growth Pro+) while keeping only cs_sales & order_pos
+      expect(isAiAgentAllowedInEdition("starter", "cs_sales")).toBe(true);
+      expect(isAiAgentAllowedInEdition("starter", "order_pos")).toBe(true);
+      expect(isAiAgentAllowedInEdition("starter", "knowledge_learner")).toBe(false);
+      expect(isAiAgentAllowedInEdition("pro", "knowledge_learner")).toBe(true);
+    } finally {
+      if (originalWindow === undefined) {
+        delete (globalThis as { window?: unknown }).window;
+      } else {
+        (globalThis as { window?: unknown }).window = originalWindow;
+      }
+    }
   });
 });

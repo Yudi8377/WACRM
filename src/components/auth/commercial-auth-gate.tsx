@@ -38,6 +38,7 @@ import { authClient } from "@/lib/auth-client";
 import { formatIdr } from "@/lib/crm-types";
 import { createDemoWorkspaceAdapter } from "@/lib/demo-store";
 import { APP_EDITIONS, saveTenantEdition } from "@/lib/editions";
+import { clearLegacyUnscopedLicenseStorage } from "@/lib/license-crypto";
 import { evaluatePasswordStrength } from "@/lib/security";
 import { loadStoreProfile, saveStoreProfile } from "@/lib/store-profile";
 
@@ -108,17 +109,26 @@ export function CommercialAuthGate({
   );
 
   function activateSession(next: CommercialUserSession) {
-    saveCommercialSession(next);
-    saveTenantEdition(adapter.tenantId, next.editionId);
-    if (next.businessName) {
+    const strictEdition = next.hasPaidLicense && next.licenseKey ? next.editionId : "starter";
+    const normalizedSession: CommercialUserSession = {
+      ...next,
+      editionId: strictEdition,
+      hasPaidLicense: Boolean(next.hasPaidLicense && next.licenseKey),
+    };
+    if (!normalizedSession.hasPaidLicense) {
+      clearLegacyUnscopedLicenseStorage(adapter.tenantId);
+    }
+    saveCommercialSession(normalizedSession);
+    saveTenantEdition(adapter.tenantId, strictEdition);
+    if (normalizedSession.businessName) {
       const store = loadStoreProfile(adapter.tenantId);
       saveStoreProfile(adapter.tenantId, {
         ...store,
-        businessName: next.businessName,
-        email: next.email,
+        businessName: normalizedSession.businessName,
+        email: normalizedSession.email,
       });
     }
-    setSession(next);
+    setSession(normalizedSession);
   }
 
   async function handleSignIn(e: FormEvent) {
@@ -376,6 +386,7 @@ export function CommercialAuthGate({
 
   async function handleSignOut() {
     clearCommercialSession();
+    clearLegacyUnscopedLicenseStorage(adapter.tenantId);
     try {
       await authClient.signOut();
     } catch {
@@ -398,6 +409,7 @@ export function CommercialAuthGate({
   if (session) {
     return (
       <WorkspaceApp
+        key={session.userId || session.email}
         adapter={adapter}
         commercialUser={session}
         onCommercialSessionUpdate={(next) => {

@@ -72,6 +72,7 @@ export function AiAgentsView({
   onToast,
 }: AiAgentsViewProps) {
   const caps = getEditionMatrixCapabilities(editionId);
+  const knowledgeLearnerUnlocked = isAiAgentAllowedInEdition(editionId, "knowledge_learner");
   const [tab, setTab] = useState<"agents" | "knowledge" | "security">("agents");
   const [syncingKb, setSyncingKb] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -147,6 +148,14 @@ export function AiAgentsView({
   }
 
   async function handleSyncKnowledge() {
+    if (!knowledgeLearnerUnlocked) {
+      onToast(
+        "Pembelajar Pengetahuan Otonom (Knowledge Learner AI) tersedia mulai edisi Growth Pro (6 Agen AI). Starter UMKM mencakup 2 Agen AI Dasar (CS & Order Extractor).",
+        "error",
+      );
+      onUpgradeRequest?.();
+      return;
+    }
     setSyncingKb(true);
     try {
       const res = await adapter.runAiKnowledgeSync();
@@ -254,10 +263,22 @@ export function AiAgentsView({
             type="button"
             onClick={handleSyncKnowledge}
             disabled={syncingKb}
-            className="inline-flex items-center gap-2 rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-4 py-2.5 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-500/25 disabled:opacity-50"
+            className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50 ${
+              knowledgeLearnerUnlocked
+                ? "border-cyan-500/40 bg-cyan-500/15 text-cyan-200 hover:bg-cyan-500/25"
+                : "border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+            }`}
           >
-            <DatabaseZap className={`h-4 w-4 ${syncingKb ? "animate-spin" : ""}`} />
-            {syncingKb ? "Belajar Otonom..." : "Perbarui Pengetahuan AI"}
+            {knowledgeLearnerUnlocked ? (
+              <DatabaseZap className={`h-4 w-4 ${syncingKb ? "animate-spin" : ""}`} />
+            ) : (
+              <Lock className="h-4 w-4" />
+            )}
+            {syncingKb
+              ? "Belajar Otonom..."
+              : knowledgeLearnerUnlocked
+                ? "Perbarui Pengetahuan AI"
+                : "Auto-Learn AI (Growth Pro)"}
           </button>
           <button
             type="button"
@@ -454,7 +475,34 @@ export function AiAgentsView({
 
       {/* Tab 2: Autonomous Knowledge Base */}
       {tab === "knowledge" && (
-        <div className="grid gap-5 lg:grid-cols-3">
+        <div className="space-y-4">
+          {!knowledgeLearnerUnlocked && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/40 bg-amber-950/35 p-4 text-xs">
+              <div className="flex items-start gap-2.5">
+                <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                <div>
+                  <div className="font-bold text-amber-200">
+                    Mode Pratinjau — Basis Pengetahuan Generatif AI (Khusus Growth Pro+)
+                  </div>
+                  <p className="mt-0.5 text-slate-300">
+                    Lisensi Starter UMKM Anda mencakup 2 Agen AI Dasar (CS &amp; Order Extractor). Aktifkan License Key <strong>Growth Pro</strong> untuk membuka Pembelajar Pengetahuan Otonom &amp; 6 Agen AI.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onUpgradeRequest?.()}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 font-extrabold text-slate-950 hover:bg-emerald-400"
+              >
+                <KeyRound className="h-3.5 w-3.5" /> Aktivasi License Key
+              </button>
+            </div>
+          )}
+        <div
+          className={`grid gap-5 lg:grid-cols-3 ${
+            !knowledgeLearnerUnlocked ? "pointer-events-none select-none opacity-70" : ""
+          }`}
+        >
           <form
             onSubmit={handleAddKnowledge}
             className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-5 lg:col-span-1"
@@ -567,6 +615,7 @@ export function AiAgentsView({
               </div>
             ))}
           </div>
+        </div>
         </div>
       )}
 

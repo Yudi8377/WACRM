@@ -38,8 +38,11 @@ import {
 } from "@/lib/access-control";
 import { authClient } from "@/lib/auth-client";
 import type { AppEditionId, ContactRecord, StoreBusinessProfile } from "@/lib/crm-types";
-import { editionHasFeature, getEditionById, loadTenantEdition, saveTenantEdition } from "@/lib/editions";
-import { loadStoredClientLicense } from "@/lib/license-crypto";
+import { editionHasFeature, getEditionById, saveTenantEdition } from "@/lib/editions";
+import {
+  clearLegacyUnscopedLicenseStorage,
+  resolveStrictSessionEntitlement,
+} from "@/lib/license-crypto";
 import { loadStoreProfile, saveStoreProfile } from "@/lib/store-profile";
 import type { WorkspaceAdapter, WorkspaceSnapshot } from "@/lib/workspace-adapter";
 import { notifyAndroid } from "@/components/pwa-register";
@@ -84,11 +87,13 @@ const NAV_ITEMS: Array<{
 
 export function WorkspaceApp({
   adapter,
+  accountEmail,
   commercialUser,
   onCommercialSessionUpdate,
   onSignOut,
 }: {
   adapter: WorkspaceAdapter;
+  accountEmail?: string | null;
   commercialUser?: CommercialUserSession | null;
   onCommercialSessionUpdate?: (next: CommercialUserSession) => void;
   onSignOut?: () => void;
@@ -99,16 +104,33 @@ export function WorkspaceApp({
   const [storeProfile, setStoreProfile] = useState<StoreBusinessProfile>(() =>
     loadStoreProfile(adapter.tenantId),
   );
-  const [editionId, setEditionId] = useState<AppEditionId>(() => {
-    const storedLic = loadStoredClientLicense(adapter.tenantId);
-    if (storedLic && storedLic.status === "active") return storedLic.editionId;
-    if (commercialUser?.editionId) return commercialUser.editionId;
-    return loadTenantEdition(adapter.tenantId);
-  });
-  const [licenseMaxSeats, setLicenseMaxSeats] = useState<number | null>(() => {
-    const storedLic = loadStoredClientLicense(adapter.tenantId);
-    return storedLic && storedLic.status === "active" ? storedLic.maxSeats : null;
-  });
+  const activeAccountEmail = commercialUser?.email ?? accountEmail ?? null;
+  const [licenseRevision, setLicenseRevision] = useState(0);
+  const resolvedEntitlement = useMemo(() => {
+    void licenseRevision;
+    return resolveStrictSessionEntitlement({
+      tenantId: adapter.tenantId,
+      accountEmail: activeAccountEmail,
+      sessionLicenseKey: commercialUser?.licenseKey ?? null,
+      sessionHasPaidLicense: commercialUser ? Boolean(commercialUser.hasPaidLicense) : undefined,
+      workspaceName: storeProfile.businessName || snapshot?.workspaceName,
+    });
+  }, [
+    activeAccountEmail,
+    adapter.tenantId,
+    commercialUser,
+    licenseRevision,
+    snapshot?.workspaceName,
+    storeProfile.businessName,
+  ]);
+  const editionId: AppEditionId = resolvedEntitlement.editionId;
+  const licenseMaxSeats: number | null = resolvedEntitlement.licenseMaxSeats;
+
+  useEffect(() => {
+    // Scrub legacy unscoped v4 license/edition keys so old Sovereign/Enterprise keys
+    // never leak into a Starter UMKM 14-day Trial account on the same browser.
+    clearLegacyUnscopedLicenseStorage(adapter.tenantId);
+  }, [adapter.tenantId, activeAccountEmail]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -193,10 +215,9 @@ export function WorkspaceApp({
     verifiedLicenseKey?: string,
     maxSeats?: number,
   ) {
+    void maxSeats;
     saveTenantEdition(adapter.tenantId, nextEdition);
-    setEditionId(nextEdition);
     if (verifiedLicenseKey) {
-      setLicenseMaxSeats(maxSeats ?? loadStoredClientLicense(adapter.tenantId)?.maxSeats ?? null);
       if (commercialUser) {
         const upgraded = upgradeCommercialSessionWithLicense(
           commercialUser,
@@ -205,9 +226,11 @@ export function WorkspaceApp({
         );
         onCommercialSessionUpdate?.(upgraded);
       }
-    } else if (nextEdition === "starter") {
-      setLicenseMaxSeats(null);
+    } else if (nextEdition === "starter" && commercialUser) {
+      const reverted = revertCommercialSessionToTrial(commercialUser);
+      onCommercialSessionUpdate?.(reverted);
     }
+    setLicenseRevision((r) => r + 1);
     const ed = getEditionById(nextEdition);
     showToast(
       verifiedLicenseKey
@@ -218,12 +241,12 @@ export function WorkspaceApp({
 
   function handleClearLicense() {
     saveTenantEdition(adapter.tenantId, "starter");
-    setEditionId("starter");
-    setLicenseMaxSeats(null);
+    clearLegacyUnscopedLicenseStorage(adapter.tenantId);
     if (commercialUser) {
       const reverted = revertCommercialSessionToTrial(commercialUser);
       onCommercialSessionUpdate?.(reverted);
     }
+    setLicenseRevision((r) => r + 1);
   }
 
   const activeEdition = useMemo(() => getEditionById(editionId), [editionId]);
@@ -787,9 +810,12 @@ export function WorkspaceApp({
               {tab === "editions" && (
                 <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
                   <EditionsView
+                    key={`${adapter.tenantId}-${activeAccountEmail ?? "anon"}-${editionId}`}
                     tenantId={adapter.tenantId}
+                    accountEmail={activeAccountEmail}
                     workspaceName={storeProfile.businessName || snapshot.workspaceName}
                     currentEditionId={editionId}
+                    activeLicense={resolvedEntitlement.activeLicense}
                     activeAgentsCount={activeAiCount}
                     membersCount={snapshot.members.length}
                     contactsCount={snapshot.contacts.length}
@@ -912,18 +938,28 @@ export function WorkspaceApp({
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = tab === item.id;
+          const access = evaluateTabAccess(editionId, effectiveRole, item.id);
           return (
             <button
               key={item.id}
               type="button"
               onClick={() => setTab(item.id)}
               className={`relative flex min-w-[66px] shrink-0 flex-col items-center justify-center gap-0.5 px-2 py-2 text-[10px] font-semibold transition ${
-                active ? "bg-emerald-50/70 text-emerald-700" : "text-slate-500"
+                active
+                  ? "bg-emerald-50/70 text-emerald-700"
+                  : access.allowed
+                    ? "text-slate-500"
+                    : "text-slate-400"
               }`}
             >
               <Icon className="h-4.5 w-4.5" />
               <span className="truncate">{item.shortLabel}</span>
-              {item.id === "inbox" && unreadTotal > 0 && (
+              {!access.allowed && (
+                <span className="absolute right-1.5 top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                  <Lock className="h-2.5 w-2.5" />
+                </span>
+              )}
+              {access.allowed && item.id === "inbox" && unreadTotal > 0 && (
                 <span className="absolute right-2 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-600 px-1 text-[9px] font-bold text-white">
                   {unreadTotal}
                 </span>

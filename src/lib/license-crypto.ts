@@ -73,6 +73,7 @@ export interface StoredClientLicense {
   expiresAt: string;
   activatedAt: string;
   licensedTo: string;
+  licensedEmail?: string | null;
   verificationMode: "cryptographic_offline" | "publisher_live";
   status: "active" | "expired";
 }
@@ -158,37 +159,188 @@ export function verifySignedLicenseKey(
   };
 }
 
-function licenseStorageKey(tenantId: string): string {
+function normalizeScopeEmail(accountEmail?: string | null): string | null {
+  const clean = accountEmail?.trim().toLowerCase();
+  return clean && clean.length > 0 ? clean : null;
+}
+
+function legacyLicenseStorageKey(tenantId: string): string {
   return `wacrm_active_license_v4_${tenantId}`;
 }
 
-export function loadStoredClientLicense(tenantId: string): StoredClientLicense | null {
+export function licenseStorageKey(tenantId: string, accountEmail?: string | null): string {
+  const scopeEmail = normalizeScopeEmail(accountEmail);
+  return scopeEmail
+    ? `wacrm_active_license_v5_${tenantId}::${scopeEmail}`
+    : `wacrm_active_license_v5_${tenantId}`;
+}
+
+/**
+ * Purges legacy unscoped v4 license & edition keys that previously leaked
+ * across different user accounts sharing the same browser.
+ */
+export function clearLegacyUnscopedLicenseStorage(tenantId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(legacyLicenseStorageKey(tenantId));
+    window.localStorage.removeItem(`wacrm_tenant_edition_v4_${tenantId}`);
+  } catch {
+    // Ignore storage access errors
+  }
+}
+
+export function loadStoredClientLicense(
+  tenantId: string,
+  accountEmail?: string | null,
+): StoredClientLicense | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem(licenseStorageKey(tenantId));
+    const scopeEmail = normalizeScopeEmail(accountEmail);
+    const raw = window.localStorage.getItem(licenseStorageKey(tenantId, scopeEmail));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredClientLicense;
     if (!parsed.licenseKey || !parsed.editionId) return null;
-    return parsed;
+
+    // Cross-account isolation guard: never return a license bound to another email
+    if (
+      scopeEmail &&
+      parsed.licensedEmail &&
+      parsed.licensedEmail.trim().toLowerCase() !== scopeEmail
+    ) {
+      return null;
+    }
+
+    // Re-verify signature & expiry on every read so tampered/expired keys cannot persist
+    const check = verifySignedLicenseKey(parsed.licenseKey);
+    if (!check.valid || check.isExpired || !check.editionId) {
+      return null;
+    }
+
+    return {
+      ...parsed,
+      editionId: check.editionId,
+      maxSeats: check.maxSeats ?? parsed.maxSeats,
+      expiresAt: check.expiresAt ?? parsed.expiresAt,
+      status: "active",
+    };
   } catch {
     return null;
   }
 }
 
-export function saveStoredClientLicense(tenantId: string, license: StoredClientLicense): void {
+export function saveStoredClientLicense(
+  tenantId: string,
+  license: StoredClientLicense,
+  accountEmail?: string | null,
+): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(licenseStorageKey(tenantId), JSON.stringify(license));
+    const scopeEmail = normalizeScopeEmail(accountEmail ?? license.licensedEmail);
+    const payload: StoredClientLicense = {
+      ...license,
+      licensedEmail: scopeEmail ?? license.licensedEmail ?? null,
+    };
+    window.localStorage.setItem(licenseStorageKey(tenantId, scopeEmail), JSON.stringify(payload));
+    // Also remove any legacy unscoped v4 key so it can never leak into another account
+    window.localStorage.removeItem(legacyLicenseStorageKey(tenantId));
   } catch {
     // Ignore storage quota errors
   }
 }
 
-export function clearStoredClientLicense(tenantId: string): void {
+export function clearStoredClientLicense(
+  tenantId: string,
+  accountEmail?: string | null,
+): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.removeItem(licenseStorageKey(tenantId));
+    const scopeEmail = normalizeScopeEmail(accountEmail);
+    window.localStorage.removeItem(licenseStorageKey(tenantId, scopeEmail));
+    window.localStorage.removeItem(legacyLicenseStorageKey(tenantId));
   } catch {
     // Ignore
   }
+}
+
+export interface ResolvedSessionEntitlement {
+  editionId: AppEditionId;
+  activeLicense: StoredClientLicense | null;
+  licenseMaxSeats: number | null;
+  isLicensed: boolean;
+}
+
+/**
+ * Single source of truth for resolving a signed-in user's edition & license:
+ * 1. A Trial / unlicensed session (no verified License Key) is ALWAYS strictly locked to "starter" (Starter UMKM).
+ * 2. A paid edition (pro / enterprise / sovereign) is ONLY unlocked when backed by a
+ *    cryptographically verified, non-expired License Key bound to THIS exact account.
+ */
+export function resolveStrictSessionEntitlement(params: {
+  tenantId: string;
+  accountEmail?: string | null;
+  sessionLicenseKey?: string | null;
+  sessionHasPaidLicense?: boolean;
+  workspaceName?: string;
+}): ResolvedSessionEntitlement {
+  const scopeEmail = normalizeScopeEmail(params.accountEmail);
+
+  // Explicit trial/unlicensed user: NEVER inherit any stored license from another account
+  if (params.sessionHasPaidLicense === false && !params.sessionLicenseKey?.trim()) {
+    return {
+      editionId: "starter",
+      activeLicense: null,
+      licenseMaxSeats: null,
+      isLicensed: false,
+    };
+  }
+
+  // 1. Check license key attached directly to this account session
+  const sessionKey = params.sessionLicenseKey?.trim();
+  if (sessionKey) {
+    const verified = verifySignedLicenseKey(sessionKey);
+    if (verified.valid && !verified.isExpired && verified.editionId && verified.expiresAt) {
+      const storedForAccount = loadStoredClientLicense(params.tenantId, scopeEmail);
+      const activeLicense: StoredClientLicense =
+        storedForAccount && storedForAccount.licenseKey === verified.normalizedKey
+          ? storedForAccount
+          : {
+              licenseKey: verified.normalizedKey,
+              editionId: verified.editionId,
+              maxSeats: verified.maxSeats ?? 2,
+              expiresAt: verified.expiresAt,
+              activatedAt: new Date().toISOString().slice(0, 10),
+              licensedTo: params.workspaceName || "Workspace WACRM",
+              licensedEmail: scopeEmail,
+              verificationMode: verified.verificationMode,
+              status: "active",
+            };
+      return {
+        editionId: verified.editionId,
+        activeLicense,
+        licenseMaxSeats: verified.maxSeats ?? null,
+        isLicensed: true,
+      };
+    }
+  }
+
+  // 2. Check strictly account-scoped license storage (only when session didn't forbid it)
+  if (scopeEmail) {
+    const storedForAccount = loadStoredClientLicense(params.tenantId, scopeEmail);
+    if (storedForAccount && storedForAccount.status === "active") {
+      return {
+        editionId: storedForAccount.editionId,
+        activeLicense: storedForAccount,
+        licenseMaxSeats: storedForAccount.maxSeats,
+        isLicensed: true,
+      };
+    }
+  }
+
+  // Default fallback: strictly Starter UMKM
+  return {
+    editionId: "starter",
+    activeLicense: null,
+    licenseMaxSeats: null,
+    isLicensed: false,
+  };
 }

@@ -11,6 +11,7 @@ import {
 } from "@/lib/access-control";
 import { authClient } from "@/lib/auth-client";
 import { saveTenantEdition } from "@/lib/editions";
+import { clearLegacyUnscopedLicenseStorage } from "@/lib/license-crypto";
 import { evaluatePasswordStrength } from "@/lib/security";
 
 export default function SignUpPage() {
@@ -105,16 +106,18 @@ export default function SignUpPage() {
         return;
       }
       const acc = localReg.account;
-      saveTenantEdition("demo-workspace", acc.editionId);
+      clearLegacyUnscopedLicenseStorage("demo-workspace");
+      saveTenantEdition("demo-workspace", "starter");
       saveCommercialSession({
         userId: acc.id,
         email: acc.email,
         displayName: acc.displayName,
         businessName: acc.businessName,
         role: acc.role,
-        editionId: acc.editionId,
+        editionId: "starter",
         authProvider: "workspace_local",
         hasPaidLicense: false,
+        licenseKey: null,
         trialStartedAt: acc.trialStartedAt,
         trialEndsAt: syncedTrialEndsAt || acc.trialEndsAt,
         platform,

@@ -596,6 +596,10 @@ export function loadCommercialSession(): CommercialUserSession | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CommercialUserSession;
     if (!parsed.email || !parsed.role || !parsed.editionId) return null;
+    // Strict commercial guard: unlicensed Trial sessions cannot hold a paid edition
+    if (parsed.hasPaidLicense === false && !parsed.licenseKey) {
+      return { ...parsed, editionId: "starter", hasPaidLicense: false, licenseKey: null };
+    }
     return parsed;
   } catch {
     return null;
