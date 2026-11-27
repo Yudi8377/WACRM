@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { CrudToolbar, PaginationBar } from "@/components/crud-toolbar";
+import { CodTrackingHub } from "@/components/cod-tracking-hub";
 import { UniversalPrintPanel } from "@/components/universal-print-panel";
 import {
   formatIdr,
@@ -85,6 +86,7 @@ export function PosView({
   );
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [posSubView, setPosSubView] = useState<"pos" | "cod_tracking">("pos");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(highlightOrderId ?? null);
 
   // Sub-Module Modals: "none" | "create" | "edit"
@@ -445,6 +447,72 @@ export function PosView({
           </div>
         </div>
       </div>
+
+      {/* Sub-view Switcher: POS Kasir vs COD Marketplace & Lacak Pengiriman AI */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setPosSubView("pos")}
+          className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold transition ${
+            posSubView === "pos"
+              ? "bg-emerald-500 text-slate-950 shadow"
+              : "border border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-700"
+          }`}
+        >
+          <Receipt className="h-3.5 w-3.5" /> Kasir POS, Invoice &amp; Cetak Universal
+        </button>
+        <button
+          type="button"
+          onClick={() => setPosSubView("cod_tracking")}
+          className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold transition ${
+            posSubView === "cod_tracking"
+              ? "bg-cyan-500 text-slate-950 shadow"
+              : "border border-cyan-500/35 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20"
+          }`}
+        >
+          <Truck className="h-3.5 w-3.5" /> COD Marketplace &amp; Lacak Kiriman AI ({orders.filter((o) => o.paymentMethod === "cod").length} COD)
+        </button>
+      </div>
+
+      {posSubView === "cod_tracking" ? (
+        <CodTrackingHub
+          tenantId={adapter.tenantId}
+          orders={orders}
+          storeProfile={effectivePrintProfile}
+          onSettleCodToAccounting={async (order, tracking) => {
+            try {
+              await adapter.updatePosOrder(order.id, {
+                paymentStatus: "paid",
+                orderStatus: "completed",
+                notes: `${order.notes ? `${order.notes} · ` : ""}COD Cair · Resi ${tracking.awbNumber} (${tracking.courierName})`,
+              });
+              const netCash = Math.max(
+                0,
+                tracking.codCollectAmountIdr - tracking.codHandlingFeeIdr,
+              );
+              await adapter.createAccountingEntry({
+                kind: "income",
+                categoryName: "Kas & Bank (Settlement COD)",
+                amount: netCash,
+                description: `Dana COD cair ${order.invoiceNumber} via ${tracking.courierName} (Resi ${tracking.awbNumber})`,
+              });
+              if (tracking.codHandlingFeeIdr > 0) {
+                await adapter.createAccountingEntry({
+                  kind: "expense",
+                  categoryName: "Beban Biaya Admin COD",
+                  amount: tracking.codHandlingFeeIdr,
+                  description: `Biaya penanganan COD ${order.invoiceNumber} via ${tracking.courierName}`,
+                });
+              }
+              await onRefresh();
+            } catch {
+              // keep UI responsive even if remote partial sync fails
+            }
+          }}
+          onToast={onToast}
+        />
+      ) : (
+        <>
 
       {/* AI AUTO-POPULATED CHECKOUT & QR QUEUE PANEL */}
       {aiOrders.length > 0 && (
@@ -1125,6 +1193,8 @@ export function PosView({
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

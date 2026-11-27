@@ -105,6 +105,19 @@ class WacrmJsBridge(
     }
 
     @JavascriptInterface
+    fun isBiometricAvailable(): Boolean = activity.isBiometricAuthAvailable()
+
+    @JavascriptInterface
+    fun authenticateBiometric(title: String?, subtitle: String?) {
+        val safeTitle = title?.trim()?.take(80)?.ifEmpty { "Login Biometrik WACRM" } ?: "Login Biometrik WACRM"
+        val safeSub = subtitle?.trim()?.take(160)?.ifEmpty { "Verifikasi Sidik Jari atau Pengenalan Wajah Anda" }
+            ?: "Verifikasi Sidik Jari atau Pengenalan Wajah Anda"
+        activity.runOnUiThread {
+            activity.showBiometricLoginPrompt(safeTitle, safeSub)
+        }
+    }
+
+    @JavascriptInterface
     fun openSettings() {
         activity.runOnUiThread {
             activity.showServerSettingsDialog()

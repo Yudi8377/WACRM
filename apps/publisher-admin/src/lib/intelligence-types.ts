@@ -110,4 +110,46 @@ export interface PublisherIntelligenceReport {
       growthPct: number;
     }>;
   };
+  forecasting?: {
+    currentMrrIdr: number;
+    projectedMrr6mIdr: number;
+    projectedArr12mIdr: number;
+    trialToPaidConversionPct: number;
+    freeToTrialActivationPct: number;
+    predictedChurnRiskPct: number;
+    mrrTrajectory: Array<{
+      monthIndex: number;
+      monthLabel: string;
+      conservativeIdr: number;
+      realisticIdr: number;
+      optimisticIdr: number;
+      projectedActiveTenants: number;
+      projectedPaidTenants: number;
+    }>;
+    tierUpgradeFunnel: Array<{
+      stage: string;
+      fromTier: string;
+      toTier: string;
+      currentCount: number;
+      conversionPct: number;
+      projectedUpgrades90d: number;
+      incrementalMrrIdr: number;
+      keyDriver: string;
+    }>;
+    categoryDemandForecast90d: Array<{
+      category: string;
+      currentDemandIndex: number;
+      forecast90dGrowthPct: number;
+      dominantPayment: "QRIS" | "COD + Tracking" | "Transfer";
+      recommendedPublisherAction: string;
+    }>;
+    executiveSignals: Array<{
+      horizon: "30 Hari" | "90 Hari" | "6–12 Bulan";
+      impact: "HIGH" | "OPPORTUNITY" | "RISK_GUARD";
+      title: string;
+      metricValue: string;
+      rationale: string;
+      actionPlan: string;
+    }>;
+  };
 }

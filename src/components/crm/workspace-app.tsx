@@ -14,12 +14,14 @@ import {
   Inbox,
   KeyRound,
   Layers,
+  LineChart,
   Link2,
   Lock,
   LogIn,
   LogOut,
   MessageSquareHeart,
   Mic,
+  QrCode,
   Receipt,
   RefreshCw,
   Settings,
@@ -28,6 +30,7 @@ import {
   TrendingUp,
   Users,
   Volume2,
+  Zap,
 } from "lucide-react";
 import {
   detectClientPlatform,
@@ -67,6 +70,8 @@ import { MasterDataView } from "@/components/master-data-view";
 import { SeoGrowthView } from "@/components/seo-growth-view";
 import { EditionsView } from "@/components/editions-view";
 import { CommunityHubView } from "@/components/community-hub-view";
+import { QrScannerStudio } from "@/components/qr-scanner-studio";
+import { MarketForecastView } from "@/components/market-forecast-view";
 import { InboxView } from "./inbox-view";
 import { ContactsView } from "./contacts-view";
 import { ChannelsView } from "./channels-view";
@@ -85,10 +90,12 @@ const NAV_ITEMS: Array<{
 }> = [
   { id: "inbox", label: "Inbox AI Otomatis", shortLabel: "Inbox", icon: Inbox, group: "core" },
   { id: "master", label: "Master Data", shortLabel: "Master", icon: Database, group: "core" },
-  { id: "pos", label: "POS & Cetak QR", shortLabel: "POS QR", icon: Receipt, group: "core" },
+  { id: "pos", label: "POS, COD & Lacak QR", shortLabel: "POS COD", icon: Receipt, group: "core" },
+  { id: "qr_scanner", label: "QR Scanner & FIFO", shortLabel: "Scan QR", icon: QrCode, group: "core" },
   { id: "erp", label: "ERP & Gudang", shortLabel: "ERP", icon: Boxes, group: "core" },
   { id: "accounting", label: "Akuntansi", shortLabel: "Akuntansi", icon: BookOpenCheck, group: "core" },
   { id: "ai", label: "Multi-Agent AI", shortLabel: "AI 9x", icon: Bot, group: "core" },
+  { id: "forecast", label: "Tren Minat & AI Produk", shortLabel: "Forecast", icon: LineChart, group: "core" },
   { id: "seo_growth", label: "SEO & Growth AI", shortLabel: "SEO AI", icon: TrendingUp, group: "core" },
   { id: "contacts", label: "Kontak CRM", shortLabel: "Kontak", icon: Users, group: "crm" },
   { id: "channels", label: "Kanal Omnichannel", shortLabel: "Kanal", icon: Link2, group: "crm" },
@@ -121,6 +128,7 @@ export function WorkspaceApp({
   const activeAccountEmail = commercialUser?.email ?? accountEmail ?? null;
   const [licenseRevision, setLicenseRevision] = useState(0);
   const [companionOpenSignal, setCompanionOpenSignal] = useState(0);
+  const [compactMode, setCompactMode] = useState(false);
   const resolvedEntitlement = useMemo(() => {
     void licenseRevision;
     return resolveStrictSessionEntitlement({
@@ -505,6 +513,29 @@ export function WorkspaceApp({
           <button
             type="button"
             onClick={() => {
+              setCompactMode((prev) => {
+                const next = !prev;
+                showToast(
+                  next
+                    ? "Mode Ringkas UMKM Aktif — hanya menampilkan 5 menu inti harian agar cepat & tidak ribet!"
+                    : "Mode Lengkap Enterprise Aktif — seluruh modul ditampilkan.",
+                );
+                return next;
+              });
+            }}
+            className={`hidden items-center gap-1 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition md:inline-flex ${
+              compactMode
+                ? "border-amber-300 bg-amber-50 text-amber-800"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+            title="Saklar tampilan Mode Ringkas UMKM vs Mode Lengkap Enterprise"
+          >
+            <Zap className="h-3.5 w-3.5 text-amber-500" />
+            <span>{compactMode ? "Mode Ringkas" : "Ringkas"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
               playWarmActivationChime();
               setCompanionOpenSignal((s) => s + 1);
             }}
@@ -574,7 +605,11 @@ export function WorkspaceApp({
                 Operasional Bisnis
               </p>
               <div className="space-y-1">
-                {NAV_ITEMS.filter((n) => n.group === "core").map((item) => {
+                {NAV_ITEMS.filter((n) =>
+                  compactMode
+                    ? ["inbox", "pos", "qr_scanner", "community", "settings"].includes(n.id)
+                    : n.group === "core",
+                ).map((item) => {
                   const Icon = item.icon;
                   const active = tab === item.id;
                   const access = evaluateTabAccess(editionId, effectiveRole, item.id);
@@ -628,6 +663,7 @@ export function WorkspaceApp({
               </div>
             </div>
 
+            {!compactMode && (
             <div>
               <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 CRM &amp; Kanal
@@ -665,10 +701,11 @@ export function WorkspaceApp({
                 })}
               </div>
             </div>
+            )}
 
             <div>
               <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-wider text-amber-700">
-                Platform &amp; Edisi v4.0
+                Platform &amp; Edisi v5.0
               </p>
               <div className="space-y-1">
                 {NAV_ITEMS.filter((n) => n.group === "platform").map((item) => {
@@ -977,6 +1014,53 @@ export function WorkspaceApp({
                     onClearHighlight={() => setHighlightOrderId(null)}
                     onRefresh={refresh}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
+                  />
+                </div>
+              )}
+              {tab === "qr_scanner" && (
+                <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
+                  <QrScannerStudio
+                    tenantId={adapter.tenantId}
+                    products={snapshot.products}
+                    suppliers={snapshot.suppliers}
+                    orders={snapshot.orders}
+                    storeProfile={storeProfile}
+                    onAdjustProductStock={async (productId, newStockQty) => {
+                      await adapter.updateProduct(productId, { stockQty: newStockQty });
+                      await refresh();
+                    }}
+                    onRecordAccountingEntry={async (entry) => {
+                      const amount = Math.max(entry.debit, entry.credit);
+                      if (amount > 0) {
+                        await adapter.createAccountingEntry({
+                          kind:
+                            entry.accountType === "revenue"
+                              ? "income"
+                              : entry.accountType === "equity"
+                                ? "capital"
+                                : "expense",
+                          categoryName: entry.accountName,
+                          amount,
+                          description: entry.description,
+                        });
+                        await refresh();
+                      }
+                    }}
+                    onOpenPosWithSku={() => setTab("pos")}
+                    onNotify={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
+                  />
+                </div>
+              )}
+              {tab === "forecast" && (
+                <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
+                  <MarketForecastView
+                    editionId={editionId}
+                    products={snapshot.products}
+                    orders={snapshot.orders}
+                    conversations={snapshot.conversations}
+                    storeProfile={storeProfile}
+                    onOpenEditions={() => setTab("editions")}
+                    onNotify={(msg) => showToast(msg, "success")}
                   />
                 </div>
               )}

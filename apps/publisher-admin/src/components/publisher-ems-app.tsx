@@ -9,6 +9,7 @@ import {
   Database,
   KeyRound,
   LayoutDashboard,
+  LineChart,
   Lock,
   PieChart,
   RefreshCw,
@@ -40,6 +41,7 @@ import type {
 import { OverviewView } from "./overview-view";
 import { UsageVocView } from "./usage-voc-view";
 import { EconomicRadarView } from "./economic-radar-view";
+import { ForecastingView } from "./forecasting-view";
 import { LicenseManagerView } from "./license-manager-view";
 import { MasterDataView } from "./master-data-view";
 import { PublisherCrmView } from "./publisher-crm-view";
@@ -49,6 +51,7 @@ import { PublisherSettingsView } from "./publisher-settings-view";
 
 type PublisherTabId =
   | "overview"
+  | "forecasting"
   | "usage_voc"
   | "economics"
   | "licenses"
@@ -65,6 +68,7 @@ const NAV_ITEMS: Array<{
   icon: typeof LayoutDashboard;
 }> = [
   { id: "overview", label: "Executive Command", shortLabel: "Overview", icon: LayoutDashboard },
+  { id: "forecasting", label: "Analisa & Forecasting", shortLabel: "Forecast", icon: LineChart },
   { id: "usage_voc", label: "Analitik & Suara User", shortLabel: "Analitik", icon: PieChart },
   { id: "economics", label: "Ekonomi & Tren Pasar", shortLabel: "Ekonomi", icon: TrendingUp },
   { id: "licenses", label: "License Management", shortLabel: "Lisensi", icon: KeyRound },
@@ -520,6 +524,13 @@ export function PublisherEmsApp() {
                   void syncIntelligenceReport(true);
                 }}
                 syncingLive={syncingLive}
+              />
+            )}
+            {tab === "forecasting" && (
+              <ForecastingView
+                report={intelligence}
+                loading={loadingIntel}
+                onRefresh={() => void syncIntelligenceReport(false)}
               />
             )}
             {tab === "usage_voc" && (

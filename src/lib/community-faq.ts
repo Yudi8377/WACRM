@@ -167,6 +167,89 @@ export function answerAppFaqWithMultiAgent(params: {
     };
   }
 
+  // 4b. Biometric Login (Fingerprint / Face ID)
+  if (/(biometrik|sidik\s*jari|fingerprint|face\s*id|wajah|face\s*recognition|passkey)/i.test(lower)) {
+    const answer = `WACRM mendukung **Login Biometrik (Sidik Jari & Face Recognition)** setelah aplikasi diinstall di HP (Android APK / PWA Android & iPhone):\n\n1. Masuk 1 kali terlebih dahulu dengan email & kata sandi Anda.\n2. Buka menu **Pengaturan → Login Biometrik HP** lalu klik **Aktifkan Sidik Jari / Face ID**.\n3. Berikutnya di layar Sign-In, cukup 1 sentuhan tombol **Masuk Cepat Sidik Jari / Face ID** (menggunakan sensor native Android BiometricPrompt atau FIDO2/WebAuthn Passkey).\n\nKeamanan tetap terisolasi ketat per akun — biometrik hanya membuka akun milik Anda sendiri!`;
+    return {
+      agentKey: "fraud_sentinel",
+      agentName: "Agen Keamanan Biometrik AI",
+      agentBadge: "Agen Keamanan Biometrik",
+      category: "Keamanan & Biometrik",
+      questionMatched: q,
+      answer,
+      speechAnswer: `Anda bisa masuk dengan sidik jari atau pengenalan wajah setelah aplikasi terpasang di HP. Cukup login sekali, aktifkan di menu Pengaturan, lalu berikutnya masuk dengan satu sentuhan biometrik.`,
+      relatedTab: "settings",
+      relatedTabLabel: "Aktifkan Biometrik di Pengaturan",
+      followUpQuestions: [
+        "Bagaimana cara memakai kamera belakang HP sebagai QR Scanner FIFO?",
+        "Bagaimana sistem pembayaran COD dan lacak pengiriman di WACRM?",
+      ],
+    };
+  }
+
+  // 4c. COD Marketplace & Live Shipment Tracking AI
+  if (/(cod|bayar\s*di\s*tempat|lacak|tracking|pengiriman|shopee|tokopedia|toped)/i.test(lower)) {
+    const answer = `WACRM menghadirkan **Sistem COD Marketplace (ala Shopee/Tokopedia) + Pelacakan Pengiriman & Notifikasi AI Otomatis** di menu **POS, COD & Lacak QR**:\n\n• **COD Risk Guard AI & Biaya Admin COD:** Menilai risiko retur (RTS) sebelum barang dikirim & menghitung biaya penanganan COD otomatis.\n• **Jejak Pengiriman Lengkap + Nama Pengirim & Nama Kurir:** Lacak tahap *Dikemas → Pickup → Transit Hub → Sedang Diantar oleh [Nama Kurir & No. HP] → Terkirim → Dana COD Cair*.\n• **Multi-Agen AI Auto-Notify Pembeli:** Setiap status diperbarui, AI langsung menyusun pesan WhatsApp sopan lengkap dengan lokasi paket, resi, **nama pengirim & kurir**, serta nominal COD yang harus disiapkan pembeli.\n• **1-Klik Dana COD Cair → Jurnal Akuntansi:** Otomatis memposting Kas Masuk & Biaya Admin COD ke buku besar.`;
+    return {
+      agentKey: "order_pos",
+      agentName: "Agen Logistik COD & Pelacakan AI",
+      agentBadge: "Agen COD & Logistik",
+      category: "COD & Pengiriman",
+      questionMatched: q,
+      answer,
+      speechAnswer: `Fitur COD di WACRM dilengkapi penilaian risiko retur, pelacakan pengiriman bertahap lengkap dengan nama pengirim dan nama kurir, serta pesan notifikasi WhatsApp otomatis dari Multi Agen AI untuk pembeli.`,
+      relatedTab: "pos",
+      relatedTabLabel: "Buka POS, COD & Lacak Kiriman",
+      followUpQuestions: [
+        "Apakah WACRM bisa mencetak ke semua jenis printer?",
+        "Bagaimana cara memakai QR Scanner kamera belakang untuk gudang FIFO?",
+      ],
+    };
+  }
+
+  // 4d. Rear Camera QR Scanner & FIFO Anti-Basi
+  if (/(scanner|scan\s*qr|kamera\s*belakang|fifo|fefo|basi|expired|kadaluwarsa|barang\s*masuk|opname)/i.test(lower)) {
+    const answer = `Menu **QR Scanner & FIFO** (aktif di **Growth Pro, Enterprise AI Suite & Sovereign Corporate**) mengubah kamera belakang HP Anda menjadi scanner gudang profesional:\n\n1. **Barang Masuk Supplier + Batch FIFO & Expired:** Scan QR → stok Master Data & Gudang bertambah, batch FIFO tercatat, & jurnal Persediaan otomatis masuk ke Akuntansi.\n2. **Pengeluaran Barang FIFO/FEFO Anti-Basi:** Otomatis memprioritaskan barang masuk duluan / paling dekat tanggal kedaluwarsa keluar lebih dulu!\n3. **Fitur Istimewa — AI Flash Sale Anti-Basi:** Jika ada batch expired ≤30 hari, Multi-Agen AI langsung menyiapkan promo Flash Sale WhatsApp & Medsos agar modal terselamatkan.\n4. Mendukung pula **Kasir POS Kilat, Stock Opname, Scan Resi COD, & Cetak Stiker QR Batch**.`;
+    return {
+      agentKey: "procurement_forecast",
+      agentName: "Agen Gudang FIFO & QR Scanner AI",
+      agentBadge: "Agen Gudang FIFO",
+      category: "QR Scanner & FIFO",
+      questionMatched: q,
+      answer,
+      speechAnswer: `Fitur QR Scanner kamera belakang HP aktif mulai Growth Pro hingga Sovereign Corporate. Terhubung otomatis ke Master Data, gudang FIFO anti basi, kasir POS, dan jurnal akuntansi, lengkap dengan AI Flash Sale untuk barang mendekati kadaluwarsa.`,
+      relatedTab: params.editionId === "starter" ? "editions" : "qr_scanner",
+      relatedTabLabel: params.editionId === "starter" ? "Coba Trial 14 Hari Growth Pro" : "Buka QR Scanner & FIFO",
+      followUpQuestions: [
+        "Bagaimana cara AI memberi saran produk paling laku dan forecasting?",
+        "Apakah aplikasi sudah mendukung semua jenis printer?",
+      ],
+    };
+  }
+
+  // 4e. AI Product Recommender & Sovereign Buyer Interest Forecasting
+  if (/(forecast|forecasting|minat\s*pembeli|prediksi|produk\s*laku|produk\s*terlaris|saran\s*produk)/i.test(lower)) {
+    const answer = `WACRM menyediakan 2 lapisan intelijen produk & forecasting di menu **Tren Minat & AI Produk**:\n\n• **Enterprise AI Suite (Trial 7h) & Sovereign Corporate:** Membuka **Multi-Agent AI Saran Produk Paling Laku** — menggabungkan data katalog, transaksi POS, percakapan pelanggan & tren pasar nasional untuk menyarankan produk hero, produk baru yang sedang naik daun, dan ide paket bundling!\n• **Eksklusif Sovereign Corporate:** Membuka **Menu Tren Minat Pembeli & Forecasting 30–90 Hari** — grafik proyeksi omzet 3 skenario (Konservatif/Realistis/Optimis), indeks minat per segmen & jam belanja, simulasi elastisitas diskon/COD, serta proyeksi belanja stok FIFO & modal kerja.`;
+    return {
+      agentKey: "procurement_forecast",
+      agentName: "Agen Forecasting & Riset Pasar AI",
+      agentBadge: "Agen Forecasting AI",
+      category: "Forecasting & Tren Pasar",
+      questionMatched: q,
+      answer,
+      speechAnswer: `Saran produk paling laku oleh Multi Agen AI aktif mulai edisi Enterprise AI Suite dan Sovereign Corporate. Sedangkan Menu Tren Minat Pembeli dan Forecasting permintaan sembilan puluh hari tersedia eksklusif pada Sovereign Corporate.`,
+      relatedTab: params.editionId === "starter" || params.editionId === "pro" ? "editions" : "forecast",
+      relatedTabLabel:
+        params.editionId === "starter" || params.editionId === "pro"
+          ? "Lihat Edisi Enterprise & Sovereign"
+          : "Buka Tren Minat & Forecasting",
+      followUpQuestions: [
+        "Bagaimana aturan Trial 7 hari Enterprise AI Suite?",
+        "Bagaimana cara aktivasi License Key Sovereign Corporate?",
+      ],
+    };
+  }
+
   // 5. POS, QR Shipping Label, Couriers & Universal Printing
   if (/(printer|cetak|print|struk|thermal|bluetooth|usb|otg|inkjet|laserjet|edc|pos|kasir|label|qr|kurir|ongkir|resi)/i.test(lower)) {
     const answer = `WACRM mendukung **Studio Cetak Universal** di seluruh edisi (termasuk Starter UMKM Gratis!):\n\n• **Kabel USB-C / Micro-USB OTG** langsung ke printer Thermal 58mm/80mm & mesin EDC\n• **Bluetooth Thermal** (dari HP Android / APK WACRM)\n• **Printer Inkjet & LaserJet A4** (USB, WiFi, Apple AirPrint, Android Mopria)\n• **Ekspor & Share PDF** instan ke WhatsApp pelanggan.\n\nSetiap transaksi POS otomatis menghitung ongkir dari **Master Kurir Multi-Tarif**, menghasilkan **Invoice + QR Pelacakan**, dan pada edisi Growth Pro ke atas tampil **100% White-Label** dengan nama & logo ${store} tanpa watermark.`;

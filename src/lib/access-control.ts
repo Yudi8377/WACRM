@@ -10,9 +10,11 @@ export type WorkspaceTabId =
   | "inbox"
   | "master"
   | "pos"
+  | "qr_scanner"
   | "erp"
   | "accounting"
   | "ai"
+  | "forecast"
   | "seo_growth"
   | "contacts"
   | "channels"
@@ -39,8 +41,10 @@ export const ENTERPRISE_TRIAL_DAYS = 7;
  * - Sovereign Corporate unlocks: custom_branded_apk, dedicated_db_sla, Unlimited everything.
  */
 export const TAB_REQUIRED_FEATURE: Partial<Record<WorkspaceTabId, EditionFeatureKey>> = {
+  qr_scanner: "qr_camera_fifo_scanner",
   erp: "erp_warehouse",
   accounting: "double_entry_accounting",
+  forecast: "ai_product_recommender",
   seo_growth: "seo_growth_ai",
   templates: "zero_click_ai",
 };
@@ -101,12 +105,15 @@ export interface EditionMatrixCapabilities {
   universalPrinting: boolean;
   posQrShippingLabel: boolean;
   erpWarehouse: boolean;
+  qrCameraFifoScanner: boolean;
   doubleEntryAccounting: boolean;
   seoGrowthAi: boolean;
   voiceCompanion247: boolean;
   fraudSentinelHealing: boolean;
+  aiProductRecommender: boolean;
   whiteLabelStore: boolean;
   superAdminAnalytics: boolean;
+  buyerInterestForecast: boolean;
   customBrandedApk: boolean;
   dedicatedDbSla: boolean;
   allowedAiAgents: AiAgentKey[];
@@ -140,12 +147,15 @@ export function getEditionMatrixCapabilities(
     universalPrinting: editionHasFeature(editionId, "universal_printing_usb_edc"),
     posQrShippingLabel: editionHasFeature(editionId, "pos_qr_shipping_label"),
     erpWarehouse: editionHasFeature(editionId, "erp_warehouse"),
+    qrCameraFifoScanner: editionHasFeature(editionId, "qr_camera_fifo_scanner"),
     doubleEntryAccounting: editionHasFeature(editionId, "double_entry_accounting"),
     seoGrowthAi: editionHasFeature(editionId, "seo_growth_ai"),
     voiceCompanion247: editionHasFeature(editionId, "voice_companion_24_7"),
     fraudSentinelHealing: editionHasFeature(editionId, "fraud_sentinel_healing"),
+    aiProductRecommender: editionHasFeature(editionId, "ai_product_recommender"),
     whiteLabelStore: editionHasFeature(editionId, "white_label_store"),
     superAdminAnalytics: editionHasFeature(editionId, "super_admin_analytics"),
+    buyerInterestForecast: editionHasFeature(editionId, "buyer_interest_forecast"),
     customBrandedApk: editionHasFeature(editionId, "custom_branded_apk"),
     dedicatedDbSla: editionHasFeature(editionId, "dedicated_db_sla"),
     allowedAiAgents: EDITION_ALLOWED_AI_AGENT_KEYS[editionId],

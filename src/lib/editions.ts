@@ -7,12 +7,15 @@ export type EditionFeatureKey =
   | "universal_printing_usb_edc"
   | "pos_qr_shipping_label"
   | "erp_warehouse"
+  | "qr_camera_fifo_scanner"
   | "double_entry_accounting"
   | "seo_growth_ai"
   | "voice_companion_24_7"
   | "fraud_sentinel_healing"
+  | "ai_product_recommender"
   | "white_label_store"
   | "super_admin_analytics"
+  | "buyer_interest_forecast"
   | "custom_branded_apk"
   | "dedicated_db_sla";
 
@@ -88,22 +91,23 @@ export const APP_EDITIONS: AppEditionDefinition[] = [
       "universal_printing_usb_edc",
       "pos_qr_shipping_label",
       "erp_warehouse",
+      "qr_camera_fifo_scanner",
       "seo_growth_ai",
       "white_label_store",
     ],
     highlights: [
       "Trial Gratis 14 Hari Penuh (otomatis kembali ke Starter UMKM Gratis jika belum aktivasi License Key)",
       "Hingga 10 agen CS serentak (Desktop, Android & iOS) & 5 kanal omnichannel",
-      "AI Auto-Reply 24/7 Tanpa Klik + Eskalasi Admin Otomatis & 6 Agen AI",
-      "ERP Gudang, Supplier & Mutasi Stok Real-Time",
-      "Multi-Agent SEO & Growth AI (Google, WA, IG, TikTok, YouTube, FB)",
+      "Scanner QR Kamera Belakang HP → Otomatis Barang Masuk, Gudang FIFO Anti-Basi, POS & Keuangan",
+      "AI Auto-Reply 24/7 Tanpa Klik + COD Marketplace & Lacak Pengiriman + Notif AI Kurir",
+      "ERP Gudang, Supplier & Mutasi Stok + Multi-Agent SEO Growth AI (6 Kanal)",
       "100% White-Label Nama Toko pada Invoice, Label QR & Laporan",
     ],
   },
   {
     id: "enterprise",
     name: "Enterprise AI Suite",
-    tagline: "Trial gratis 7 hari! Seluruh 9 Agen AI Otonom, Pemandu Suara AI 24/7, Akuntansi Double-Entry & Self-Healing.",
+    tagline: "Trial gratis 7 hari! Seluruh 9 Agen AI Otonom, Saran Produk Terlaris AI, QR FIFO, Pemandu Suara 24/7 & Akuntansi.",
     badge: "Trial 7 Hari · Rekomendasi",
     trialDays: 7,
     monthlyPriceIdr: 699_000,
@@ -123,26 +127,28 @@ export const APP_EDITIONS: AppEditionDefinition[] = [
       "universal_printing_usb_edc",
       "pos_qr_shipping_label",
       "erp_warehouse",
+      "qr_camera_fifo_scanner",
       "double_entry_accounting",
       "seo_growth_ai",
       "voice_companion_24_7",
       "fraud_sentinel_healing",
+      "ai_product_recommender",
       "white_label_store",
       "super_admin_analytics",
     ],
     highlights: [
       "Trial Gratis 7 Hari Penuh (otomatis kembali ke Starter UMKM Gratis setelah 7 hari tanpa key)",
-      "Agen CS Unlimited + 5 Cabang/Workspace dengan RLS PostgreSQL",
-      "Seluruh 9 Multi-Agent AI Otonom (termasuk SEO AI, Follow-Up Hunter & Procurement Forecast)",
-      "24/7 AI Personal Companion Suara Hangat & Memori Kontinu sampai 'cukup'",
-      "Akuntansi Double-Entry Neraca & Laba Rugi + Jurnal Pelunasan Otomatis",
-      "Fraud Sentinel (Anti Prompt/SQL/XSS Injection) & Self-Healing Guardian",
+      "Multi-Agent AI Saran Produk Paling Laku & Peluang Pasar + Flash Sale Anti-Basi FIFO",
+      "Scanner QR Kamera Belakang HP terhubung Master Data, Gudang FIFO, POS & Akuntansi Double-Entry",
+      "Seluruh 9 Multi-Agent AI Otonom + Pemandu Suara AI 24/7 Ramah & Hangat",
+      "Akuntansi Double-Entry Neraca & Laba Rugi + Jurnal COD & Persediaan Otomatis",
+      "Fraud Sentinel (Anti-Injection) & Self-Healing Guardian + Login Biometrik",
     ],
   },
   {
     id: "sovereign",
     name: "Sovereign Corporate",
-    tagline: "Infrastruktur privat, custom domain & APK Android berlabel perusahaan Anda sendiri (License Key Resmi).",
+    tagline: "Infrastruktur privat, Menu Tren Minat Pembeli & Forecasting 90 Hari, Custom Domain & APK Branded (License Key Resmi).",
     badge: "Korporasi · License Key",
     trialDays: 0,
     monthlyPriceIdr: 1_950_000,
@@ -161,20 +167,23 @@ export const APP_EDITIONS: AppEditionDefinition[] = [
       "universal_printing_usb_edc",
       "pos_qr_shipping_label",
       "erp_warehouse",
+      "qr_camera_fifo_scanner",
       "double_entry_accounting",
       "seo_growth_ai",
       "voice_companion_24_7",
       "fraud_sentinel_healing",
+      "ai_product_recommender",
       "white_label_store",
       "super_admin_analytics",
+      "buyer_interest_forecast",
       "custom_branded_apk",
       "dedicated_db_sla",
     ],
     highlights: [
-      "Semua fitur Enterprise AI Suite tanpa batas agen, kontak & cabang",
-      "Custom Branded Android APK & Custom Domain penuh atas nama perusahaan",
+      "EKSKLUSIF: Menu Tren Minat Pembeli & Forecasting Permintaan/Omzet 30–90 Hari + Simulasi Harga",
+      "Semua fitur Enterprise AI Suite, Saran Produk Laku AI & Scanner QR FIFO tanpa batas agen/cabang",
+      "Custom Branded Android APK (Login Biometrik Sidik Jari/Face ID) & Custom Domain",
       "Database Neon PostgreSQL Dedicated + SLA 99.95% & Backup Harian",
-      "Integrasi ERP / EDC / Webhook kustom + Priority Engineering Support",
     ],
   },
 ];
@@ -184,14 +193,17 @@ export const EDITION_FEATURE_LABELS: Record<EditionFeatureKey, string> = {
   zero_click_ai: "AI Auto-Reply 24/7 Otomatis Tanpa Klik + Eskalasi Admin",
   master_data: "Menu Master Data Lengkap (6 Modul)",
   universal_printing_usb_edc: "Cetak Universal: USB-C/Micro-USB OTG, Bluetooth, WiFi, Inkjet/LaserJet & EDC",
-  pos_qr_shipping_label: "POS Auto-Invoice Lunas & Label Pengiriman QR",
+  pos_qr_shipping_label: "POS Auto-Invoice, COD Marketplace, Lacak Kiriman & Label QR",
   erp_warehouse: "ERP Gudang, Supplier & Mutasi Stok",
+  qr_camera_fifo_scanner: "Scanner QR Kamera Belakang HP → Master Data, Gudang FIFO Anti-Basi & Keuangan",
   double_entry_accounting: "Akuntansi Double-Entry, Laba Rugi & Neraca Otomatis",
   seo_growth_ai: "Multi-Agent SEO & Omnichannel Growth AI (6 Kanal)",
   voice_companion_24_7: "24/7 AI Personal Companion Suara & Teks (Memori Kontinu)",
   fraud_sentinel_healing: "Fraud Sentinel (Anti-Injection) & Self-Healing Guardian",
+  ai_product_recommender: "Multi-Agent AI Saran Produk Paling Laku & Analisis Pasar",
   white_label_store: "100% White-Label Identitas Toko pada Seluruh Dokumen",
   super_admin_analytics: "Dashboard Super Admin, Analitik SWOT & Auto-Perbaikan",
+  buyer_interest_forecast: "Menu Tren Minat Pembeli & Forecasting Permintaan 30–90 Hari (Sovereign)",
   custom_branded_apk: "Custom Branded Android APK & Custom Domain",
   dedicated_db_sla: "Dedicated Neon Database & SLA Korporasi 99.95%",
 };

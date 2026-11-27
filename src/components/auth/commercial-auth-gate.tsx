@@ -10,6 +10,7 @@ import {
   Crown,
   Eye,
   EyeOff,
+  Fingerprint,
   KeyRound,
   Lock,
   Mail,
@@ -39,6 +40,13 @@ import { formatIdr } from "@/lib/crm-types";
 import { createDemoWorkspaceAdapter } from "@/lib/demo-store";
 import { APP_EDITIONS, saveTenantEdition } from "@/lib/editions";
 import { clearLegacyUnscopedLicenseStorage } from "@/lib/license-crypto";
+import {
+  authenticateWithBiometric,
+  detectBiometricCapability,
+  getLatestEnrolledBiometricProfile,
+  type BiometricCapability,
+  type EnrolledBiometricProfile,
+} from "@/lib/biometric-auth";
 import { evaluatePasswordStrength } from "@/lib/security";
 import { loadStoreProfile, saveStoreProfile } from "@/lib/store-profile";
 
@@ -93,6 +101,39 @@ export function CommercialAuthGate({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [biometricCap, setBiometricCap] = useState<BiometricCapability | null>(null);
+  const [enrolledBiometric, setEnrolledBiometric] = useState<EnrolledBiometricProfile | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    detectBiometricCapability()
+      .then((cap) => {
+        if (active) {
+          setBiometricCap(cap);
+          setEnrolledBiometric(getLatestEnrolledBiometricProfile());
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function handleBiometricSignIn() {
+    setError(null);
+    setNotice(null);
+    setBusy(true);
+    try {
+      const res = await authenticateWithBiometric(loginEmail || undefined);
+      if (!res.ok || !res.session) {
+        setError(res.error || "Verifikasi biometrik gagal.");
+        return;
+      }
+      activateSession(res.session);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     fetch("/api/system/status", { cache: "no-store" })
@@ -641,16 +682,15 @@ export function CommercialAuthGate({
               </div>
             )}
 
-            {/* SIGN UP (14-DAY UMKM TRIAL) FORM */}
+            {/* SIGN UP FORM */}
             {mode === "signup" && (
               <form onSubmit={(e) => void handleSignUp(e)} className="mt-5 space-y-3.5">
                 <div>
                   <h2 className="text-lg font-extrabold text-white">
-                    Daftar Gratis — Trial {TRIAL_DURATION_DAYS} Hari UMKM
+                    Daftar Starter UMKM Gratis / Trial Pro &amp; Enterprise
                   </h2>
                   <p className="mt-0.5 text-xs text-slate-400">
-                    Akses penuh fitur Starter UMKM selama {TRIAL_DURATION_DAYS} hari di Web &amp;
-                    Android. Fitur Pro/Enterprise tersedia dalam mode pratinjau hingga License Key diaktifkan.
+                    Starter UMKM gratis selamanya (wajib daftar), atau pilih Trial {TRIAL_DURATION_DAYS} Hari Growth Pro / 7 Hari Enterprise AI di Web &amp; Android APK (mendukung Login Biometrik Sidik Jari/Face ID).
                   </p>
                 </div>
 
@@ -922,6 +962,26 @@ export function CommercialAuthGate({
                   <ArrowRight className="h-4 w-4" />
                 </button>
 
+                {/* Biometric Login (Fingerprint / Face ID) */}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void handleBiometricSignIn()}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-xs font-extrabold text-cyan-200 transition hover:bg-cyan-500/20 disabled:opacity-60"
+                >
+                  <Fingerprint className="h-4 w-4 text-cyan-300" />
+                  {enrolledBiometric
+                    ? `Masuk Cepat Sidik Jari / Face ID (${enrolledBiometric.displayName})`
+                    : biometricCap?.available
+                      ? `Masuk dengan ${biometricCap.label}`
+                      : "Masuk dengan Sidik Jari / Face Recognition"}
+                </button>
+                <p className="text-center text-[10px] text-slate-400">
+                  {enrolledBiometric
+                    ? `Biometrik aktif untuk ${enrolledBiometric.email} · 1 sentuhan tanpa ketik sandi`
+                    : "Tips HP: Setelah login pertama, aktifkan Login Biometrik (Sidik Jari / Face ID) di menu Pengaturan."}
+                </p>
+
                 <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-center text-xs text-slate-400">
                   Belum punya akun?{" "}
                   <button
@@ -932,7 +992,7 @@ export function CommercialAuthGate({
                     }}
                     className="font-bold text-emerald-400 hover:underline"
                   >
-                    Daftar Trial {TRIAL_DURATION_DAYS} Hari Gratis →
+                    Daftar Starter UMKM Gratis Selamanya →
                   </button>
                 </div>
               </form>

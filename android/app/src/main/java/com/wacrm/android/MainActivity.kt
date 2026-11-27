@@ -50,7 +50,10 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
+import android.webkit.PermissionRequest
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import java.util.UUID
@@ -63,6 +66,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var offlineContainer: LinearLayout
 
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var pendingWebPermissionRequest: PermissionRequest? = null
     private var printWebView: WebView? = null
     private var pendingBluetoothPrint: Pair<String, String>? = null
     private var pendingUsbPrint: Pair<ByteArray, String>? = null
@@ -109,6 +113,15 @@ class MainActivity : AppCompatActivity() {
                         null
                     )
                 }
+            }
+        }
+
+    private val cameraPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val req = pendingWebPermissionRequest
+            pendingWebPermissionRequest = null
+            if (req != null) {
+                if (granted) req.grant(req.resources) else req.deny()
             }
         }
 
@@ -247,6 +260,22 @@ class MainActivity : AppCompatActivity() {
                 } catch (_: Exception) {
                     this@MainActivity.filePathCallback = null
                     false
+                }
+            }
+
+            override fun onPermissionRequest(request: PermissionRequest?) {
+                if (request == null) return
+                val originUrl = request.origin?.toString() ?: ""
+                if (originUrl.isNotEmpty() && !UrlValidator.isSameOriginHost(originUrl, getBaseUrl())) {
+                    request.deny()
+                    return
+                }
+                val wantsCamera = request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE)
+                if (wantsCamera && ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    pendingWebPermissionRequest = request
+                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                } else {
+                    request.grant(request.resources)
                 }
             }
         }
@@ -679,6 +708,55 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             // ignore
         }
+    }
+
+    fun isBiometricAuthAvailable(): Boolean {
+        val manager = BiometricManager.from(this)
+        val status = manager.canAuthenticate(
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                BiometricManager.Authenticators.BIOMETRIC_WEAK
+        )
+        return status == BiometricManager.BIOMETRIC_SUCCESS
+    }
+
+    fun showBiometricLoginPrompt(title: String, subtitle: String) {
+        val executor = ContextCompat.getMainExecutor(this)
+        val callback = object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                webView.evaluateJavascript(
+                    "window.__wacrmBiometricResult && window.__wacrmBiometricResult(true, 'verified');",
+                    null
+                )
+            }
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                val quoted = JSONObject.quote(errString.toString())
+                webView.evaluateJavascript(
+                    "window.__wacrmBiometricResult && window.__wacrmBiometricResult(false, $quoted);",
+                    null
+                )
+            }
+
+            override fun onAuthenticationFailed() {
+                Toast.makeText(
+                    this@MainActivity,
+                    "Sidik jari atau wajah tidak cocok. Silakan coba lagi.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+
+        val prompt = BiometricPrompt(this, executor, callback)
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle(title)
+            .setSubtitle(subtitle)
+            .setAllowedAuthenticators(
+                BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                    BiometricManager.Authenticators.BIOMETRIC_WEAK
+            )
+            .setNegativeButtonText("Gunakan Kata Sandi")
+            .build()
+        prompt.authenticate(info)
     }
 
     fun startVoiceRecognition(lang: String) {
