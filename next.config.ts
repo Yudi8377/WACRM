@@ -5,6 +5,7 @@ const isProd = process.env.NODE_ENV === "production";
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  allowedDevOrigins: ["*.e2b.app", "localhost", "127.0.0.1"],
   images: {
     unoptimized: true,
   },

@@ -1,0 +1,29 @@
+{
+  "name": "wacrm-publisher-hq",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone Publisher Super Admin Enterprise Management System (License Management, Master Data, Publisher ERP, B2B CRM, Complete PSAK Accounting) owned by PT WACRM Digital Nusantara.",
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0 -p 3001",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0 -p 3001",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "lucide-react": "^1.81.0",
+    "next": "^16.3.5",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.5",
+    "@types/node": "^22.18.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

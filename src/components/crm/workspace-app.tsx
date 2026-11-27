@@ -8,7 +8,6 @@ import {
   Bot,
   Boxes,
   CloudCheck,
-  Crown,
   Database,
   FileText,
   Inbox,
@@ -25,7 +24,6 @@ import {
 import type { AppEditionId, ContactRecord, StoreBusinessProfile } from "@/lib/crm-types";
 import { getEditionById, loadTenantEdition, saveTenantEdition } from "@/lib/editions";
 import { loadStoreProfile, saveStoreProfile } from "@/lib/store-profile";
-import { buildCurrentTenantTelemetry } from "@/lib/super-admin";
 import type { WorkspaceAdapter, WorkspaceSnapshot } from "@/lib/workspace-adapter";
 import { notifyAndroid } from "@/components/pwa-register";
 import { AiAgentsView } from "@/components/ai-agents-view";
@@ -36,7 +34,6 @@ import { AccountingView } from "@/components/accounting-view";
 import { MasterDataView } from "@/components/master-data-view";
 import { SeoGrowthView } from "@/components/seo-growth-view";
 import { EditionsView } from "@/components/editions-view";
-import { SuperAdminView } from "@/components/super-admin-view";
 import { InboxView } from "./inbox-view";
 import { ContactsView } from "./contacts-view";
 import { ChannelsView } from "./channels-view";
@@ -57,7 +54,6 @@ type TabId =
   | "templates"
   | "analytics"
   | "editions"
-  | "super_admin"
   | "settings";
 
 const NAV_ITEMS: Array<{
@@ -78,8 +74,7 @@ const NAV_ITEMS: Array<{
   { id: "channels", label: "Kanal Omnichannel", shortLabel: "Kanal", icon: Link2, group: "crm" },
   { id: "templates", label: "Template & Cepat", shortLabel: "Template", icon: FileText, group: "crm" },
   { id: "analytics", label: "Analitik & Audit", shortLabel: "Analitik", icon: BarChart3, group: "crm" },
-  { id: "editions", label: "Edisi & Paket", shortLabel: "Edisi", icon: Layers, group: "platform" },
-  { id: "super_admin", label: "Super Admin", shortLabel: "S.Admin", icon: Crown, group: "platform" },
+  { id: "editions", label: "Edisi & Lisensi", shortLabel: "Lisensi", icon: Layers, group: "platform" },
   { id: "settings", label: "Pengaturan", shortLabel: "Atur", icon: Settings, group: "platform" },
 ];
 
@@ -177,16 +172,6 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
   }
 
   const activeEdition = useMemo(() => getEditionById(editionId), [editionId]);
-
-  const currentTenantTelemetry = useMemo(() => {
-    if (!snapshot) return null;
-    return buildCurrentTenantTelemetry({
-      tenantId: adapter.tenantId,
-      snapshot,
-      storeProfile,
-      editionId,
-    });
-  }, [adapter.tenantId, editionId, snapshot, storeProfile]);
 
   async function handleStartChat(contact: ContactRecord) {
     try {
@@ -429,7 +414,7 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
           <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs">
             <p className="font-bold text-emerald-900">{storeProfile.businessName}</p>
             <p className="mt-1 text-[11px] leading-relaxed text-emerald-800/80">
-              v4.0: 9 Agen AI + SEO Omnichannel, Cetak Universal (USB-C/Micro-USB/Inkjet/LaserJet/EDC), Multi-Edition &amp; Super Admin aktif.
+              v4.1: 9 Agen AI + AI Template /slash, Cetak Universal (USB-C/Micro-USB/Inkjet/LaserJet/EDC), Katalog SEO &amp; Lisensi Terverifikasi.
             </p>
           </div>
         </nav>
@@ -506,20 +491,13 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
               {tab === "editions" && (
                 <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
                   <EditionsView
+                    tenantId={adapter.tenantId}
+                    workspaceName={storeProfile.businessName || snapshot.workspaceName}
                     currentEditionId={editionId}
                     activeAgentsCount={activeAiCount}
                     productsCount={snapshot.products.length}
                     channelsCount={snapshot.channels.length}
                     onSelectEdition={handleSelectEdition}
-                  />
-                </div>
-              )}
-              {tab === "super_admin" && (
-                <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
-                  <SuperAdminView
-                    currentTenantTelemetry={currentTenantTelemetry}
-                    liveApiMode={adapter.mode === "neon"}
-                    onSyncCurrentEdition={handleSelectEdition}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
                 </div>
@@ -585,6 +563,8 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
                   adapter={adapter}
                   quickReplies={snapshot.quickReplies}
                   templates={snapshot.templates}
+                  storeProfile={storeProfile}
+                  products={snapshot.products}
                   onRefresh={refresh}
                   onToast={showToast}
                 />

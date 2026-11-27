@@ -1,6 +1,18 @@
 "use client";
 
-import { Check, Crown, Layers, Lock, ShieldCheck, Sparkles, Zap } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import {
+  Building2,
+  Check,
+  Crown,
+  KeyRound,
+  Layers,
+  Lock,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  Zap,
+} from "lucide-react";
 import { formatIdr, type AppEditionId } from "@/lib/crm-types";
 import {
   APP_EDITIONS,
@@ -8,13 +20,23 @@ import {
   getEditionById,
   type EditionFeatureKey,
 } from "@/lib/editions";
+import {
+  clearStoredClientLicense,
+  loadStoredClientLicense,
+  saveStoredClientLicense,
+  type StoredClientLicense,
+  type VerifiedLicensePayload,
+} from "@/lib/license-crypto";
 
 interface EditionsViewProps {
+  tenantId: string;
+  workspaceName: string;
   currentEditionId: AppEditionId;
   activeAgentsCount: number;
   productsCount: number;
   channelsCount: number;
   onSelectEdition: (editionId: AppEditionId) => void;
+  onToast?: (msg: string, tone?: "success" | "error") => void;
 }
 
 const ALL_FEATURES = Object.keys(EDITION_FEATURE_LABELS) as EditionFeatureKey[];
@@ -24,13 +46,84 @@ function formatLimit(val: number, unit: string): string {
 }
 
 export function EditionsView({
+  tenantId,
+  workspaceName,
   currentEditionId,
   activeAgentsCount,
   productsCount,
   channelsCount,
   onSelectEdition,
+  onToast,
 }: EditionsViewProps) {
   const activeEdition = getEditionById(currentEditionId);
+  const [storedLicense, setStoredLicense] = useState<StoredClientLicense | null>(() =>
+    loadStoredClientLicense(tenantId),
+  );
+  const [licenseInput, setLicenseInput] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [verifyFeedback, setVerifyFeedback] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
+
+  async function handleActivateLicense(e: FormEvent) {
+    e.preventDefault();
+    if (!licenseInput.trim()) return;
+    setVerifying(true);
+    setVerifyFeedback(null);
+
+    try {
+      const res = await fetch("/api/license/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          licenseKey: licenseInput.trim(),
+          tenantId,
+          domain: typeof window !== "undefined" ? window.location.host : "localhost",
+        }),
+      });
+      const data = (await res.json()) as VerifiedLicensePayload;
+
+      if (!data.valid || !data.editionId || !data.expiresAt || !data.maxSeats) {
+        const msg = data.error || "License Key tidak valid atau sudah kedaluwarsa.";
+        setVerifyFeedback({ ok: false, message: msg });
+        onToast?.(msg, "error");
+        return;
+      }
+
+      const nextLicense: StoredClientLicense = {
+        licenseKey: data.normalizedKey,
+        editionId: data.editionId,
+        maxSeats: data.maxSeats,
+        expiresAt: data.expiresAt,
+        activatedAt: new Date().toISOString().slice(0, 10),
+        licensedTo: workspaceName,
+        verificationMode: data.verificationMode,
+        status: "active",
+      };
+
+      saveStoredClientLicense(tenantId, nextLicense);
+      setStoredLicense(nextLicense);
+      onSelectEdition(data.editionId);
+      setLicenseInput("");
+      const okMsg = `Lisensi resmi ${data.editionName} aktif (${data.isUnlimitedSeats ? "Unlimited" : data.maxSeats} kursi, berlaku hingga ${data.expiresAt}).`;
+      setVerifyFeedback({ ok: true, message: okMsg });
+      onToast?.(okMsg, "success");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Gagal memverifikasi License Key.";
+      setVerifyFeedback({ ok: false, message: msg });
+      onToast?.(msg, "error");
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  function handleClearLicense() {
+    clearStoredClientLicense(tenantId);
+    setStoredLicense(null);
+    setVerifyFeedback(null);
+    onToast?.("Ikatan License Key lokal dilepas dari browser ini.");
+  }
 
   return (
     <div className="space-y-5 p-4 md:p-6">
@@ -39,13 +132,15 @@ export function EditionsView({
         <div>
           <div className="inline-flex items-center gap-2 rounded-full bg-indigo-500/15 px-3 py-1 text-xs font-semibold text-indigo-300">
             <Layers className="h-3.5 w-3.5" />
-            WACRM v4.0 Multi-Edition Architecture · 4 Tingkat Versi Produk
+            WACRM Multi-Edition &amp; Aktivasi Lisensi Resmi Penerbit
           </div>
           <h2 className="mt-2 text-xl font-bold text-white">
-            Edisi &amp; Paket Berjenjang — Dari Starter UMKM hingga Sovereign Corporate
+            Edisi, Kuota &amp; Aktivasi License Key WACRM
           </h2>
           <p className="mt-1 max-w-2xl text-xs text-slate-300">
-            Setiap edisi mengatur kapasitas agen, batas kontak &amp; cabang, jumlah Agen AI Otonom, Studio Cetak Universal, SEO Omnichannel AI, White-Label penuh, hingga Super Admin &amp; Dedicated Cluster.
+            Aktifkan License Key resmi yang diterbitkan dari aplikasi terpisah{" "}
+            <strong className="text-indigo-200">WACRM Publisher HQ (Super Admin EMS)</strong> milik
+            PT WACRM Digital Nusantara untuk membuka kuota agen, modul AI, dan SLA Enterprise.
           </p>
         </div>
 
@@ -60,6 +155,90 @@ export function EditionsView({
               : `${formatIdr(activeEdition.monthlyPriceIdr)} / bulan`}
           </div>
         </div>
+      </div>
+
+      {/* LICENSE ACTIVATION BRIDGE TO SEPARATE PUBLISHER HQ APP */}
+      <div className="rounded-2xl border border-emerald-500/30 bg-slate-900/95 p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+              <KeyRound className="h-4 w-4" /> Aktivasi License Key dari WACRM Publisher HQ
+            </div>
+            <p className="max-w-2xl text-xs text-slate-300">
+              Manajemen lisensi, billing penerbit, ERP, CRM B2B, dan akuntansi perusahaan penerbit
+              berjalan pada aplikasi terpisah <strong>WACRM Publisher HQ</strong>. Tempelkan License
+              Key bertanda tangan kriptografi dari Publisher HQ di bawah ini untuk mengaktifkan
+              edisi workspace Anda secara instan.
+            </p>
+          </div>
+
+          {storedLicense ? (
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-500/40 bg-emerald-950/40 px-4 py-3 text-xs">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-emerald-300">
+                  Lisensi Terverifikasi ({storedLicense.verificationMode === "publisher_live" ? "Live API" : "Signed Offline"})
+                </div>
+                <div className="font-mono text-sm font-bold text-white">
+                  {storedLicense.licenseKey}
+                </div>
+                <div className="text-[11px] text-slate-300">
+                  Kuota:{" "}
+                  <strong>
+                    {storedLicense.maxSeats >= 9999 ? "Unlimited" : `${storedLicense.maxSeats} kursi`}
+                  </strong>{" "}
+                  · Berlaku s/d <strong>{storedLicense.expiresAt}</strong>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleClearLicense}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-slate-800"
+              >
+                Lepas Key
+              </button>
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-xs text-slate-400">
+              <Building2 className="h-4 w-4 text-indigo-400" />
+              Belum ada License Key terikat (Mode Evaluasi / Lokal)
+            </div>
+          )}
+        </div>
+
+        <form onSubmit={handleActivateLicense} className="mt-4 flex flex-col gap-2.5 sm:flex-row">
+          <input
+            type="text"
+            value={licenseInput}
+            onChange={(e) => setLicenseInput(e.target.value.toUpperCase())}
+            placeholder="Tempel License Key resmi (contoh: WACRM-ENT-2711-0050-XXXXXXXX)"
+            className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 font-mono text-xs text-white placeholder:text-slate-500 focus:border-emerald-400 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={verifying || !licenseInput.trim()}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            {verifying ? "Memverifikasi..." : "Verifikasi & Aktifkan Lisensi"}
+          </button>
+        </form>
+
+        {verifyFeedback && (
+          <div
+            className={`mt-3 flex items-center gap-2 rounded-xl border px-3.5 py-2.5 text-xs ${
+              verifyFeedback.ok
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                : "border-red-500/40 bg-red-500/10 text-red-200"
+            }`}
+          >
+            {verifyFeedback.ok ? (
+              <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-400" />
+            ) : (
+              <ShieldAlert className="h-4 w-4 shrink-0 text-red-400" />
+            )}
+            <span>{verifyFeedback.message}</span>
+          </div>
+        )}
       </div>
 
       {/* Live Quota Meters */}
@@ -97,7 +276,8 @@ export function EditionsView({
           <div className="flex justify-between text-slate-400">
             <span>Kanal Omnichannel</span>
             <strong className="text-white">
-              {channelsCount} / {activeEdition.limits.maxChannels < 0 ? "∞" : activeEdition.limits.maxChannels}
+              {channelsCount} /{" "}
+              {activeEdition.limits.maxChannels < 0 ? "∞" : activeEdition.limits.maxChannels}
             </strong>
           </div>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
@@ -198,7 +378,7 @@ export function EditionsView({
                   </>
                 ) : (
                   <>
-                    <Zap className="h-4 w-4" /> Aktifkan {ed.name}
+                    <Zap className="h-4 w-4" /> Pratinjau {ed.name}
                   </>
                 )}
               </button>
@@ -210,7 +390,7 @@ export function EditionsView({
       {/* Feature Comparison Matrix */}
       <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/90 p-5">
         <h3 className="text-sm font-bold text-white">
-          Matriks Perbandingan Fitur Antar Edisi WACRM v4.0
+          Matriks Perbandingan Fitur Antar Edisi WACRM
         </h3>
         <table className="mt-3 w-full min-w-[640px] text-left text-xs">
           <thead>
