@@ -403,6 +403,18 @@ export interface MasterCategoryRecord {
   id: string;
   name: string;
   description: string;
+  /** Kode prefix 2–5 huruf untuk Auto-Generate SKU & QR Barang Datang (contoh: GRO, MNM, SKC) */
+  groupCode?: string;
+  /** Lokasi rak gudang FIFO default (contoh: Rak A-1, Rak Cold-1) */
+  defaultRack?: string;
+  /** Satuan default untuk kelompok barang ini (contoh: pcs, pack, karton, kg) */
+  defaultUnit?: string;
+  /** Masa simpan default dalam hari untuk perhitungan Expired Date FIFO (0 = non-expired) */
+  defaultShelfLifeDays?: number;
+  /** Wajib pelacakan kadaluwarsa FIFO / FEFO Anti-Basi */
+  requiresExpiry?: boolean;
+  /** Warna lencana kelompok barang (hex) */
+  badgeColorHex?: string;
 }
 
 export interface MasterUnitRecord {

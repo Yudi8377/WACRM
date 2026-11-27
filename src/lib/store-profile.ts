@@ -149,13 +149,161 @@ export function saveStoreProfile(tenantId: string, profile: StoreBusinessProfile
   return profile;
 }
 
+const GROUP_BADGE_PALETTE = [
+  "#10b981", // emerald
+  "#06b6d4", // cyan
+  "#8b5cf6", // violet
+  "#f59e0b", // amber
+  "#ec4899", // pink
+  "#3b82f6", // blue
+  "#14b8a6", // teal
+];
+
+/**
+ * Menghasilkan kode prefix 3 huruf kapital dari nama Kelompok Barang (misal: "Minuman & Kopi" -> "MNM").
+ */
+export function deriveGroupCode(name: string, explicitCode?: string): string {
+  const manual = (explicitCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5);
+  if (manual.length >= 2) return manual;
+  const words = name
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length >= 3) {
+    return `${words[0][0]}${words[1][0]}${words[2][0]}`;
+  }
+  if (words.length === 2) {
+    return `${words[0].slice(0, 2)}${words[1][0]}`.slice(0, 3);
+  }
+  const single = words[0] ?? "BRG";
+  if (single.length <= 3) return single.padEnd(3, "X");
+  const consonants = single.slice(1).replace(/[AEIOU]/g, "");
+  return `${single[0]}${consonants.slice(0, 2)}`.padEnd(3, single[1] ?? "X").slice(0, 3);
+}
+
+export interface NormalizedProductGroup extends MasterCategoryRecord {
+  groupCode: string;
+  defaultRack: string;
+  defaultUnit: string;
+  defaultShelfLifeDays: number;
+  requiresExpiry: boolean;
+  badgeColorHex: string;
+}
+
+export function normalizeProductGroup(
+  cat: MasterCategoryRecord,
+  index = 0,
+): NormalizedProductGroup {
+  const requiresExpiry =
+    typeof cat.requiresExpiry === "boolean"
+      ? cat.requiresExpiry
+      : (cat.defaultShelfLifeDays ?? 0) > 0;
+  const shelfLife =
+    typeof cat.defaultShelfLifeDays === "number" && Number.isFinite(cat.defaultShelfLifeDays)
+      ? Math.max(0, Math.round(cat.defaultShelfLifeDays))
+      : requiresExpiry
+        ? 90
+        : 0;
+  return {
+    ...cat,
+    groupCode: deriveGroupCode(cat.name, cat.groupCode),
+    defaultRack: cat.defaultRack?.trim() || `Rak ${String.fromCharCode(65 + (index % 6))}-1`,
+    defaultUnit: cat.defaultUnit?.trim() || "pcs",
+    defaultShelfLifeDays: shelfLife,
+    requiresExpiry,
+    badgeColorHex: cat.badgeColorHex?.trim() || GROUP_BADGE_PALETTE[index % GROUP_BADGE_PALETTE.length],
+  };
+}
+
+function hydrateCategoryDefaults(
+  saved: MasterCategoryRecord[],
+  defaults: MasterCategoryRecord[],
+): NormalizedProductGroup[] {
+  return saved.map((cat, idx) => {
+    const match = defaults.find(
+      (d) => d.id === cat.id || d.name.toLowerCase() === cat.name.toLowerCase(),
+    );
+    return normalizeProductGroup(
+      {
+        ...match,
+        ...cat,
+        groupCode: cat.groupCode || match?.groupCode,
+        defaultRack: cat.defaultRack || match?.defaultRack,
+        defaultUnit: cat.defaultUnit || match?.defaultUnit,
+        defaultShelfLifeDays:
+          typeof cat.defaultShelfLifeDays === "number"
+            ? cat.defaultShelfLifeDays
+            : match?.defaultShelfLifeDays,
+        requiresExpiry:
+          typeof cat.requiresExpiry === "boolean"
+            ? cat.requiresExpiry
+            : match?.requiresExpiry,
+        badgeColorHex: cat.badgeColorHex || match?.badgeColorHex,
+      },
+      idx,
+    );
+  });
+}
+
 export function getDefaultMasterData(): LocalMasterDataState {
   return {
     categories: [
-      { id: "cat-1", name: "Grosir", description: "Paket sembako & grosir untuk reseller/toko" },
-      { id: "cat-2", name: "Minuman", description: "Kopi specialty, matcha, dan bahan minuman kafe" },
-      { id: "cat-3", name: "Merchandise", description: "Tumbler, kemasan, dan perlengkapan branding" },
-      { id: "cat-4", name: "Perangkat POS", description: "Printer thermal, kertas struk, dan paket kasir" },
+      {
+        id: "cat-1",
+        name: "Grosir",
+        description: "Paket sembako & grosir untuk reseller/toko",
+        groupCode: "GRO",
+        defaultRack: "Rak A-1",
+        defaultUnit: "karton",
+        defaultShelfLifeDays: 180,
+        requiresExpiry: true,
+        badgeColorHex: "#10b981",
+      },
+      {
+        id: "cat-2",
+        name: "Minuman",
+        description: "Kopi specialty, matcha, dan bahan minuman kafe",
+        groupCode: "MNM",
+        defaultRack: "Rak B-1",
+        defaultUnit: "pack",
+        defaultShelfLifeDays: 90,
+        requiresExpiry: true,
+        badgeColorHex: "#06b6d4",
+      },
+      {
+        id: "cat-3",
+        name: "Skincare & Herbal",
+        description: "Produk perawatan, herbal, dan kosmetik dengan kontrol expired FEFO",
+        groupCode: "SKC",
+        defaultRack: "Rak C-1",
+        defaultUnit: "pcs",
+        defaultShelfLifeDays: 365,
+        requiresExpiry: true,
+        badgeColorHex: "#ec4899",
+      },
+      {
+        id: "cat-4",
+        name: "Merchandise",
+        description: "Tumbler, kemasan, dan perlengkapan branding",
+        groupCode: "MRC",
+        defaultRack: "Rak D-1",
+        defaultUnit: "pcs",
+        defaultShelfLifeDays: 0,
+        requiresExpiry: false,
+        badgeColorHex: "#8b5cf6",
+      },
+      {
+        id: "cat-5",
+        name: "Perangkat POS",
+        description: "Printer thermal, kertas struk, dan paket kasir",
+        groupCode: "POS",
+        defaultRack: "Rak E-1",
+        defaultUnit: "unit",
+        defaultShelfLifeDays: 0,
+        requiresExpiry: false,
+        badgeColorHex: "#f59e0b",
+      },
     ],
     units: [
       { id: "u-1", code: "pcs", name: "Pieces / Buah" },
@@ -440,7 +588,9 @@ export function loadLocalMasterData(tenantId: string): LocalMasterDataState {
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as Partial<LocalMasterDataState>;
     return {
-      categories: parsed.categories ?? fallback.categories,
+      categories: parsed.categories
+        ? hydrateCategoryDefaults(parsed.categories, fallback.categories)
+        : fallback.categories,
       units: parsed.units ?? fallback.units,
       couriers: parsed.couriers
         ? hydrateCourierDefaults(parsed.couriers, fallback.couriers)

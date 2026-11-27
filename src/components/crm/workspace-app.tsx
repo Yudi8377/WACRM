@@ -935,6 +935,17 @@ export function WorkspaceApp({
                     contacts={snapshot.contacts}
                     onRefresh={refresh}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
+                    onOpenQrGenerator={() => {
+                      if (editionHasFeature(editionId, "qr_camera_fifo_scanner")) {
+                        setTab("qr_scanner");
+                      } else {
+                        setTab("editions");
+                        showToast(
+                          "Aktifkan Uji Coba Gratis Pro 14 Hari untuk menggunakan Generator & Scanner QR Barang Datang.",
+                          "error",
+                        );
+                      }
+                    }}
                   />
                 </div>
               )}
@@ -1025,8 +1036,16 @@ export function WorkspaceApp({
                     suppliers={snapshot.suppliers}
                     orders={snapshot.orders}
                     storeProfile={storeProfile}
-                    onAdjustProductStock={async (productId, newStockQty) => {
-                      await adapter.updateProduct(productId, { stockQty: newStockQty });
+                    onCreateProduct={async (input) => {
+                      const created = await adapter.createProduct(input);
+                      await refresh();
+                      return created;
+                    }}
+                    onAdjustProductStock={async (productId, newStockQty, note) => {
+                      await adapter.updateProduct(productId, {
+                        stockQty: newStockQty,
+                        stockReason: note,
+                      });
                       await refresh();
                     }}
                     onRecordAccountingEntry={async (entry) => {
@@ -1047,6 +1066,7 @@ export function WorkspaceApp({
                       }
                     }}
                     onOpenPosWithSku={() => setTab("pos")}
+                    onOpenMasterData={() => setTab("master")}
                     onNotify={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
                 </div>

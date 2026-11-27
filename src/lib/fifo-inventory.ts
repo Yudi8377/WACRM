@@ -1,4 +1,10 @@
-import { formatIdr, type ErpProductRecord } from "@/lib/crm-types";
+import {
+  formatIdr,
+  type ErpProductRecord,
+  type MasterCategoryRecord,
+  type StoreBusinessProfile,
+} from "@/lib/crm-types";
+import { normalizeProductGroup, type NormalizedProductGroup } from "@/lib/store-profile";
 
 export type ExpiryHealthStatus =
   | "expired"
@@ -39,13 +45,54 @@ export interface FifoScanAuditLog {
 }
 
 export interface ParsedQrPayload {
-  kind: "batch_item" | "invoice_shipment" | "sku_or_barcode";
+  kind: "arrival_label" | "batch_item" | "invoice_shipment" | "sku_or_barcode";
+  arrivalId?: string;
+  groupCode?: string;
   sku?: string;
   batchCode?: string;
   expiryDate?: string | null;
   unitCostIdr?: number;
+  qty?: number;
   invoiceNumber?: string;
   raw: string;
+}
+
+export type ArrivalQrLabelStatus =
+  | "generated_ready"
+  | "printed_waiting_scan"
+  | "scanned_synced";
+
+export type StickerPaperLayout = "thermal58" | "thermal80" | "a4_grid";
+
+export interface ArrivalQrLabelRecord {
+  id: string;
+  qrPayload: string;
+  groupId: string;
+  groupCode: string;
+  groupName: string;
+  badgeColorHex: string;
+  sku: string;
+  productName: string;
+  isNewMasterProduct: boolean;
+  existingProductId?: string | null;
+  unit: string;
+  qty: number;
+  costPrice: number;
+  unitPrice: number;
+  minStock: number;
+  batchCode: string;
+  expiryDate: string | null;
+  rackLocation: string;
+  supplierName: string;
+  stickerCopies: number;
+  notes?: string;
+  status: ArrivalQrLabelStatus;
+  createdAt: string;
+  printedAt?: string | null;
+  scannedAt?: string | null;
+  syncedProductId?: string | null;
+  syncedBatchId?: string | null;
+  accountingSynced?: boolean;
 }
 
 export interface FifoPickAllocation {
@@ -127,6 +174,28 @@ export const QR_SCANNER_SCENARIOS: QrScannerScenarioInfo[] = [
   },
 ];
 
+export function encodeArrivalQrPayload(params: {
+  arrivalId: string;
+  groupCode: string;
+  sku: string;
+  batchCode: string;
+  expiryDate?: string | null;
+  qty?: number;
+  unitCostIdr?: number;
+}): string {
+  const parts = [
+    "WACRM-IN",
+    `ID:${params.arrivalId.trim().toUpperCase()}`,
+    `GRP:${params.groupCode.trim().toUpperCase()}`,
+    `SKU:${params.sku.trim().toUpperCase()}`,
+    `LOT:${params.batchCode.trim().toUpperCase()}`,
+  ];
+  if (params.expiryDate) parts.push(`EXP:${params.expiryDate}`);
+  if (params.qty && params.qty > 0) parts.push(`QTY:${Math.round(params.qty)}`);
+  if (params.unitCostIdr && params.unitCostIdr > 0) parts.push(`HPP:${Math.round(params.unitCostIdr)}`);
+  return parts.join("|");
+}
+
 export function encodeBatchQrPayload(params: {
   sku: string;
   batchCode: string;
@@ -143,6 +212,46 @@ export function parseScannedQrCode(rawCode: string): ParsedQrPayload {
   const clean = rawCode.trim();
   if (!clean) {
     return { kind: "sku_or_barcode", raw: "" };
+  }
+
+  if (clean.toUpperCase().startsWith("WACRM-IN|")) {
+    const tokens = clean.split("|");
+    let arrivalId: string | undefined;
+    let groupCode: string | undefined;
+    let sku: string | undefined;
+    let batchCode: string | undefined;
+    let expiryDate: string | null = null;
+    let qty: number | undefined;
+    let unitCostIdr: number | undefined;
+    for (const token of tokens.slice(1)) {
+      const [k, ...rest] = token.split(":");
+      const val = rest.join(":").trim();
+      const key = k.toUpperCase();
+      if (key === "ID") arrivalId = val.toUpperCase();
+      if (key === "GRP") groupCode = val.toUpperCase();
+      if (key === "SKU") sku = val.toUpperCase();
+      if (key === "LOT") batchCode = val.toUpperCase();
+      if (key === "EXP") expiryDate = val || null;
+      if (key === "QTY") {
+        const parsed = Number(val);
+        if (Number.isFinite(parsed) && parsed > 0) qty = Math.round(parsed);
+      }
+      if (key === "HPP") {
+        const parsed = Number(val);
+        if (Number.isFinite(parsed) && parsed > 0) unitCostIdr = Math.round(parsed);
+      }
+    }
+    return {
+      kind: "arrival_label",
+      arrivalId,
+      groupCode,
+      sku,
+      batchCode,
+      expiryDate,
+      qty,
+      unitCostIdr,
+      raw: clean,
+    };
   }
 
   if (clean.toUpperCase().startsWith("WACRM-ITEM|")) {
@@ -491,3 +600,341 @@ export function saveFifoScanLogs(tenantId: string, logs: FifoScanAuditLog[]): vo
     // ignore
   }
 }
+
+// =============================================================================
+// Arrival QR Label Generator & Registry (Master Kelompok Barang -> Cetak -> Scan)
+// =============================================================================
+
+function arrivalLabelsStorageKey(tenantId: string): string {
+  return `wacrm_arrival_qr_labels_v5_${tenantId}`;
+}
+
+export function loadArrivalQrLabels(tenantId: string): ArrivalQrLabelRecord[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(arrivalLabelsStorageKey(tenantId));
+    if (raw) {
+      const parsed = JSON.parse(raw) as ArrivalQrLabelRecord[];
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+export function saveArrivalQrLabels(tenantId: string, labels: ArrivalQrLabelRecord[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(arrivalLabelsStorageKey(tenantId), JSON.stringify(labels.slice(0, 200)));
+  } catch {
+    // ignore
+  }
+}
+
+function formatDateYymm(now: Date): string {
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  return `${yy}${mm}`;
+}
+
+function formatDateYymmdd(now: Date): string {
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `${formatDateYymm(now)}${dd}`;
+}
+
+function addDaysToIsoDate(now: Date, days: number): string {
+  const target = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+  return target.toISOString().slice(0, 10);
+}
+
+/**
+ * Auto-generate SKU unik berikutnya berdasarkan Kode Kelompok Barang (misal: MNM-2611-001).
+ */
+export function generateNextGroupSku(
+  group: MasterCategoryRecord,
+  existingProducts: ErpProductRecord[],
+  existingLabels: ArrivalQrLabelRecord[] = [],
+  now = new Date(),
+): string {
+  const norm = normalizeProductGroup(group);
+  const prefix = `${norm.groupCode}-${formatDateYymm(now)}-`;
+  const usedNumbers = new Set<number>();
+
+  const scanSku = (sku: string) => {
+    const upper = sku.trim().toUpperCase();
+    if (upper.startsWith(prefix)) {
+      const tail = Number(upper.slice(prefix.length));
+      if (Number.isFinite(tail) && tail > 0) usedNumbers.add(tail);
+    }
+  };
+
+  existingProducts.forEach((p) => scanSku(p.sku));
+  existingLabels.forEach((l) => scanSku(l.sku));
+
+  let seq = 1;
+  while (usedNumbers.has(seq)) seq += 1;
+  return `${prefix}${String(seq).padStart(3, "0")}`;
+}
+
+/**
+ * Auto-generate kode Batch FIFO & ID Stiker Barang Datang berikutnya.
+ */
+export function generateNextArrivalCodes(
+  group: MasterCategoryRecord,
+  existingBatches: FifoBatchRecord[],
+  existingLabels: ArrivalQrLabelRecord[],
+  now = new Date(),
+): {
+  group: NormalizedProductGroup;
+  arrivalId: string;
+  batchCode: string;
+  suggestedExpiryDate: string | null;
+} {
+  const norm = normalizeProductGroup(group);
+  const yymmdd = formatDateYymmdd(now);
+  const idPrefix = `RCV-${norm.groupCode}-${yymmdd}-`;
+  const lotPrefix = `LOT-${norm.groupCode}-${yymmdd}-`;
+
+  const usedSeq = new Set<number>();
+  for (const label of existingLabels) {
+    if (label.id.toUpperCase().startsWith(idPrefix)) {
+      const n = Number(label.id.slice(idPrefix.length));
+      if (Number.isFinite(n) && n > 0) usedSeq.add(n);
+    }
+    if (label.batchCode.toUpperCase().startsWith(lotPrefix)) {
+      const n = Number(label.batchCode.slice(lotPrefix.length));
+      if (Number.isFinite(n) && n > 0) usedSeq.add(n);
+    }
+  }
+  for (const batch of existingBatches) {
+    if (batch.batchCode.toUpperCase().startsWith(lotPrefix)) {
+      const n = Number(batch.batchCode.slice(lotPrefix.length));
+      if (Number.isFinite(n) && n > 0) usedSeq.add(n);
+    }
+  }
+
+  let seq = 1;
+  while (usedSeq.has(seq)) seq += 1;
+  const seqStr = String(seq).padStart(2, "0");
+
+  return {
+    group: norm,
+    arrivalId: `${idPrefix}${seqStr}`,
+    batchCode: `${lotPrefix}${seqStr}`,
+    suggestedExpiryDate:
+      norm.requiresExpiry && norm.defaultShelfLifeDays > 0
+        ? addDaysToIsoDate(now, norm.defaultShelfLifeDays)
+        : null,
+  };
+}
+
+export interface CreateArrivalQrLabelInput {
+  group: MasterCategoryRecord;
+  productName: string;
+  sku?: string;
+  existingProduct?: ErpProductRecord | null;
+  unit?: string;
+  qty: number;
+  costPrice: number;
+  unitPrice: number;
+  minStock?: number;
+  batchCode?: string;
+  expiryDate?: string | null;
+  rackLocation?: string;
+  supplierName?: string;
+  stickerCopies?: number;
+  notes?: string;
+}
+
+export function createArrivalQrLabelRecord(
+  input: CreateArrivalQrLabelInput,
+  existingProducts: ErpProductRecord[],
+  existingBatches: FifoBatchRecord[],
+  existingLabels: ArrivalQrLabelRecord[],
+  now = new Date(),
+): ArrivalQrLabelRecord {
+  const auto = generateNextArrivalCodes(input.group, existingBatches, existingLabels, now);
+  const normGroup = auto.group;
+  const matchedExisting =
+    input.existingProduct ??
+    (input.sku
+      ? existingProducts.find((p) => p.sku.toUpperCase() === input.sku!.trim().toUpperCase()) ?? null
+      : null);
+
+  const sku = (
+    input.sku?.trim() ||
+    matchedExisting?.sku ||
+    generateNextGroupSku(normGroup, existingProducts, existingLabels, now)
+  ).toUpperCase();
+
+  const batchCode = (input.batchCode?.trim() || auto.batchCode).toUpperCase();
+  const expiryDate =
+    input.expiryDate !== undefined
+      ? (input.expiryDate?.trim() || null)
+      : auto.suggestedExpiryDate;
+  const qty = Math.max(1, Math.round(Number(input.qty) || 1));
+  const costPrice = Math.max(0, Math.round(Number(input.costPrice) || 0));
+  const unitPrice = Math.max(0, Math.round(Number(input.unitPrice) || 0));
+  const stickerCopies = Math.min(100, Math.max(1, Math.round(Number(input.stickerCopies) || 1)));
+
+  const qrPayload = encodeArrivalQrPayload({
+    arrivalId: auto.arrivalId,
+    groupCode: normGroup.groupCode,
+    sku,
+    batchCode,
+    expiryDate,
+    qty,
+    unitCostIdr: costPrice,
+  });
+
+  return {
+    id: auto.arrivalId,
+    qrPayload,
+    groupId: normGroup.id,
+    groupCode: normGroup.groupCode,
+    groupName: normGroup.name,
+    badgeColorHex: normGroup.badgeColorHex,
+    sku,
+    productName: input.productName.trim() || matchedExisting?.name || `Barang Baru ${sku}`,
+    isNewMasterProduct: !matchedExisting,
+    existingProductId: matchedExisting?.id ?? null,
+    unit: (input.unit?.trim() || matchedExisting?.unit || normGroup.defaultUnit || "pcs").toLowerCase(),
+    qty,
+    costPrice,
+    unitPrice,
+    minStock: Math.max(0, Math.round(Number(input.minStock) || matchedExisting?.minStock || 5)),
+    batchCode,
+    expiryDate,
+    rackLocation: input.rackLocation?.trim() || normGroup.defaultRack,
+    supplierName: input.supplierName?.trim() || "Supplier Utama",
+    stickerCopies,
+    notes: input.notes?.trim() || undefined,
+    status: "generated_ready",
+    createdAt: now.toISOString(),
+    printedAt: null,
+    scannedAt: null,
+    syncedProductId: null,
+    syncedBatchId: null,
+    accountingSynced: false,
+  };
+}
+
+function escapeStickerHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Menghasilkan dokumen HTML siap cetak (Thermal 58mm, Thermal 80mm, atau A4 Grid 21-Stiker)
+ * untuk ditempelkan ke fisik barang datang sebelum discan masuk ke Master & Sistem ERP/FIFO.
+ */
+export function renderArrivalQrStickersPrintHtml(params: {
+  labels: ArrivalQrLabelRecord[];
+  qrDataUrlById: Record<string, string>;
+  storeProfile: Pick<StoreBusinessProfile, "businessName" | "phone">;
+  layout: StickerPaperLayout;
+}): string {
+  const { labels, qrDataUrlById, storeProfile, layout } = params;
+  const expanded: Array<{ label: ArrivalQrLabelRecord; copyIndex: number; totalCopies: number }> = [];
+  for (const label of labels) {
+    const copies = Math.min(50, Math.max(1, label.stickerCopies || 1));
+    for (let i = 1; i <= copies; i += 1) {
+      expanded.push({ label, copyIndex: i, totalCopies: copies });
+    }
+  }
+
+  const pageCss =
+    layout === "thermal58"
+      ? `@page { size: 58mm auto; margin: 2mm; }
+         body { width: 54mm; margin: 0 auto; font-family: Arial, Helvetica, sans-serif; color: #0f172a; }
+         .sheet { display: flex; flex-direction: column; gap: 4mm; }
+         .sticker { border: 1px dashed #334155; border-radius: 6px; padding: 2.5mm; page-break-inside: avoid; break-inside: avoid; }
+         .qr-img { width: 26mm; height: 26mm; display: block; }`
+      : layout === "thermal80"
+        ? `@page { size: 80mm auto; margin: 3mm; }
+           body { width: 74mm; margin: 0 auto; font-family: Arial, Helvetica, sans-serif; color: #0f172a; }
+           .sheet { display: flex; flex-direction: column; gap: 4mm; }
+           .sticker { border: 1.5px solid #0f172a; border-radius: 8px; padding: 3mm; page-break-inside: avoid; break-inside: avoid; }
+           .qr-img { width: 30mm; height: 30mm; display: block; }`
+        : `@page { size: A4 portrait; margin: 8mm; }
+           body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #0f172a; }
+           .sheet { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+           .sticker { border: 1px dashed #475569; border-radius: 6px; padding: 3mm; page-break-inside: avoid; break-inside: avoid; }
+           .qr-img { width: 24mm; height: 24mm; display: block; }`;
+
+  const cardsHtml = expanded
+    .map(({ label, copyIndex, totalCopies }) => {
+      const qrSrc = qrDataUrlById[label.id] ?? "";
+      const safeName = escapeStickerHtml(label.productName);
+      const safeStore = escapeStickerHtml(storeProfile.businessName || "WACRM");
+      const safeGroup = escapeStickerHtml(`[${label.groupCode}] ${label.groupName}`);
+      const safeSku = escapeStickerHtml(label.sku);
+      const safeLot = escapeStickerHtml(label.batchCode);
+      const safeRack = escapeStickerHtml(label.rackLocation);
+      const safeExp = label.expiryDate ? escapeStickerHtml(label.expiryDate) : "NON-EXP";
+      const safePrice = escapeStickerHtml(formatIdr(label.unitPrice));
+      const safeId = escapeStickerHtml(label.id);
+      const safeColor = /^#[0-9a-fA-F]{6}$/.test(label.badgeColorHex) ? label.badgeColorHex : "#0f172a";
+
+      return `
+        <div class="sticker">
+          <div class="top-row">
+            <span class="store">${safeStore}</span>
+            <span class="grp-badge" style="background:${safeColor};">${safeGroup}</span>
+          </div>
+          <div class="body-row">
+            <div class="qr-box">
+              ${qrSrc ? `<img class="qr-img" src="${qrSrc}" alt="QR ${safeSku}" />` : `<div class="qr-fallback">${safeSku}</div>`}
+            </div>
+            <div class="meta">
+              <div class="prod-name">${safeName}</div>
+              <div class="sku">SKU: <strong>${safeSku}</strong></div>
+              <div class="line">LOT: ${safeLot}</div>
+              <div class="line">EXP: <strong>${safeExp}</strong></div>
+              <div class="line">RAK: ${safeRack} · QTY: ${label.qty} ${escapeStickerHtml(label.unit)}</div>
+              <div class="price">${safePrice}</div>
+            </div>
+          </div>
+          <div class="footer-row">
+            <span>${safeId}</span>
+            <span>Stiker ${copyIndex}/${totalCopies} · Scan Masuk Master</span>
+          </div>
+        </div>
+      `;
+    })
+    .join("\n");
+
+  return `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <title>Cetak Stiker QR Barang Datang — ${escapeStickerHtml(storeProfile.businessName)}</title>
+  <style>
+    * { box-sizing: border-box; }
+    ${pageCss}
+    .top-row { display: flex; justify-content: space-between; align-items: center; gap: 4px; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; margin-bottom: 4px; }
+    .store { font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .grp-badge { color: #ffffff; font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 99px; white-space: nowrap; }
+    .body-row { display: flex; align-items: center; gap: 6px; }
+    .qr-box { flex-shrink: 0; border: 1px solid #e2e8f0; border-radius: 4px; padding: 2px; background: #fff; }
+    .qr-fallback { width: 24mm; height: 24mm; display: flex; align-items: center; justify-content: center; font-size: 8px; text-align: center; }
+    .meta { flex: 1; min-width: 0; font-size: 8.5px; line-height: 1.3; }
+    .prod-name { font-size: 10px; font-weight: 800; color: #020617; margin-bottom: 2px; word-break: break-word; }
+    .sku { font-family: monospace; font-size: 9px; color: #0f172a; }
+    .line { color: #334155; font-size: 8px; }
+    .price { margin-top: 2px; font-size: 10px; font-weight: 800; color: #047857; }
+    .footer-row { display: flex; justify-content: space-between; margin-top: 4px; padding-top: 2px; border-top: 1px dotted #cbd5e1; font-size: 7px; color: #475569; font-family: monospace; }
+    @media print { .no-print { display: none !important; } }
+  </style>
+</head>
+<body>
+  <div class="sheet">${cardsHtml}</div>
+</body>
+</html>`;
+}
+
