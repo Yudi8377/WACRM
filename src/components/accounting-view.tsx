@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Bluetooth,
   BookOpenCheck,
+  Cable,
   CheckCircle2,
   Download,
   ShieldCheck,
@@ -12,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { CrudToolbar, PaginationBar } from "@/components/crud-toolbar";
+import { UniversalPrintPanel } from "@/components/universal-print-panel";
 import {
   formatIdr,
   type AccountingEntryRecord,
@@ -52,6 +54,7 @@ export function AccountingView({
   const [page, setPage] = useState(1);
   const [selectedEntryNumber, setSelectedEntryNumber] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [showPrintStudio, setShowPrintStudio] = useState(false);
 
   const [kind, setKind] = useState<"expense" | "income" | "capital">("expense");
   const [categoryName, setCategoryName] = useState("Operasional & Pengiriman");
@@ -167,8 +170,27 @@ export function AccountingView({
           <button type="button" onClick={handlePrintWifi} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400">
             <Wifi className="h-3.5 w-3.5" /> Cetak Laporan WiFi
           </button>
+          <button
+            type="button"
+            onClick={() => setShowPrintStudio((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-500/40 bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/25"
+          >
+            <Cable className="h-3.5 w-3.5" /> Cetak USB / Inkjet / EDC
+          </button>
         </div>
       </div>
+
+      {showPrintStudio && (
+        <UniversalPrintPanel
+          documentLabel="Laporan Keuangan Laba Rugi & Neraca"
+          jobTitle={`Laporan Keuangan - ${storeProfile.businessName}`}
+          filenameBase={`laporan-keuangan-${new Date().toISOString().slice(0, 10)}`}
+          defaultPaper="a4"
+          buildHtml={() => renderFinancialReportPrintHtml(report, storeProfile, orders)}
+          buildEscPos={() => buildEscPosFinancialReport(report, storeProfile, orders.length)}
+          onResult={(res) => onToast(res.message, res.ok ? "ok" : "error")}
+        />
+      )}
 
       {/* Balance Banner */}
       <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 text-xs ${report.isBalanced ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-200" : "border-amber-500/40 bg-amber-500/15 text-amber-200"}`}>

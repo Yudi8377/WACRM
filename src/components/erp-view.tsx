@@ -7,11 +7,13 @@ import {
   Bluetooth,
   Boxes,
   Building2,
+  Cable,
   Download,
   Wifi,
   X,
 } from "lucide-react";
 import { CrudToolbar, PaginationBar } from "@/components/crud-toolbar";
+import { UniversalPrintPanel } from "@/components/universal-print-panel";
 import {
   formatIdr,
   type ErpProductRecord,
@@ -53,6 +55,7 @@ export function ErpView({
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [modalMode, setModalMode] = useState<"none" | "create" | "edit">("none");
+  const [showPrintStudio, setShowPrintStudio] = useState(false);
 
   // Product form
   const [sku, setSku] = useState("");
@@ -322,8 +325,36 @@ export function ErpView({
           <button type="button" onClick={handlePrintWifi} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400">
             <Wifi className="h-3.5 w-3.5" /> Cetak Laporan WiFi
           </button>
+          <button
+            type="button"
+            onClick={() => setShowPrintStudio((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-500/40 bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/25"
+          >
+            <Cable className="h-3.5 w-3.5" /> Cetak USB / Inkjet / EDC
+          </button>
         </div>
       </div>
+
+      {showPrintStudio && (
+        <UniversalPrintPanel
+          documentLabel="Laporan Stok & Inventaris Gudang ERP"
+          jobTitle={`Laporan Inventaris - ${storeProfile.businessName}`}
+          filenameBase={`inventaris-${new Date().toISOString().slice(0, 10)}`}
+          defaultPaper="a4"
+          buildHtml={() => renderErpReportPrintHtml(products, storeProfile)}
+          buildEscPos={() =>
+            buildEscPosTextReport("LAPORAN STOK GUDANG", storeProfile, [
+              `Total SKU: ${products.length}`,
+              `Total Unit: ${totalUnits}`,
+              `Nilai Stok: ${formatIdr(inventoryValue)}`,
+              `Stok Menipis: ${lowStockProducts.length} SKU`,
+              "--------------------------------",
+              ...products.slice(0, 12).map((p) => `${p.sku} (${p.stockQty}): ${formatIdr(p.unitPrice)}`),
+            ])
+          }
+          onResult={(res) => onToast(res.message, res.ok ? "ok" : "error")}
+        />
+      )}
 
       {/* KPI Strip */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

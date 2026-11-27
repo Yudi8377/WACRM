@@ -964,6 +964,19 @@ export function buildDefaultAiAgents(): Array<Omit<AiAgentRecord, "id">> {
       actionsExecuted: 24,
       lastRunAt: new Date().toISOString(),
     },
+    {
+      agentKey: "seo_growth",
+      name: "Agen SEO & Omnichannel Growth AI",
+      roleDescription: "Mengaudit skor SEO setiap produk secara otomatis dan menghasilkan paket optimasi lengkap lintas kanal: Google Search (Meta Title, JSON-LD Product Schema, Sitemap), WhatsApp Katalog & Broadcast, Instagram Reels/Feed, TikTok FYP, YouTube Shorts, dan Facebook Marketplace.",
+      enabled: true,
+      autoReplyEnabled: false,
+      autonomousLearning: true,
+      autonomousHealing: true,
+      confidenceThreshold: 0.85,
+      systemPrompt: "Audit katalog ERP, perbaiki judul & deskripsi berdaya beli tinggi, susun schema.org Product JSON-LD, dan siapkan konten kampanye SEO untuk Google, WhatsApp, Instagram, TikTok, YouTube & Facebook.",
+      actionsExecuted: 46,
+      lastRunAt: new Date().toISOString(),
+    },
   ];
 }
 

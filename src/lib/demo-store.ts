@@ -1026,7 +1026,23 @@ function loadDemoState(): DemoState {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return memoryFallbackState ?? buildInitialDemoState();
-    return JSON.parse(raw) as DemoState;
+    const parsed = JSON.parse(raw) as DemoState;
+    // Automatically append any newly released AI agents (e.g. v4.0.0 seo_growth) without losing user data
+    if (Array.isArray(parsed.aiAgents)) {
+      const defaults = buildDefaultAiAgents();
+      const existingKeys = new Set(parsed.aiAgents.map((a) => a.agentKey));
+      let nextIdx = parsed.aiAgents.length + 1;
+      for (const def of defaults) {
+        if (!existingKeys.has(def.agentKey)) {
+          parsed.aiAgents.push({
+            ...def,
+            id: `50000000-0000-4000-8000-0000000000${String(nextIdx).padStart(2, "0")}`,
+          });
+          nextIdx += 1;
+        }
+      }
+    }
+    return parsed;
   } catch {
     if (!memoryFallbackState) memoryFallbackState = buildInitialDemoState();
     return memoryFallbackState;

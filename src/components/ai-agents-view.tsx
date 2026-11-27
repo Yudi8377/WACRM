@@ -39,6 +39,7 @@ const ROLE_LABELS: Record<string, string> = {
   companion_guide: "Asisten Pribadi Suara & Teks 24/7",
   followup_hunter: "Follow-Up & Retensi Prospek",
   procurement_forecast: "Prediksi Stok & Restok Supplier",
+  seo_growth: "SEO & Omnichannel Growth AI (6 Kanal)",
 };
 
 const SOURCE_LABELS: Record<string, string> = {

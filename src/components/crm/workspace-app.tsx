@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   BarChart3,
@@ -8,19 +8,24 @@ import {
   Bot,
   Boxes,
   CloudCheck,
+  Crown,
   Database,
   FileText,
   Inbox,
+  Layers,
   Link2,
   LogIn,
   Mic,
   Receipt,
   RefreshCw,
   Settings,
+  TrendingUp,
   Users,
 } from "lucide-react";
-import type { ContactRecord, StoreBusinessProfile } from "@/lib/crm-types";
+import type { AppEditionId, ContactRecord, StoreBusinessProfile } from "@/lib/crm-types";
+import { getEditionById, loadTenantEdition, saveTenantEdition } from "@/lib/editions";
 import { loadStoreProfile, saveStoreProfile } from "@/lib/store-profile";
+import { buildCurrentTenantTelemetry } from "@/lib/super-admin";
 import type { WorkspaceAdapter, WorkspaceSnapshot } from "@/lib/workspace-adapter";
 import { notifyAndroid } from "@/components/pwa-register";
 import { AiAgentsView } from "@/components/ai-agents-view";
@@ -29,6 +34,9 @@ import { PosView } from "@/components/pos-view";
 import { ErpView } from "@/components/erp-view";
 import { AccountingView } from "@/components/accounting-view";
 import { MasterDataView } from "@/components/master-data-view";
+import { SeoGrowthView } from "@/components/seo-growth-view";
+import { EditionsView } from "@/components/editions-view";
+import { SuperAdminView } from "@/components/super-admin-view";
 import { InboxView } from "./inbox-view";
 import { ContactsView } from "./contacts-view";
 import { ChannelsView } from "./channels-view";
@@ -43,10 +51,13 @@ type TabId =
   | "erp"
   | "accounting"
   | "ai"
+  | "seo_growth"
   | "contacts"
   | "channels"
   | "templates"
   | "analytics"
+  | "editions"
+  | "super_admin"
   | "settings";
 
 const NAV_ITEMS: Array<{
@@ -54,19 +65,22 @@ const NAV_ITEMS: Array<{
   label: string;
   shortLabel: string;
   icon: typeof Inbox;
-  group: "core" | "crm";
+  group: "core" | "crm" | "platform";
 }> = [
   { id: "inbox", label: "Inbox AI Otomatis", shortLabel: "Inbox", icon: Inbox, group: "core" },
   { id: "master", label: "Master Data", shortLabel: "Master", icon: Database, group: "core" },
-  { id: "pos", label: "POS & Label QR", shortLabel: "POS QR", icon: Receipt, group: "core" },
+  { id: "pos", label: "POS & Cetak QR", shortLabel: "POS QR", icon: Receipt, group: "core" },
   { id: "erp", label: "ERP & Gudang", shortLabel: "ERP", icon: Boxes, group: "core" },
   { id: "accounting", label: "Akuntansi", shortLabel: "Akuntansi", icon: BookOpenCheck, group: "core" },
-  { id: "ai", label: "Multi-Agent AI", shortLabel: "AI Swarm", icon: Bot, group: "core" },
+  { id: "ai", label: "Multi-Agent AI", shortLabel: "AI 9x", icon: Bot, group: "core" },
+  { id: "seo_growth", label: "SEO & Growth AI", shortLabel: "SEO AI", icon: TrendingUp, group: "core" },
   { id: "contacts", label: "Kontak CRM", shortLabel: "Kontak", icon: Users, group: "crm" },
   { id: "channels", label: "Kanal Omnichannel", shortLabel: "Kanal", icon: Link2, group: "crm" },
   { id: "templates", label: "Template & Cepat", shortLabel: "Template", icon: FileText, group: "crm" },
   { id: "analytics", label: "Analitik & Audit", shortLabel: "Analitik", icon: BarChart3, group: "crm" },
-  { id: "settings", label: "Pengaturan", shortLabel: "Atur", icon: Settings, group: "crm" },
+  { id: "editions", label: "Edisi & Paket", shortLabel: "Edisi", icon: Layers, group: "platform" },
+  { id: "super_admin", label: "Super Admin", shortLabel: "S.Admin", icon: Crown, group: "platform" },
+  { id: "settings", label: "Pengaturan", shortLabel: "Atur", icon: Settings, group: "platform" },
 ];
 
 export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
@@ -74,6 +88,9 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
   const [storeProfile, setStoreProfile] = useState<StoreBusinessProfile>(() =>
     loadStoreProfile(adapter.tenantId),
+  );
+  const [editionId, setEditionId] = useState<AppEditionId>(() =>
+    loadTenantEdition(adapter.tenantId),
   );
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -152,6 +169,25 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
     setStoreProfile(next);
   }
 
+  function handleSelectEdition(nextEdition: AppEditionId) {
+    saveTenantEdition(adapter.tenantId, nextEdition);
+    setEditionId(nextEdition);
+    const ed = getEditionById(nextEdition);
+    showToast(`Edisi workspace aktif diubah ke ${ed.name} (${ed.badge}).`);
+  }
+
+  const activeEdition = useMemo(() => getEditionById(editionId), [editionId]);
+
+  const currentTenantTelemetry = useMemo(() => {
+    if (!snapshot) return null;
+    return buildCurrentTenantTelemetry({
+      tenantId: adapter.tenantId,
+      snapshot,
+      storeProfile,
+      editionId,
+    });
+  }, [adapter.tenantId, editionId, snapshot, storeProfile]);
+
   async function handleStartChat(contact: ContactRecord) {
     try {
       const existing = snapshot?.conversations.find((c) => c.contactId === contact.id);
@@ -201,7 +237,7 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
             <div className="flex items-center gap-1.5">
               <span className="font-extrabold tracking-tight text-slate-900">WACRM</span>
               <span className="hidden rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white sm:inline">
-                v3.0
+                v4.0
               </span>
             </div>
           </button>
@@ -213,6 +249,15 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
             className="truncate text-sm font-bold text-slate-800 hover:text-emerald-700"
           >
             {storeProfile.businessName}
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("editions")}
+            title="Klik untuk lihat & ubah Edisi WACRM"
+            className="hidden items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-[10px] font-bold text-indigo-800 hover:bg-indigo-100 md:inline-flex"
+          >
+            <Layers className="h-3 w-3" />
+            {activeEdition.name}
           </button>
           {adapter.mode === "neon" && (
             <span className="hidden items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 lg:inline-flex">
@@ -319,7 +364,7 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
 
             <div>
               <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                CRM &amp; Administrasi
+                CRM &amp; Kanal
               </p>
               <div className="space-y-1">
                 {NAV_ITEMS.filter((n) => n.group === "crm").map((item) => {
@@ -345,12 +390,46 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
                 })}
               </div>
             </div>
+
+            <div>
+              <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                Platform &amp; Edisi v4.0
+              </p>
+              <div className="space-y-1">
+                {NAV_ITEMS.filter((n) => n.group === "platform").map((item) => {
+                  const Icon = item.icon;
+                  const active = tab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setTab(item.id)}
+                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                        active
+                          ? "bg-amber-50 text-amber-900"
+                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <Icon className={`h-4 w-4 ${active ? "text-amber-600" : "text-slate-400"}`} />
+                        {item.label}
+                      </span>
+                      {item.id === "editions" && (
+                        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
+                          {activeEdition.id.toUpperCase()}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs">
             <p className="font-bold text-emerald-900">{storeProfile.businessName}</p>
             <p className="mt-1 text-[11px] leading-relaxed text-emerald-800/80">
-              AI Auto-Reply 24/7, Master Data, POS Label QR, ERP, Akuntansi &amp; Asisten Suara aktif siap digunakan.
+              v4.0: 9 Agen AI + SEO Omnichannel, Cetak Universal (USB-C/Micro-USB/Inkjet/LaserJet/EDC), Multi-Edition &amp; Super Admin aktif.
             </p>
           </div>
         </nav>
@@ -409,6 +488,38 @@ export function WorkspaceApp({ adapter }: { adapter: WorkspaceAdapter }) {
                     knowledge={snapshot.aiKnowledge}
                     incidents={snapshot.aiIncidents}
                     onRefresh={refresh}
+                    onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
+                  />
+                </div>
+              )}
+              {tab === "seo_growth" && (
+                <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
+                  <SeoGrowthView
+                    adapter={adapter}
+                    storeProfile={storeProfile}
+                    products={snapshot.products}
+                    onRefresh={refresh}
+                    onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
+                  />
+                </div>
+              )}
+              {tab === "editions" && (
+                <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
+                  <EditionsView
+                    currentEditionId={editionId}
+                    activeAgentsCount={activeAiCount}
+                    productsCount={snapshot.products.length}
+                    channelsCount={snapshot.channels.length}
+                    onSelectEdition={handleSelectEdition}
+                  />
+                </div>
+              )}
+              {tab === "super_admin" && (
+                <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
+                  <SuperAdminView
+                    currentTenantTelemetry={currentTenantTelemetry}
+                    liveApiMode={adapter.mode === "neon"}
+                    onSyncCurrentEdition={handleSelectEdition}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
                 </div>

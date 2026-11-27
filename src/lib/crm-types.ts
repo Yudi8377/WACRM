@@ -236,7 +236,138 @@ export type AiAgentKey =
   | "system_guardian"
   | "companion_guide"
   | "followup_hunter"
-  | "procurement_forecast";
+  | "procurement_forecast"
+  | "seo_growth";
+
+// =============================================================================
+// Multi-Edition Versioning, Universal Printing, SEO AI & Super Admin Telemetry
+// =============================================================================
+
+export type AppEditionId = "starter" | "pro" | "enterprise" | "sovereign";
+export type SubscriptionStatus = "active" | "trial" | "past_due" | "suspended";
+
+export type PrinterPaperProfile = "a4" | "thermal58" | "thermal80" | "label100" | "edc";
+export type PrinterTransportMode =
+  | "usb_otg"
+  | "usb_serial_edc"
+  | "bluetooth"
+  | "wifi_airprint"
+  | "pdf_share";
+
+export interface ProductSeoAudit {
+  productId: string;
+  sku: string;
+  productName: string;
+  score: number;
+  grade: "A" | "B" | "C" | "D";
+  issues: string[];
+  strengths: string[];
+  primaryKeyword: string;
+  secondaryKeywords: string[];
+}
+
+export interface OmnichannelSeoPack {
+  productId: string;
+  sku: string;
+  productName: string;
+  generatedAt: string;
+  audit: ProductSeoAudit;
+  google: {
+    metaTitle: string;
+    metaDescription: string;
+    slug: string;
+    keywords: string[];
+    jsonLd: string;
+  };
+  whatsapp: {
+    catalogTitle: string;
+    broadcastCopy: string;
+    ctaLine: string;
+  };
+  instagram: {
+    hook: string;
+    caption: string;
+    hashtags: string[];
+  };
+  tiktok: {
+    videoHook: string;
+    seoCaption: string;
+    searchTags: string[];
+  };
+  youtube: {
+    title: string;
+    description: string;
+    tags: string[];
+  };
+  facebook: {
+    marketplaceTitle: string;
+    postCopy: string;
+  };
+}
+
+export interface SuperAdminTenantRecord {
+  tenantId: string;
+  businessName: string;
+  ownerName: string;
+  ownerEmail: string;
+  editionId: AppEditionId;
+  subscriptionStatus: SubscriptionStatus;
+  monthlyPriceIdr: number;
+  activeAgents: number;
+  totalContacts: number;
+  totalConversations: number;
+  connectedChannels: number;
+  ordersCount: number;
+  gmvIdr: number;
+  healthScore: number;
+  seoScore: number;
+  aiAutoReplyRatePct: number;
+  escalationCount: number;
+  lowStockCount: number;
+  ledgerBalanced: boolean;
+  lastActiveAt: string;
+  renewsAt: string;
+  isCurrentWorkspace?: boolean;
+  detectedIssues: string[];
+}
+
+export interface PlatformSwotInsight {
+  id: string;
+  type: "strength" | "weakness" | "opportunity";
+  title: string;
+  metric: string;
+  detail: string;
+  recommendedFix?: string;
+}
+
+export interface SuperAdminOverview {
+  generatedAt: string;
+  source: "neon" | "demo";
+  summary: {
+    totalTenants: number;
+    activeTenants: number;
+    trialTenants: number;
+    pastDueOrSuspended: number;
+    totalUsersAgents: number;
+    totalOrders: number;
+    totalGmvIdr: number;
+    mrrIdr: number;
+    arrIdr: number;
+    avgHealthScore: number;
+    avgSeoScore: number;
+    avgAiAutomationPct: number;
+  };
+  editionBreakdown: Array<{
+    editionId: AppEditionId;
+    label: string;
+    count: number;
+    mrrIdr: number;
+  }>;
+  tenants: SuperAdminTenantRecord[];
+  strengths: PlatformSwotInsight[];
+  weaknesses: PlatformSwotInsight[];
+  opportunities: PlatformSwotInsight[];
+}
 
 export interface StoreBusinessProfile {
   businessName: string;

@@ -79,9 +79,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="android-v3.0.0"
-          TITLE="WACRM Android v3.0.0 — 24/7 Voice AI Companion, Contextual Auto-Reply, Master Data & Label QR"
-          NOTES="Aplikasi Android native Kotlin WACRM v3.0.0 (package \`com.wacrm.android\`) terhubung ke https://wacrm-seven-dusky.vercel.app.\n\nFitur baru v3.0.0:\n- 24/7 AI Personal Companion dengan Native Android TextToSpeech & Speech-to-Text + memori berlanjut hingga pengguna mengucapkan 'cukup'\n- AI Auto-Reply 24/7 otomatis tanpa klik, kontekstual (sapaan, multi-agen, produk) + Eskalasi Admin otomatis\n- Menu Master Data lengkap (Barang, Supplier, Pelanggan, Kategori, Satuan, Ekspedisi, Rekening) & CRUD standar (Tambah Baru, Ubah, Hapus, Back/Next)\n- POS Invoice Otomatis Lunas & Label Pesanan/Pengiriman QR dengan White-Label Profil Toko Pengguna\n- Pengaturan bersih khusus Profil Toko & Tim (tanpa kartu teknis developer)\n\n- **wacrm-android.apk**: APK siap pasang langsung di ponsel Android.\n- **wacrm-android-release-unsigned.apk**: APK release R8-minified untuk penandatanganan keystore Play Store."
+          TAG="android-v4.0.0"
+          TITLE="WACRM Android v4.0.0 — USB-C/Micro-USB OTG Printing, SEO Multi-Agent AI, Multi-Edition & Super Admin"
+          NOTES=$(cat <<'EOF'
+          Aplikasi Android native Kotlin WACRM v4.0.0 (package `com.wacrm.android`, versionCode 5) terhubung ke https://wacrm-seven-dusky.vercel.app.
+
+          Fitur baru v4.0.0:
+          - Cetak Universal Native USB-C & Micro-USB OTG (`UsbManager` ESC/POS bulk transfer) untuk Thermal, Label QR & EDC + Inkjet/LaserJet/Mopria/Bluetooth/WiFi/PDF
+          - Agen #9 SEO & Omnichannel Growth AI (Google JSON-LD/Sitemap/Katalog Publik, WhatsApp, Instagram, TikTok, YouTube & Facebook)
+          - Arsitektur Multi-Edition Berjenjang (Starter UMKM, Growth Pro, Enterprise AI Suite, Sovereign Corporate)
+          - Super Admin Command Center untuk pelacakan seluruh tenant/user, MRR, SWOT otomatis & Auto-Fix 1-klik
+
+          - **wacrm-android.apk**: APK siap pasang langsung di ponsel Android.
+          - **wacrm-android-release-unsigned.apk**: APK release R8-minified untuk penandatanganan keystore Play Store.
+          EOF
+          )
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/wacrm-android.apk dist/wacrm-android-release-unsigned.apk --clobber
             gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --latest

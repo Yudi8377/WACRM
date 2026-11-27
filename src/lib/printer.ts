@@ -3,24 +3,80 @@ import {
   PAYMENT_METHOD_LABELS,
   type FinancialReportSummary,
   type PosOrderRecord,
+  type PrinterPaperProfile,
   type StoreBusinessProfile,
 } from "@/lib/crm-types";
 import { getDefaultStoreProfile } from "@/lib/store-profile";
 
 export interface PrintResult {
   ok: boolean;
-  method: "android_bluetooth" | "web_bluetooth" | "android_wifi" | "browser_wifi_print" | "fallback";
+  method:
+    | "android_usb_otg"
+    | "web_usb_otg"
+    | "web_serial_edc"
+    | "android_bluetooth"
+    | "web_bluetooth"
+    | "android_wifi"
+    | "browser_wifi_print"
+    | "share_pdf"
+    | "download_escpos"
+    | "fallback";
   message: string;
+}
+
+export interface PrinterCapabilities {
+  isAndroid: boolean;
+  isIos: boolean;
+  isAndroidApk: boolean;
+  supportsWebUsb: boolean;
+  supportsWebSerial: boolean;
+  supportsWebBluetooth: boolean;
+  supportsWebShare: boolean;
 }
 
 interface AndroidBridge {
   showToast?: (msg: string) => void;
   shareText?: (title: string, text: string) => void;
   printWifiDocument?: (jobName: string) => void;
+  printHtml?: (title: string, html: string) => void;
   printBluetoothEscPos?: (escPosBase64: string, fallbackText: string) => string | void;
-  speakText?: (text: string) => void;
+  printUsbEscPos?: (escPosBase64: string, jobName: string) => string | void;
+  speakText?: (text: string, lang?: string) => void;
   stopSpeaking?: () => void;
-  startVoiceInput?: () => void;
+  startVoiceInput?: (lang?: string) => void;
+}
+
+export function detectPrinterCapabilities(): PrinterCapabilities {
+  if (typeof window === "undefined" || typeof navigator === "undefined") {
+    return {
+      isAndroid: false,
+      isIos: false,
+      isAndroidApk: false,
+      supportsWebUsb: false,
+      supportsWebSerial: false,
+      supportsWebBluetooth: false,
+      supportsWebShare: false,
+    };
+  }
+  const ua = navigator.userAgent || "";
+  const isAndroid = /Android/i.test(ua);
+  const isIos = /iPhone|iPad|iPod/i.test(ua);
+  const bridge = getAndroidBridge();
+  const nav = navigator as unknown as {
+    usb?: unknown;
+    serial?: unknown;
+    bluetooth?: unknown;
+    share?: unknown;
+  };
+  return {
+    isAndroid,
+    isIos,
+    isAndroidApk: Boolean(bridge),
+    supportsWebUsb: Boolean(nav.usb),
+    supportsWebSerial: Boolean(nav.serial),
+    supportsWebBluetooth: Boolean(nav.bluetooth),
+    supportsWebShare: typeof nav.share === "function",
+  };
 }
 
 export function getAndroidBridge(): AndroidBridge | null {
@@ -418,6 +474,374 @@ export async function printViaBluetooth(escPos: {
       message: err instanceof Error ? err.message : "Koneksi printer Bluetooth dibatalkan atau gagal.",
     };
   }
+}
+
+/**
+ * Builds a compact 32-column ESC/POS slip specifically formatted for EDC / Mini POS terminals
+ * (Android EDC, Pax/Sunmi/Verifone USB-C/Serial thermal printers).
+ */
+export function buildEscPosEdcCompact(
+  order: PosOrderRecord,
+  storeOrName: string | StoreBusinessProfile,
+): { bytes: Uint8Array; base64: string; plainText: string } {
+  const store = resolveStore(storeOrName);
+  const encoder = new TextEncoder();
+  const chunks: number[] = [];
+  const pushBytes = (...arr: number[]) => chunks.push(...arr);
+  const pushText = (s: string) => {
+    for (const b of encoder.encode(s)) chunks.push(b);
+  };
+  const sep = "--------------------------------";
+  const courier = order.shippingCourier || store.defaultCourier || "Reguler";
+  const status = order.paymentStatus === "paid" ? "LUNAS" : "TAGIHAN";
+  const lines = [
+    store.businessName.toUpperCase().slice(0, 32),
+    `SLIP EDC · ${status}`,
+    sep,
+    `INV : ${order.invoiceNumber}`,
+    `CUST: ${order.customerName.slice(0, 26)}`,
+    `KURIR: ${courier.slice(0, 25)}`,
+    `BAYAR: ${PAYMENT_METHOD_LABELS[order.paymentMethod].slice(0, 25)}`,
+    sep,
+    ...order.items.map((i) =>
+      formatLinePair(`${i.quantity}x ${i.productName.slice(0, 15)}`, formatIdr(i.lineTotal), 32),
+    ),
+    sep,
+    formatLinePair("TOTAL", formatIdr(order.totalAmount), 32),
+    sep,
+  ];
+  pushBytes(0x1b, 0x40, 0x1b, 0x61, 0x00);
+  for (const l of lines) pushText(`${l}\n`);
+  appendEscPosQr(chunks, encoder, order.qrPayload);
+  pushText("\nTerima kasih!\n\n\n");
+  pushBytes(0x1d, 0x56, 0x00);
+  const bytes = new Uint8Array(chunks);
+  return {
+    bytes,
+    base64: toBase64(bytes),
+    plainText: [...lines, `QR: ${order.qrPayload}`].join("\n"),
+  };
+}
+
+/**
+ * Direct USB-C / Micro-USB OTG Printing for Thermal, Label & EDC Printers!
+ * 1. On Android APK: invokes native `UsbManager` bulk OUT transfer via `WACRMAndroid.printUsbEscPos`.
+ * 2. On Chrome Android / Desktop: invokes WebUSB API (`navigator.usb`) USB Printer Class (0x07).
+ */
+export async function printViaUsbOtg(
+  escPos: { bytes: Uint8Array; base64: string; plainText: string },
+  jobName = "Dokumen Toko",
+): Promise<PrintResult> {
+  const android = getAndroidBridge();
+  if (android?.printUsbEscPos) {
+    const res = android.printUsbEscPos(escPos.base64, jobName);
+    return {
+      ok: true,
+      method: "android_usb_otg",
+      message:
+        typeof res === "string" && res
+          ? res
+          : `Perintah cetak dikirim melalui kabel USB-C / Micro-USB OTG (${jobName}).`,
+    };
+  }
+
+  type WebUsbDevice = {
+    productName?: string;
+    configuration: {
+      interfaces: Array<{
+        interfaceNumber: number;
+        alternates: Array<{
+          interfaceClass: number;
+          endpoints: Array<{ direction: string; endpointNumber: number; type?: string }>;
+        }>;
+      }>;
+    } | null;
+    open: () => Promise<void>;
+    selectConfiguration: (n: number) => Promise<void>;
+    claimInterface: (n: number) => Promise<void>;
+    transferOut: (endpointNumber: number, data: BufferSource) => Promise<unknown>;
+    close: () => Promise<void>;
+  };
+
+  const nav =
+    typeof navigator !== "undefined"
+      ? (navigator as unknown as {
+          usb?: {
+            requestDevice: (opts: { filters: Array<Record<string, unknown>> }) => Promise<WebUsbDevice>;
+          };
+        })
+      : null;
+
+  if (!nav?.usb) {
+    return {
+      ok: false,
+      method: "fallback",
+      message:
+        "Browser ini belum mendukung WebUSB langsung (misalnya Safari iOS). Gunakan tombol 'Cetak Inkjet / LaserJet / AirPrint' atau 'Bagikan / PDF' untuk iOS & HP non-OTG, atau pakai Chrome/APK Android untuk USB-C OTG langsung.",
+    };
+  }
+
+  try {
+    // USB Printer Class 0x07 + Vendor-specific POS/EDC printers (0xFF)
+    const device = await nav.usb.requestDevice({
+      filters: [{ classCode: 7 }, { classCode: 255 }],
+    });
+    await device.open();
+    if (!device.configuration) {
+      await device.selectConfiguration(1);
+    }
+    const interfaces = device.configuration?.interfaces ?? [];
+    let targetInterface = -1;
+    let outEndpoint = -1;
+
+    for (const iface of interfaces) {
+      for (const alt of iface.alternates) {
+        const ep = alt.endpoints.find((e) => e.direction === "out");
+        if (ep && (alt.interfaceClass === 7 || targetInterface === -1)) {
+          targetInterface = iface.interfaceNumber;
+          outEndpoint = ep.endpointNumber;
+          if (alt.interfaceClass === 7) break;
+        }
+      }
+      if (targetInterface !== -1 && outEndpoint !== -1) break;
+    }
+
+    if (targetInterface === -1 || outEndpoint === -1) {
+      await device.close();
+      return {
+        ok: false,
+        method: "web_usb_otg",
+        message: `Perangkat USB "${device.productName ?? "Printer"}" tidak menyediakan endpoint cetak ESC/POS. Gunakan jalur 'Inkjet / LaserJet / Spooler OS' untuk printer tinta/laser USB.`,
+      };
+    }
+
+    await device.claimInterface(targetInterface);
+    const chunkSize = 64;
+    for (let i = 0; i < escPos.bytes.length; i += chunkSize) {
+      await device.transferOut(outEndpoint, escPos.bytes.slice(i, i + chunkSize));
+    }
+    await device.close();
+    return {
+      ok: true,
+      method: "web_usb_otg",
+      message: `Berhasil dicetak via kabel USB-C / Micro-USB ke "${device.productName ?? "Printer USB"}".`,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      method: "web_usb_otg",
+      message: err instanceof Error ? err.message : "Koneksi printer USB-C / Micro-USB dibatalkan atau gagal.",
+    };
+  }
+}
+
+/**
+ * Direct USB Serial / EDC / RS232-to-USB-C Printing via Web Serial API (or Android USB OTG bridge).
+ */
+export async function printViaUsbSerialEdc(
+  escPos: { bytes: Uint8Array; base64: string; plainText: string },
+  jobName = "Slip EDC",
+): Promise<PrintResult> {
+  const android = getAndroidBridge();
+  if (android?.printUsbEscPos) {
+    return printViaUsbOtg(escPos, jobName);
+  }
+
+  type SerialPortLike = {
+    open: (opts: { baudRate: number }) => Promise<void>;
+    writable: {
+      getWriter: () => {
+        write: (data: Uint8Array) => Promise<void>;
+        releaseLock: () => void;
+      };
+    } | null;
+    close: () => Promise<void>;
+  };
+
+  const nav =
+    typeof navigator !== "undefined"
+      ? (navigator as unknown as { serial?: { requestPort: () => Promise<SerialPortLike> } })
+      : null;
+
+  if (!nav?.serial) {
+    return {
+      ok: false,
+      method: "fallback",
+      message:
+        "Web Serial EDC tersedia di Chrome/Edge Desktop dengan kabel USB-C/RS232. Untuk HP Android/iOS, gunakan jalur 'USB-C OTG', 'Bluetooth Thermal', atau 'Bagikan / Unduh File ESC/POS'.",
+    };
+  }
+
+  try {
+    const port = await nav.serial.requestPort();
+    await port.open({ baudRate: 9600 });
+    if (!port.writable) throw new Error("Port serial EDC tidak dapat ditulis.");
+    const writer = port.writable.getWriter();
+    await writer.write(escPos.bytes);
+    writer.releaseLock();
+    await port.close();
+    return {
+      ok: true,
+      method: "web_serial_edc",
+      message: `Berhasil dicetak ke Printer EDC / Serial USB (${jobName}).`,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      method: "web_serial_edc",
+      message: err instanceof Error ? err.message : "Cetak USB Serial / EDC dibatalkan.",
+    };
+  }
+}
+
+function buildPrintableDocumentHtml(
+  title: string,
+  bodyHtml: string,
+  paperMode: PrinterPaperProfile,
+): string {
+  const pageCss =
+    paperMode === "thermal58" || paperMode === "edc"
+      ? `@page { size: 58mm auto; margin: 2mm; } body { width: 54mm; font-family: monospace; font-size: 11px; color: #0f172a; }`
+      : paperMode === "thermal80"
+        ? `@page { size: 80mm auto; margin: 3mm; } body { width: 74mm; font-family: monospace; font-size: 12px; color: #0f172a; }`
+        : paperMode === "label100"
+          ? `@page { size: 100mm 150mm; margin: 5mm; } body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 12px; color: #0f172a; }`
+          : `@page { size: A4; margin: 14mm; } body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 13px; color: #0f172a; }`;
+
+  return `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escHtml(title)}</title>
+  <style>
+    ${pageCss}
+    table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+    th, td { border-bottom: 1px solid #e2e8f0; padding: 6px 4px; text-align: left; }
+    th { font-weight: 700; background: #f8fafc; }
+    .right { text-align: right; }
+    .center { text-align: center; }
+    .muted { color: #64748b; font-size: 11px; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #d1fae5; color: #065f46; }
+    .badge-warn { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #fef3c7; color: #92400e; }
+  </style>
+</head>
+<body>
+  ${bodyHtml}
+  <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 250); };</script>
+</body>
+</html>`;
+}
+
+/**
+ * Universal OS Print Spooler:
+ * Works with USB-connected Inkjet / LaserJet printers, Android Mopria & USB-OTG Print Services,
+ * iOS AirPrint / USB-C printers, WiFi printers & Save-to-PDF!
+ */
+export function printViaSystemSpooler(
+  title: string,
+  bodyHtml: string,
+  paperMode: PrinterPaperProfile = "a4",
+): PrintResult {
+  const android = getAndroidBridge();
+  if (typeof window === "undefined") {
+    return { ok: false, method: "fallback", message: "Hanya tersedia di browser." };
+  }
+
+  const fullDoc = buildPrintableDocumentHtml(title, bodyHtml, paperMode);
+
+  if (android?.printHtml) {
+    android.printHtml(title, fullDoc);
+    return {
+      ok: true,
+      method: "android_wifi",
+      message: `Layanan Cetak Android (USB-OTG Inkjet/LaserJet / Mopria / WiFi / PDF) dibuka untuk "${title}".`,
+    };
+  }
+
+  return printViaWifiHtml(
+    title,
+    bodyHtml,
+    paperMode === "thermal80" || paperMode === "edc" ? "thermal58" : paperMode,
+  );
+}
+
+/**
+ * Shares or downloads a self-contained printable document (ideal for iOS iPhone/iPad via AirPrint/Printer App
+ * or Android apps like HP Smart, Epson iPrint, Canon PRINT, Brother & RawBT).
+ */
+export async function shareOrDownloadPrintable(
+  title: string,
+  bodyHtml: string,
+  filenameBase: string,
+  paperMode: PrinterPaperProfile = "a4",
+): Promise<PrintResult> {
+  if (typeof window === "undefined") {
+    return { ok: false, method: "fallback", message: "Hanya tersedia di browser." };
+  }
+  const html = buildPrintableDocumentHtml(title, bodyHtml, paperMode);
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const fileName = `${filenameBase}.html`;
+
+  try {
+    const nav = navigator as unknown as {
+      canShare?: (data: { files?: File[] }) => boolean;
+      share?: (data: { title?: string; text?: string; files?: File[] }) => Promise<void>;
+    };
+    const file = new File([blob], fileName, { type: "text/html" });
+    if (nav.share && (!nav.canShare || nav.canShare({ files: [file] }))) {
+      await nav.share({
+        title,
+        text: `Dokumen siap cetak: ${title}`,
+        files: [file],
+      });
+      return {
+        ok: true,
+        method: "share_pdf",
+        message: `Dokumen "${title}" dibagikan ke aplikasi cetak / AirPrint / WhatsApp.`,
+      };
+    }
+  } catch {
+    // Fall through to clean file download
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+  return {
+    ok: true,
+    method: "share_pdf",
+    message: `File siap cetak "${fileName}" diunduh — buka di iOS/Android/PC untuk cetak ke printer Inkjet, LaserJet, atau EDC.`,
+  };
+}
+
+/**
+ * Downloads raw ESC/POS binary (.bin) for external USB-OTG/EDC/RawBT spooler apps on Android & iOS.
+ */
+export function downloadEscPosBinary(
+  escPos: { bytes: Uint8Array; base64: string; plainText: string },
+  filenameBase: string,
+): PrintResult {
+  if (typeof window === "undefined") {
+    return { ok: false, method: "fallback", message: "Hanya tersedia di browser." };
+  }
+  const copy = new Uint8Array(escPos.bytes.length);
+  copy.set(escPos.bytes);
+  const blob = new Blob([copy.buffer], { type: "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${filenameBase}-escpos.bin`;
+  a.click();
+  URL.revokeObjectURL(url);
+  return {
+    ok: true,
+    method: "download_escpos",
+    message: `File ESC/POS "${filenameBase}-escpos.bin" diunduh — siap dibuka di aplikasi cetak USB OTG / EDC / RawBT.`,
+  };
 }
 
 /**

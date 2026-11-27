@@ -100,8 +100,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ten
           [tenantId],
         );
 
-        // Auto-seed all 8 autonomous AI agents on first access or upgrade
-        if (agentsRes.rows.length < 8) {
+        // Auto-seed all 9 autonomous AI agents on first access or upgrade
+        if (agentsRes.rows.length < 9) {
           for (const def of buildDefaultAiAgents()) {
             await client.query(
               `INSERT INTO ai_agents
@@ -163,6 +163,7 @@ const patchAgentSchema = z.object({
     "companion_guide",
     "followup_hunter",
     "procurement_forecast",
+    "seo_growth",
   ]),
   enabled: z.boolean().optional(),
   autoReplyEnabled: z.boolean().optional(),
