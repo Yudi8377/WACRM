@@ -233,7 +233,53 @@ export type AiAgentKey =
   | "order_pos"
   | "knowledge_learner"
   | "fraud_sentinel"
-  | "system_guardian";
+  | "system_guardian"
+  | "companion_guide"
+  | "followup_hunter"
+  | "procurement_forecast";
+
+export interface StoreBusinessProfile {
+  businessName: string;
+  businessTagline: string;
+  phone: string;
+  email: string;
+  address: string;
+  city: string;
+  taxId: string;
+  invoiceFooter: string;
+  defaultCourier: string;
+}
+
+export interface MasterCategoryRecord {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface MasterUnitRecord {
+  id: string;
+  code: string;
+  name: string;
+}
+
+export interface MasterCourierRecord {
+  id: string;
+  code: string;
+  name: string;
+  serviceType: string;
+  baseRate: number;
+  estimatedDays: string;
+  isActive: boolean;
+}
+
+export interface MasterPaymentAccountRecord {
+  id: string;
+  method: PaymentMethod;
+  providerName: string;
+  accountNumber: string;
+  accountHolder: string;
+  isActive: boolean;
+}
 
 export type KnowledgeSourceType = "product" | "chat" | "order" | "sop" | "autonomous_learning";
 
@@ -371,6 +417,9 @@ export interface PosOrderRecord {
   qrPayload: string;
   aiGenerated: boolean;
   fraudRiskScore: number;
+  shippingCourier?: string | null;
+  trackingCode?: string | null;
+  paidAt?: string | null;
   notes: string | null;
   items: PosOrderItemRecord[];
   createdAt: string;
@@ -423,6 +472,9 @@ export interface AiAutoReplyExecutionResult {
   }>;
   confidence: number;
   fraudRiskScore: number;
+  detectedIntent?: string;
+  escalationRequired?: boolean;
+  escalationReason?: string | null;
   createdOrder: PosOrderRecord | null;
   learnedKnowledge: AiKnowledgeItemRecord | null;
   securityIncident: AiSecurityIncidentRecord | null;

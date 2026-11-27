@@ -455,7 +455,7 @@ CREATE POLICY channel_connections_worker_lookup ON channel_connections
 CREATE TABLE IF NOT EXISTS ai_agents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  agent_key text NOT NULL CHECK (agent_key IN ('cs_sales','order_pos','knowledge_learner','fraud_sentinel','system_guardian')),
+  agent_key text NOT NULL CHECK (agent_key IN ('cs_sales','order_pos','knowledge_learner','fraud_sentinel','system_guardian','companion_guide','followup_hunter','procurement_forecast')),
   name text NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 120),
   role_description text NOT NULL,
   enabled boolean NOT NULL DEFAULT true,

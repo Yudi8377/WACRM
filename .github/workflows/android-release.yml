@@ -79,9 +79,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="android-v2.0.0"
-          TITLE="WACRM Android v2.0.0 — Enterprise Autonomous AI, POS QR, ERP & Akuntansi"
-          NOTES="Aplikasi Android native Kotlin WACRM v2.0.0 (package \`com.wacrm.android\`) terhubung ke https://wacrm-seven-dusky.vercel.app.\n\nFitur baru v2.0.0:\n- Multi-Agent AI Auto-Reply 24/7 + Autonomous Knowledge Base\n- POS Kasir + Auto-Invoice + Scannable QR Code\n- ERP Gudang & Akuntansi Double-Entry tersinkron Desktop ↔ HP via Neon PostgreSQL\n- Fraud Sentinel & Self-Healing AI\n- Native Bluetooth Thermal ESC/POS (58mm/80mm) & Android WiFi PrintManager\n\n- **wacrm-android.apk**: APK siap pasang langsung di ponsel Android.\n- **wacrm-android-release-unsigned.apk**: APK release R8-minified untuk penandatanganan keystore Play Store."
+          TAG="android-v3.0.0"
+          TITLE="WACRM Android v3.0.0 — 24/7 Voice AI Companion, Contextual Auto-Reply, Master Data & Label QR"
+          NOTES="Aplikasi Android native Kotlin WACRM v3.0.0 (package \`com.wacrm.android\`) terhubung ke https://wacrm-seven-dusky.vercel.app.\n\nFitur baru v3.0.0:\n- 24/7 AI Personal Companion dengan Native Android TextToSpeech & Speech-to-Text + memori berlanjut hingga pengguna mengucapkan 'cukup'\n- AI Auto-Reply 24/7 otomatis tanpa klik, kontekstual (sapaan, multi-agen, produk) + Eskalasi Admin otomatis\n- Menu Master Data lengkap (Barang, Supplier, Pelanggan, Kategori, Satuan, Ekspedisi, Rekening) & CRUD standar (Tambah Baru, Ubah, Hapus, Back/Next)\n- POS Invoice Otomatis Lunas & Label Pesanan/Pengiriman QR dengan White-Label Profil Toko Pengguna\n- Pengaturan bersih khusus Profil Toko & Tim (tanpa kartu teknis developer)\n\n- **wacrm-android.apk**: APK siap pasang langsung di ponsel Android.\n- **wacrm-android-release-unsigned.apk**: APK release R8-minified untuk penandatanganan keystore Play Store."
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/wacrm-android.apk dist/wacrm-android-release-unsigned.apk --clobber
             gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --latest

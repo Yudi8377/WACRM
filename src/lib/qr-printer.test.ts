@@ -101,9 +101,10 @@ describe("QR Code Generator & Bluetooth/WiFi Printer Engine", () => {
           stockQty: 10,
         },
       ],
-      "WACRM",
+      "Toko Berkah Nusantara",
     );
-    expect(erpHtml).toContain("Laporan Inventaris ERP");
+    expect(erpHtml).toContain("Laporan Stok &amp; Inventaris Gudang");
+    expect(erpHtml).toContain("Toko Berkah Nusantara");
     expect(erpHtml).toContain("SKU1");
 
     const escSummary = buildEscPosTextReport("RINGKASAN", "WACRM", ["Kas: Rp 10.000.000"]);

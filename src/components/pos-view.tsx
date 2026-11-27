@@ -1,43 +1,46 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Bluetooth,
   CheckCircle2,
-  CreditCard,
   Minus,
+  Package,
   Plus,
-  Printer,
   QrCode,
   Receipt,
-  Search,
   ShieldAlert,
-  ShoppingCart,
   Sparkles,
-  Trash2,
+  Truck,
   Wifi,
   X,
 } from "lucide-react";
+import { CrudToolbar, PaginationBar } from "@/components/crud-toolbar";
 import {
   formatIdr,
   PAYMENT_METHOD_LABELS,
   type ChannelType,
   type ErpProductRecord,
+  type OrderStatus,
   type PaymentMethod,
   type PosOrderRecord,
+  type StoreBusinessProfile,
 } from "@/lib/crm-types";
 import {
   buildEscPosReceipt,
+  buildEscPosShippingLabel,
   printViaBluetooth,
   printViaWifiHtml,
   renderInvoicePrintHtml,
+  renderShippingLabelPrintHtml,
 } from "@/lib/printer";
 import { generateQrDataUrl } from "@/lib/qr-generator";
+import { loadLocalMasterData } from "@/lib/store-profile";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 interface PosViewProps {
   adapter: WorkspaceAdapter;
-  workspaceName: string;
+  storeProfile: StoreBusinessProfile;
   products: ErpProductRecord[];
   orders: PosOrderRecord[];
   onRefresh: () => Promise<void>;
@@ -49,35 +52,47 @@ interface CartItem {
   quantity: number;
 }
 
-const PAYMENT_LABELS = PAYMENT_METHOD_LABELS;
+const PAGE_SIZE = 5;
 
 export function PosView({
   adapter,
-  workspaceName,
+  storeProfile,
   products,
   orders,
   onRefresh,
   onToast,
 }: PosViewProps) {
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+
+  // Sub-Module Modals: "none" | "create" | "edit"
+  const [formModal, setFormModal] = useState<"none" | "create" | "edit">("none");
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [productSearch, setProductSearch] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [shippingAddress, setShippingAddress] = useState("");
+  const [shippingCourier, setShippingCourier] = useState(storeProfile.defaultCourier || "JNE Reguler");
   const [channel, setChannel] = useState<ChannelType>("whatsapp");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("qris");
   const [paymentStatus, setPaymentStatus] = useState<"paid" | "unpaid">("paid");
+  const [orderStatus, setOrderStatus] = useState<OrderStatus>("confirmed");
   const [discountAmount, setDiscountAmount] = useState<number>(0);
+  const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Selected invoice modal & scannable QR data URL
-  const [selectedOrder, setSelectedOrder] = useState<PosOrderRecord | null>(null);
+  // Invoice & Shipping Label QR Studio Modal
+  const [studioOrder, setStudioOrder] = useState<PosOrderRecord | null>(null);
+  const [studioTab, setStudioTab] = useState<"invoice" | "label">("invoice");
   const [qrState, setQrState] = useState<{ payload: string; url: string }>({ payload: "", url: "" });
   const [printingMode, setPrintingMode] = useState<"wifi" | "bluetooth" | null>(null);
 
+  const couriers = useMemo(() => loadLocalMasterData(adapter.tenantId).couriers, [adapter.tenantId]);
+
   useEffect(() => {
     let active = true;
-    const payload = selectedOrder?.qrPayload;
+    const payload = studioOrder?.qrPayload;
     if (!payload) return;
     void generateQrDataUrl(payload, 260).then((url) => {
       if (active) setQrState({ payload, url });
@@ -85,22 +100,35 @@ export function PosView({
     return () => {
       active = false;
     };
-  }, [selectedOrder?.qrPayload]);
+  }, [studioOrder?.qrPayload]);
 
-  const qrDataUrl =
-    selectedOrder && qrState.payload === selectedOrder.qrPayload ? qrState.url : "";
+  const qrDataUrl = studioOrder && qrState.payload === studioOrder.qrPayload ? qrState.url : "";
+
+  const filteredOrders = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return orders.filter(
+      (o) =>
+        !q ||
+        o.invoiceNumber.toLowerCase().includes(q) ||
+        o.customerName.toLowerCase().includes(q) ||
+        o.shippingAddress.toLowerCase().includes(q) ||
+        (o.trackingCode ?? "").toLowerCase().includes(q),
+    );
+  }, [orders, search]);
 
   const filteredProducts = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = productSearch.trim().toLowerCase();
     return products.filter(
       (p) =>
         p.isActive &&
-        (!q ||
-          p.name.toLowerCase().includes(q) ||
-          p.sku.toLowerCase().includes(q) ||
-          p.category.toLowerCase().includes(q)),
+        (!q || p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)),
     );
-  }, [products, search]);
+  }, [products, productSearch]);
+
+  const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalSales = orders.reduce((s, o) => s + o.totalAmount, 0);
+  const paidOrdersCount = orders.filter((o) => o.paymentStatus === "paid").length;
+  const aiOrdersCount = orders.filter((o) => o.aiGenerated).length;
 
   const subtotal = cart.reduce((s, c) => s + c.product.unitPrice * c.quantity, 0);
   const effectiveDiscount = Math.min(subtotal, Math.max(0, discountAmount));
@@ -108,8 +136,32 @@ export function PosView({
   const tax = Math.round(taxable * 0.11);
   const total = taxable + tax;
 
-  const totalSales = orders.reduce((s, o) => s + o.totalAmount, 0);
-  const aiOrdersCount = orders.filter((o) => o.aiGenerated).length;
+  function openCreateSubModule() {
+    setCart([]);
+    setCustomerName("");
+    setCustomerPhone("");
+    setShippingAddress("");
+    setShippingCourier(storeProfile.defaultCourier || couriers[0]?.name || "JNE Reguler");
+    setChannel("whatsapp");
+    setPaymentMethod("qris");
+    setPaymentStatus("paid");
+    setDiscountAmount(0);
+    setNotes("");
+    setFormModal("create");
+  }
+
+  function openEditSubModule(overrideId?: string) {
+    const id = overrideId ?? selectedOrderId;
+    const ord = orders.find((o) => o.id === id);
+    if (!ord) return;
+    setSelectedOrderId(ord.id);
+    setShippingAddress(ord.shippingAddress);
+    setShippingCourier(ord.shippingCourier || storeProfile.defaultCourier || "JNE Reguler");
+    setPaymentStatus(ord.paymentStatus === "paid" ? "paid" : "unpaid");
+    setOrderStatus(ord.orderStatus);
+    setNotes(ord.notes ?? "");
+    setFormModal("edit");
+  }
 
   function addToCart(product: ErpProductRecord) {
     setCart((prev) => {
@@ -133,369 +185,238 @@ export function PosView({
     );
   }
 
-  async function handleCheckout(e: React.FormEvent) {
+  async function handleSubmitOrder(e: FormEvent) {
     e.preventDefault();
-    if (cart.length === 0) {
-      onToast("Pilih minimal 1 produk untuk membuat order POS.", "error");
-      return;
-    }
-    if (!customerName.trim() || !shippingAddress.trim()) {
-      onToast("Nama pelanggan dan alamat pengiriman wajib diisi.", "error");
-      return;
-    }
     setSubmitting(true);
     try {
-      const created = await adapter.createPosOrder({
-        customerName: customerName.trim(),
-        customerPhone: customerPhone.trim() || null,
-        shippingAddress: shippingAddress.trim(),
-        channel,
-        paymentMethod,
-        paymentStatus,
-        discountAmount: effectiveDiscount,
-        taxRate: 0.11,
-        items: cart.map((c) => ({
-          productId: c.product.id,
-          sku: c.product.sku,
-          productName: c.product.name,
-          quantity: c.quantity,
-          unitPrice: c.product.unitPrice,
-          costPrice: c.product.costPrice,
-        })),
-      });
-      setCart([]);
-      setCustomerName("");
-      setCustomerPhone("");
-      setShippingAddress("");
-      setDiscountAmount(0);
-      await onRefresh();
-      setSelectedOrder(created);
-      onToast(
-        `Invoice ${created.invoiceNumber} + QR Code berhasil dibuat! Stok ERP & jurnal akuntansi diperbarui otomatis.`,
-      );
+      if (formModal === "create") {
+        if (cart.length === 0) {
+          onToast("Pilih minimal 1 produk pada keranjang.", "error");
+          setSubmitting(false);
+          return;
+        }
+        const created = await adapter.createPosOrder({
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.trim() || null,
+          shippingAddress: shippingAddress.trim(),
+          shippingCourier,
+          channel,
+          paymentMethod,
+          paymentStatus,
+          discountAmount: effectiveDiscount,
+          taxRate: 0.11,
+          notes: notes.trim() || null,
+          items: cart.map((c) => ({
+            productId: c.product.id,
+            sku: c.product.sku,
+            productName: c.product.name,
+            quantity: c.quantity,
+            unitPrice: c.product.unitPrice,
+            costPrice: c.product.costPrice,
+          })),
+        });
+        setFormModal("none");
+        await onRefresh();
+        setStudioTab(created.paymentStatus === "paid" ? "invoice" : "label");
+        setStudioOrder(created);
+        onToast(
+          created.paymentStatus === "paid"
+            ? `Pembayaran diterima! Invoice Lunas ${created.invoiceNumber} & Label Pengiriman QR otomatis terisi.`
+            : `Order ${created.invoiceNumber} + Label QR berhasil dibuat!`,
+        );
+      } else if (formModal === "edit" && selectedOrderId) {
+        await adapter.updatePosOrder(selectedOrderId, {
+          shippingAddress: shippingAddress.trim(),
+          shippingCourier,
+          paymentStatus,
+          orderStatus,
+          notes: notes.trim(),
+        });
+        setFormModal("none");
+        await onRefresh();
+        onToast("Data pesanan & pengiriman berhasil diperbarui.");
+      }
     } catch (err) {
-      onToast(err instanceof Error ? err.message : "Gagal membuat transaksi POS.", "error");
+      onToast(err instanceof Error ? err.message : "Gagal menyimpan pesanan POS.", "error");
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleMarkPaid(order: PosOrderRecord) {
+  async function handleConfirmPayment(order: PosOrderRecord) {
     try {
-      await adapter.updatePosOrder(order.id, { paymentStatus: "paid" });
+      await adapter.updatePosOrder(order.id, { paymentStatus: "paid", orderStatus: "confirmed" });
       await onRefresh();
-      if (selectedOrder?.id === order.id) {
-        setSelectedOrder({ ...order, paymentStatus: "paid" });
-      }
-      onToast(`Invoice ${order.invoiceNumber} ditandai LUNAS.`);
+      const paidOrder: PosOrderRecord = {
+        ...order,
+        paymentStatus: "paid",
+        orderStatus: "confirmed",
+        paidAt: new Date().toISOString(),
+      };
+      setStudioTab("invoice");
+      setStudioOrder(paidOrder);
+      onToast(
+        `Pembayaran ${order.invoiceNumber} dikonfirmasi LUNAS! Invoice otomatis terisi & jurnal kas diperbarui.`,
+      );
     } catch (err) {
-      onToast(err instanceof Error ? err.message : "Gagal memperbarui status pembayaran.", "error");
+      onToast(err instanceof Error ? err.message : "Gagal mengonfirmasi pembayaran.", "error");
     }
   }
 
-  async function handlePrintWifi(order: PosOrderRecord) {
-    setPrintingMode("wifi");
+  async function handleDeleteOrder(overrideId?: string) {
+    const id = overrideId ?? selectedOrderId;
+    if (!id) return;
+    if (!window.confirm("Hapus pesanan POS ini?")) return;
     try {
-      const qr = qrDataUrl || (await generateQrDataUrl(order.qrPayload, 240));
-      const html = renderInvoicePrintHtml(order, workspaceName, qr);
-      const res = printViaWifiHtml(`Invoice ${order.invoiceNumber}`, html);
-      onToast(res.message, res.ok ? "ok" : "error");
-    } finally {
-      setPrintingMode(null);
+      await adapter.deletePosOrder(id);
+      setSelectedOrderId(null);
+      await onRefresh();
+      onToast("Pesanan POS dihapus.");
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : "Gagal menghapus pesanan.", "error");
     }
   }
 
-  async function handlePrintBluetooth(order: PosOrderRecord) {
-    setPrintingMode("bluetooth");
+  async function handlePrint(order: PosOrderRecord, docType: "invoice" | "label", via: "wifi" | "bluetooth") {
+    setPrintingMode(via);
     try {
-      const escpos = buildEscPosReceipt(order, workspaceName);
-      const res = await printViaBluetooth(escpos);
-      onToast(res.message, res.ok ? "ok" : "error");
+      if (via === "bluetooth") {
+        const escpos =
+          docType === "label"
+            ? buildEscPosShippingLabel(order, storeProfile)
+            : buildEscPosReceipt(order, storeProfile);
+        const res = await printViaBluetooth(escpos);
+        onToast(res.message, res.ok ? "ok" : "error");
+      } else {
+        const qr = qrDataUrl || (await generateQrDataUrl(order.qrPayload, 260));
+        const html =
+          docType === "label"
+            ? renderShippingLabelPrintHtml(order, storeProfile, qr)
+            : renderInvoicePrintHtml(order, storeProfile, qr);
+        const res = printViaWifiHtml(
+          docType === "label"
+            ? `Label Pengiriman ${order.invoiceNumber}`
+            : `Invoice ${order.invoiceNumber}`,
+          html,
+          docType === "label" ? "label100" : "a4",
+        );
+        onToast(res.message, res.ok ? "ok" : "error");
+      }
     } finally {
       setPrintingMode(null);
     }
   }
 
   return (
-    <div className="space-y-5 p-4 md:p-6">
-      {/* Header & Printer Bar */}
+    <div className="space-y-4 p-4 md:p-6">
+      {/* Header */}
       <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900/90 p-5 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
             <Receipt className="h-3.5 w-3.5" />
-            POS Kasir Terpadu · Auto-Invoice AI · QR Code · Cetak Bluetooth &amp; WiFi
+            {storeProfile.businessName} · Invoice Otomatis Lunas &amp; Label Pengiriman QR
           </div>
           <h2 className="mt-2 text-xl font-bold text-white">
-            Point of Sale (POS) &amp; Generator Invoice QR
+            Point of Sale (POS), Invoice Otomatis &amp; Label Pengiriman QR
           </h2>
           <p className="text-xs text-slate-400">
-            Order dari AI Chat maupun kasir langsung terhubung ke stok gudang ERP dan buku besar akuntansi secara real-time.
+            Saat pelanggan membayar, Invoice resmi langsung terisi otomatis atas nama <strong>{storeProfile.businessName}</strong> beserta Label Pengiriman QR siap cetak Bluetooth/WiFi.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-3 py-2 text-xs font-semibold text-cyan-200">
-            <Bluetooth className="h-4 w-4" />
-            Bluetooth ESC/POS &amp; WiFi Siap
+        <div className="grid grid-cols-3 gap-2 text-center text-xs">
+          <div className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2">
+            <div className="text-slate-400">Omzet</div>
+            <div className="font-bold text-emerald-400">{formatIdr(totalSales)}</div>
           </div>
-          <div className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-300">
-            Total Omzet: <strong className="text-emerald-400">{formatIdr(totalSales)}</strong> ·{" "}
-            <span className="text-cyan-300">{aiOrdersCount} order dari AI</span>
+          <div className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2">
+            <div className="text-slate-400">Invoice Lunas</div>
+            <div className="font-bold text-white">{paidOrdersCount}/{orders.length}</div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2">
+            <div className="text-slate-400">Order AI</div>
+            <div className="font-bold text-cyan-300">{aiOrdersCount}</div>
           </div>
         </div>
       </div>
 
-      {/* Main Grid: Left POS Cashier, Right Invoices */}
-      <div className="grid gap-5 xl:grid-cols-12">
-        {/* Left: Product Picker + Cart */}
-        <div className="space-y-4 xl:col-span-7">
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <h3 className="text-sm font-bold text-white">Katalog Produk ERP (Stok Live)</h3>
-              <div className="relative">
-                <Search className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-slate-500" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Cari SKU / nama produk..."
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pr-3 pl-9 text-xs text-white focus:border-emerald-500 focus:outline-none sm:w-56"
-                />
-              </div>
-            </div>
+      {/* Standard Business CRUD Toolbar */}
+      <CrudToolbar
+        dark
+        searchValue={search}
+        onSearchChange={(v) => {
+          setSearch(v);
+          setPage(1);
+        }}
+        searchPlaceholder="Cari nomor invoice, resi, pelanggan..."
+        onAddNew={openCreateSubModule}
+        addNewLabel="Tambah Baru (Order POS)"
+        hasSelection={Boolean(selectedOrderId)}
+        onEditSelected={() => openEditSubModule()}
+        onDeleteSelected={() => void handleDeleteOrder()}
+        onRefresh={() => void onRefresh()}
+      />
 
-            <div className="mt-3 grid gap-2.5 sm:grid-cols-2">
-              {filteredProducts.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => addToCart(p)}
-                  className="flex items-start justify-between rounded-xl border border-slate-800 bg-slate-950/90 p-3 text-left transition hover:border-emerald-500/50 hover:bg-slate-900"
-                >
-                  <div>
-                    <div className="text-[11px] font-semibold text-cyan-400">{p.sku}</div>
-                    <div className="mt-0.5 text-xs font-bold text-white">{p.name}</div>
-                    <div className="mt-1 text-xs font-semibold text-emerald-400">
-                      {formatIdr(p.unitPrice)} <span className="text-slate-500">/{p.unit}</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                        p.stockQty <= p.minStock
-                          ? "bg-amber-500/20 text-amber-300"
-                          : "bg-slate-800 text-slate-300"
-                      }`}
-                    >
-                      Stok: {p.stockQty}
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2 py-1 text-[10px] font-bold text-emerald-300">
-                      <Plus className="h-3 w-3" /> Tambah
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Checkout Form */}
-          <form
-            onSubmit={handleCheckout}
-            className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-4"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm font-bold text-white">
-                <ShoppingCart className="h-4 w-4 text-emerald-400" />
-                Keranjang Kasir ({cart.length} item)
-              </div>
-              {cart.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setCart([])}
-                  className="text-xs text-rose-400 hover:text-rose-300"
-                >
-                  Kosongkan
-                </button>
-              )}
-            </div>
-
-            {cart.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-700 p-4 text-center text-xs text-slate-400">
-                Klik produk di atas untuk memasukkan ke keranjang transaksi POS.
-              </div>
+      {/* Orders Table */}
+      <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/80">
+        <table className="w-full text-left text-xs">
+          <thead className="border-b border-slate-800 bg-slate-950/70 text-slate-400">
+            <tr>
+              <th className="px-4 py-3">Invoice &amp; Resi</th>
+              <th className="px-4 py-3">Pelanggan &amp; Alamat Kirim</th>
+              <th className="px-4 py-3">Kurir / Bayar</th>
+              <th className="px-4 py-3 text-right">Total</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3 text-right">Invoice &amp; Label QR</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800/80">
+            {paginatedOrders.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                  Belum ada pesanan POS. Klik <strong>Tambah Baru (Order POS)</strong> untuk membuat transaksi.
+                </td>
+              </tr>
             ) : (
-              <div className="space-y-2">
-                {cart.map((c) => (
-                  <div
-                    key={c.product.id}
-                    className="flex items-center justify-between rounded-xl bg-slate-950 px-3 py-2 text-xs"
-                  >
-                    <div>
-                      <div className="font-semibold text-white">{c.product.name}</div>
-                      <div className="text-slate-400">
-                        {formatIdr(c.product.unitPrice)} × {c.quantity} ={" "}
-                        <strong className="text-emerald-300">
-                          {formatIdr(c.product.unitPrice * c.quantity)}
-                        </strong>
-                      </div>
-                    </div>
+              paginatedOrders.map((order) => (
+                <tr
+                  key={order.id}
+                  onClick={() => setSelectedOrderId(order.id)}
+                  className={`cursor-pointer transition ${
+                    selectedOrderId === order.id ? "bg-emerald-500/15" : "hover:bg-slate-800/40"
+                  }`}
+                >
+                  <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => updateQty(c.product.id, -1)}
-                        className="rounded-lg bg-slate-800 p-1 text-slate-200 hover:bg-slate-700"
-                      >
-                        <Minus className="h-3.5 w-3.5" />
-                      </button>
-                      <span className="w-6 text-center font-bold text-white">{c.quantity}</span>
-                      <button
-                        type="button"
-                        onClick={() => updateQty(c.product.id, 1)}
-                        className="rounded-lg bg-slate-800 p-1 text-slate-200 hover:bg-slate-700"
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                      </button>
+                      <span className="font-mono font-bold text-emerald-300">{order.invoiceNumber}</span>
+                      {order.aiGenerated && (
+                        <span className="inline-flex items-center gap-0.5 rounded-full bg-cyan-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-300">
+                          <Sparkles className="h-2.5 w-2.5" /> AI
+                        </span>
+                      )}
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className="text-xs text-slate-400">Nama Pelanggan *</label>
-                <input
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Contoh: Budi Santoso"
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400">No. WhatsApp / HP</label>
-                <input
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  placeholder="+62812..."
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="text-xs text-slate-400">Alamat Pengiriman *</label>
-                <input
-                  value={shippingAddress}
-                  onChange={(e) => setShippingAddress(e.target.value)}
-                  placeholder="Jl. Merdeka No. 15, Kediri, Jawa Timur"
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white focus:border-emerald-500 focus:outline-none"
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400">Kanal Sumber</label>
-                <select
-                  value={channel}
-                  onChange={(e) => setChannel(e.target.value as ChannelType)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
-                >
-                  <option value="whatsapp">WhatsApp</option>
-                  <option value="instagram">Instagram</option>
-                  <option value="facebook">Facebook</option>
-                  <option value="tiktok">TikTok</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-slate-400">Metode Pembayaran</label>
-                <select
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
-                >
-                  <option value="qris">QRIS (Auto QR)</option>
-                  <option value="bank_transfer">Transfer Bank</option>
-                  <option value="cash">Tunai</option>
-                  <option value="cod">COD</option>
-                  <option value="credit">Tempo / Invoice</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-slate-400">Status Pembayaran</label>
-                <select
-                  value={paymentStatus}
-                  onChange={(e) => setPaymentStatus(e.target.value as "paid" | "unpaid")}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
-                >
-                  <option value="paid">Lunas (Paid)</option>
-                  <option value="unpaid">Menunggu Bayar (Unpaid)</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-slate-400">Diskon (Rp)</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={discountAmount}
-                  onChange={(e) => setDiscountAmount(Number(e.target.value) || 0)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
-                />
-              </div>
-            </div>
-
-            {/* Totals */}
-            <div className="space-y-1 rounded-xl bg-slate-950 p-3 text-xs">
-              <div className="flex justify-between text-slate-400">
-                <span>Subtotal</span>
-                <span>{formatIdr(subtotal)}</span>
-              </div>
-              {effectiveDiscount > 0 && (
-                <div className="flex justify-between text-amber-300">
-                  <span>Diskon</span>
-                  <span>-{formatIdr(effectiveDiscount)}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-slate-400">
-                <span>PPN 11%</span>
-                <span>{formatIdr(tax)}</span>
-              </div>
-              <div className="flex justify-between border-t border-slate-800 pt-1.5 text-sm font-bold text-emerald-400">
-                <span>TOTAL TAGIHAN</span>
-                <span>{formatIdr(total)}</span>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={submitting || cart.length === 0}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3 text-sm font-bold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
-            >
-              <QrCode className="h-4 w-4" />
-              {submitting ? "Membuat Invoice & QR..." : "Buat Transaksi POS + Generate QR Invoice"}
-            </button>
-          </form>
-        </div>
-
-        {/* Right: Recent POS Orders & Invoice QR List */}
-        <div className="space-y-3 xl:col-span-5">
-          <h3 className="text-sm font-bold text-white">
-            Daftar Invoice &amp; Order POS ({orders.length})
-          </h3>
-          {orders.map((order) => (
-            <div
-              key={order.id}
-              className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 transition hover:border-emerald-500/40"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="font-mono text-xs font-bold text-emerald-300">
-                      {order.invoiceNumber}
-                    </span>
-                    {order.aiGenerated && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-cyan-500/15 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">
-                        <Sparkles className="h-2.5 w-2.5" /> AI Auto-Order
-                      </span>
-                    )}
+                    <div className="font-mono text-[10px] text-slate-400">
+                      {order.trackingCode || `RESI-${order.invoiceNumber.replace(/^INV-/, "")}`}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="font-bold text-white">{order.customerName}</div>
+                    <div className="max-w-xs truncate text-[11px] text-slate-400">
+                      {order.shippingAddress}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="text-slate-200">{order.shippingCourier || storeProfile.defaultCourier}</div>
+                    <div className="text-[11px] text-slate-400">
+                      {PAYMENT_METHOD_LABELS[order.paymentMethod]}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right font-bold text-emerald-400">
+                    {formatIdr(order.totalAmount)}
+                  </td>
+                  <td className="px-4 py-3">
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                      className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase ${
                         order.paymentStatus === "paid"
                           ? "bg-emerald-500/20 text-emerald-300"
                           : order.paymentStatus === "flagged"
@@ -503,175 +424,416 @@ export function PosView({
                             : "bg-amber-500/20 text-amber-300"
                       }`}
                     >
-                      {order.paymentStatus}
+                      {order.paymentStatus === "paid" ? "LUNAS" : order.paymentStatus}
                     </span>
-                  </div>
-                  <div className="mt-1 text-sm font-bold text-white">{order.customerName}</div>
-                  <div className="text-[11px] text-slate-400">{order.shippingAddress}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-bold text-emerald-400">
-                    {formatIdr(order.totalAmount)}
-                  </div>
-                  <div className="text-[11px] text-slate-400">
-                    {PAYMENT_LABELS[order.paymentMethod] ?? order.paymentMethod}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2.5">
-                <span className="text-[11px] text-slate-400">
-                  {order.items.length} item · Risiko AI: {order.fraudRiskScore}/100
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {order.paymentStatus === "unpaid" && (
-                    <button
-                      type="button"
-                      onClick={() => handleMarkPaid(order)}
-                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/25"
-                    >
-                      <CheckCircle2 className="h-3 w-3" /> Lunas
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setSelectedOrder(order)}
-                    className="inline-flex items-center gap-1 rounded-lg bg-cyan-500/20 px-2.5 py-1 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-500/30"
-                  >
-                    <QrCode className="h-3 w-3" /> QR &amp; Cetak
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await adapter.deletePosOrder(order.id);
-                      await onRefresh();
-                      onToast(`Invoice ${order.invoiceNumber} dihapus.`);
-                    }}
-                    className="rounded-lg p-1 text-slate-500 hover:bg-rose-500/15 hover:text-rose-300"
-                    title="Hapus order"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="inline-flex flex-wrap justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      {order.paymentStatus === "unpaid" && (
+                        <button
+                          type="button"
+                          onClick={() => void handleConfirmPayment(order)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[11px] font-bold text-slate-950 hover:bg-emerald-400"
+                        >
+                          <CheckCircle2 className="h-3 w-3" />
+                          Konfirmasi Lunas
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStudioTab("invoice");
+                          setStudioOrder(order);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-slate-700"
+                      >
+                        <Receipt className="h-3 w-3 text-emerald-400" />
+                        Invoice
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStudioTab("label");
+                          setStudioOrder(order);
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg bg-cyan-500/20 px-2.5 py-1.5 text-[11px] font-semibold text-cyan-200 hover:bg-cyan-500/30"
+                      >
+                        <Truck className="h-3 w-3" />
+                        Label QR
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
-      {/* Invoice QR + Bluetooth/WiFi Print Modal */}
-      {selectedOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
-          <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-emerald-500/40 bg-slate-900 p-5 shadow-2xl">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-xs font-semibold text-emerald-400">
-                  INVOICE RESMI &amp; QR VERIFIKASI
-                </div>
-                <h3 className="font-mono text-lg font-bold text-white">
-                  {selectedOrder.invoiceNumber}
-                </h3>
+      {/* Back / Next Pagination */}
+      <PaginationBar
+        dark
+        page={page}
+        pageSize={PAGE_SIZE}
+        totalItems={filteredOrders.length}
+        onPageChange={setPage}
+      />
+
+      {/* SUB-MODULE MODAL: TAMBAH BARU / UBAH ORDER POS */}
+      {formModal !== "none" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-xs">
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold">
+                {formModal === "create"
+                  ? "Sub-Modul Tambah Order POS Baru"
+                  : "Ubah Data Pengiriman & Status Order"}
+              </h3>
+              <button type="button" onClick={() => setFormModal("none")} className="rounded-lg p-1 text-slate-400 hover:bg-slate-800">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitOrder} className="mt-4 space-y-4 text-xs">
+              {formModal === "create" && (
+                <>
+                  {/* Product Picker */}
+                  <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-emerald-300">1. Pilih Produk dari Master Barang</span>
+                      <input
+                        value={productSearch}
+                        onChange={(e) => setProductSearch(e.target.value)}
+                        placeholder="Filter barang..."
+                        className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-white"
+                      />
+                    </div>
+                    <div className="grid max-h-44 gap-2 overflow-y-auto sm:grid-cols-2">
+                      {filteredProducts.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => addToCart(p)}
+                          className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-left hover:border-emerald-500/50"
+                        >
+                          <div>
+                            <div className="font-semibold text-white">{p.name}</div>
+                            <div className="text-[11px] text-emerald-400">
+                              {formatIdr(p.unitPrice)} · Stok {p.stockQty}
+                            </div>
+                          </div>
+                          <Plus className="h-4 w-4 shrink-0 text-emerald-400" />
+                        </button>
+                      ))}
+                    </div>
+                    {cart.length > 0 && (
+                      <div className="space-y-1.5 border-t border-slate-800 pt-2">
+                        {cart.map((c) => (
+                          <div key={c.product.id} className="flex items-center justify-between rounded-lg bg-slate-900 px-2.5 py-1.5">
+                            <span>{c.product.name} ({formatIdr(c.product.unitPrice)})</span>
+                            <div className="flex items-center gap-1.5">
+                              <button type="button" onClick={() => updateQty(c.product.id, -1)} className="rounded bg-slate-800 p-1"><Minus className="h-3 w-3" /></button>
+                              <span className="w-5 text-center font-bold">{c.quantity}</span>
+                              <button type="button" onClick={() => updateQty(c.product.id, 1)} className="rounded bg-slate-800 p-1"><Plus className="h-3 w-3" /></button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Customer Info */}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      Nama Pelanggan *
+                      <input required value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+                    </label>
+                    <label className="block">
+                      No. WhatsApp / HP
+                      <input value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder="+62812..." className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+                    </label>
+                  </div>
+                </>
+              )}
+
+              <label className="block">
+                Alamat Pengiriman Lengkap *
+                <input required value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+              </label>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  Ekspedisi / Kurir Pengiriman
+                  <select value={shippingCourier} onChange={(e) => setShippingCourier(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white">
+                    {couriers.map((c) => (
+                      <option key={c.id} value={c.name}>{c.name} ({c.estimatedDays})</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  Status Pembayaran
+                  <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value as "paid" | "unpaid")} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white">
+                    <option value="paid">Sudah Dibayar / LUNAS (Terbitkan Invoice Otomatis)</option>
+                    <option value="unpaid">Menunggu Pembayaran (Unpaid)</option>
+                  </select>
+                </label>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedOrder(null)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white"
-              >
+
+              {formModal === "create" ? (
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="block">
+                    Kanal Sumber
+                    <select value={channel} onChange={(e) => setChannel(e.target.value as ChannelType)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white">
+                      <option value="whatsapp">WhatsApp</option>
+                      <option value="instagram">Instagram</option>
+                      <option value="facebook_messenger">Messenger</option>
+                      <option value="tiktok">TikTok</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    Metode Pembayaran
+                    <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white">
+                      {(Object.keys(PAYMENT_METHOD_LABELS) as PaymentMethod[]).map((m) => (
+                        <option key={m} value={m}>{PAYMENT_METHOD_LABELS[m]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    Diskon (Rp)
+                    <input type="number" min={0} value={discountAmount} onChange={(e) => setDiscountAmount(Number(e.target.value) || 0)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+                  </label>
+                </div>
+              ) : (
+                <label className="block">
+                  Status Pengiriman / Order
+                  <select value={orderStatus} onChange={(e) => setOrderStatus(e.target.value as OrderStatus)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white">
+                    <option value="confirmed">Dikonfirmasi</option>
+                    <option value="packed">Sedang Dikemas</option>
+                    <option value="shipped">Dikirim Kurir</option>
+                    <option value="completed">Selesai Diterima</option>
+                    <option value="cancelled">Dibatalkan</option>
+                  </select>
+                </label>
+              )}
+
+              <label className="block">
+                Catatan Pesanan / Pengiriman
+                <input value={notes} onChange={(e) => setNotes(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+              </label>
+
+              {formModal === "create" && (
+                <div className="rounded-xl bg-slate-950 p-3">
+                  <div className="flex justify-between text-slate-400"><span>Subtotal</span><span>{formatIdr(subtotal)}</span></div>
+                  <div className="flex justify-between text-slate-400"><span>PPN 11%</span><span>{formatIdr(tax)}</span></div>
+                  <div className="mt-1 flex justify-between border-t border-slate-800 pt-1 text-sm font-bold text-emerald-400">
+                    <span>TOTAL TAGIHAN</span><span>{formatIdr(total)}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 border-t border-slate-800 pt-3">
+                <button type="button" onClick={() => setFormModal("none")} className="rounded-xl border border-slate-700 px-4 py-2 font-semibold text-slate-300">Batal</button>
+                <button type="submit" disabled={submitting} className="rounded-xl bg-emerald-500 px-4 py-2 font-bold text-slate-950 hover:bg-emerald-400 disabled:opacity-50">
+                  {submitting ? "Menyimpan..." : formModal === "create" ? "Simpan Order & Terbitkan QR" : "Simpan Perubahan"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DUAL STUDIO MODAL: AUTO-FILLED PAID INVOICE + SCANNABLE QR SHIPPING LABEL */}
+      {studioOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-sm">
+          <div className="max-h-[93vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-emerald-500/40 bg-slate-900 p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="text-xs font-bold text-emerald-400">{storeProfile.businessName}</div>
+                <h3 className="font-mono text-lg font-bold text-white">{studioOrder.invoiceNumber}</h3>
+              </div>
+              <button type="button" onClick={() => setStudioOrder(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            {selectedOrder.fraudRiskScore >= 50 && (
+            {/* Mode Switcher: Official Paid Invoice vs Shipping Label QR */}
+            <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-slate-950 p-1">
+              <button
+                type="button"
+                onClick={() => setStudioTab("invoice")}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold transition ${
+                  studioTab === "invoice" ? "bg-emerald-500 text-slate-950" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Receipt className="h-3.5 w-3.5" />
+                Invoice Resmi ({studioOrder.paymentStatus === "paid" ? "LUNAS" : "TAGIHAN"})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStudioTab("label")}
+                className={`inline-flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold transition ${
+                  studioTab === "label" ? "bg-cyan-500 text-slate-950" : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Package className="h-3.5 w-3.5" />
+                Label Pesanan &amp; Pengiriman QR
+              </button>
+            </div>
+
+            {studioOrder.fraudRiskScore >= 50 && (
               <div className="mt-3 flex items-center gap-2 rounded-xl border border-rose-500/40 bg-rose-500/15 p-3 text-xs text-rose-200">
                 <ShieldAlert className="h-4 w-4 shrink-0" />
-                Skor Risiko AI {selectedOrder.fraudRiskScore}/100 — Harap verifikasi pembayaran masuk sebelum pengiriman.
+                Skor Risiko AI {studioOrder.fraudRiskScore}/100 — Harap verifikasi pembayaran masuk sebelum paket dikirim.
               </div>
             )}
 
-            <div className="mt-4 grid gap-3 rounded-xl bg-slate-950 p-4 text-xs sm:grid-cols-2">
-              <div>
-                <div className="text-slate-500">Pelanggan</div>
-                <div className="font-bold text-white">{selectedOrder.customerName}</div>
-                <div className="text-slate-400">{selectedOrder.customerPhone ?? "-"}</div>
-              </div>
-              <div>
-                <div className="text-slate-500">Alamat Pengiriman</div>
-                <div className="text-slate-200">{selectedOrder.shippingAddress}</div>
-              </div>
-            </div>
+            {/* WHITE-LABEL PREVIEW CARD */}
+            <div className="mt-4 rounded-2xl border border-slate-300 bg-white p-5 text-slate-900">
+              {studioTab === "invoice" ? (
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-start justify-between border-b-2 border-emerald-600 pb-3">
+                    <div>
+                      <div className="text-base font-extrabold text-slate-900">{storeProfile.businessName}</div>
+                      {storeProfile.businessTagline && <div className="text-[11px] font-semibold text-emerald-700">{storeProfile.businessTagline}</div>}
+                      <div className="text-[11px] text-slate-500">{storeProfile.address}</div>
+                      <div className="text-[11px] text-slate-500">{storeProfile.phone}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Invoice Pembayaran</div>
+                      <div className="font-mono text-sm font-extrabold">{studioOrder.invoiceNumber}</div>
+                      <span
+                        className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                          studioOrder.paymentStatus === "paid"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {studioOrder.paymentStatus === "paid" ? "LUNAS / TERKONFIRMASI" : "MENUNGGU PEMBAYARAN"}
+                      </span>
+                    </div>
+                  </div>
 
-            <div className="mt-3 space-y-1.5 rounded-xl bg-slate-950 p-4 text-xs">
-              {selectedOrder.items.map((item) => (
-                <div key={item.id} className="flex justify-between">
-                  <span className="text-slate-200">
-                    {item.productName} × {item.quantity}
-                  </span>
-                  <span className="font-semibold text-white">{formatIdr(item.lineTotal)}</span>
-                </div>
-              ))}
-              <div className="mt-2 border-t border-slate-800 pt-2">
-                <div className="flex justify-between text-slate-400">
-                  <span>PPN 11%</span>
-                  <span>{formatIdr(selectedOrder.taxAmount)}</span>
-                </div>
-                <div className="mt-1 flex justify-between text-sm font-bold text-emerald-400">
-                  <span>TOTAL ({PAYMENT_LABELS[selectedOrder.paymentMethod]})</span>
-                  <span>{formatIdr(selectedOrder.totalAmount)}</span>
-                </div>
-              </div>
-            </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] font-bold uppercase text-slate-400">Kepada Pelanggan</div>
+                      <div className="text-sm font-bold">{studioOrder.customerName}</div>
+                      <div className="text-slate-600">{studioOrder.customerPhone ?? "-"}</div>
+                      <div className="text-slate-600">{studioOrder.shippingAddress}</div>
+                    </div>
+                    {qrDataUrl && (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={qrDataUrl} alt="QR Invoice" className="h-24 w-24 shrink-0 rounded-lg border border-slate-200 p-1" />
+                    )}
+                  </div>
 
-            {/* Real Scannable QR Code */}
-            <div className="mt-4 flex flex-col items-center rounded-2xl border border-slate-700 bg-white p-4 text-slate-950">
-              {qrDataUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={qrDataUrl}
-                  alt={`QR Invoice ${selectedOrder.invoiceNumber}`}
-                  className="h-48 w-48"
-                />
+                  <div className="divide-y divide-slate-200 border-y border-slate-200 py-2">
+                    {studioOrder.items.map((item) => (
+                      <div key={item.id} className="flex justify-between py-1">
+                        <span>{item.productName} × {item.quantity}</span>
+                        <span className="font-bold">{formatIdr(item.lineTotal)}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="space-y-1 text-right">
+                    <div className="text-slate-500">PPN 11%: {formatIdr(studioOrder.taxAmount)}</div>
+                    <div className="text-sm font-extrabold text-emerald-700">
+                      TOTAL: {formatIdr(studioOrder.totalAmount)} ({PAYMENT_METHOD_LABELS[studioOrder.paymentMethod]})
+                    </div>
+                  </div>
+                  <div className="border-t border-dashed border-slate-300 pt-2 text-[11px] text-slate-500">
+                    {storeProfile.invoiceFooter}
+                  </div>
+                </div>
               ) : (
-                <div className="flex h-48 w-48 items-center justify-center text-xs text-slate-500">
-                  Membuat QR Code...
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-center justify-between border-b-2 border-slate-900 pb-2">
+                    <div>
+                      <div className="text-sm font-extrabold">{storeProfile.businessName}</div>
+                      <div className="text-[11px] text-slate-500">
+                        Pengirim: {storeProfile.city || storeProfile.address} · {storeProfile.phone}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="rounded bg-slate-900 px-2 py-1 text-[11px] font-bold text-white">
+                        {studioOrder.shippingCourier || storeProfile.defaultCourier}
+                      </span>
+                      <div className="mt-1 font-mono text-[10px] font-bold text-slate-600">
+                        {studioOrder.trackingCode || `RESI-${studioOrder.invoiceNumber.replace(/^INV-/, "")}`}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 border-b border-dashed border-slate-300 pb-3">
+                    <div className="space-y-1">
+                      <div className="text-[10px] font-bold uppercase text-slate-500">Penerima / Alamat Pengiriman</div>
+                      <div className="text-sm font-extrabold">{studioOrder.customerName}</div>
+                      <div className="font-semibold text-slate-700">{studioOrder.customerPhone ?? "-"}</div>
+                      <div className="text-slate-700">{studioOrder.shippingAddress}</div>
+                      <span
+                        className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
+                          studioOrder.paymentStatus === "paid"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {studioOrder.paymentStatus === "paid"
+                          ? "LUNAS · NON-COD"
+                          : studioOrder.paymentMethod === "cod"
+                            ? `COD ${formatIdr(studioOrder.totalAmount)}`
+                            : "BELUM LUNAS"}
+                      </span>
+                    </div>
+                    <div className="shrink-0 text-center">
+                      {qrDataUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={qrDataUrl} alt="QR Label Pengiriman" className="h-32 w-32 rounded-lg border border-slate-900 p-1" />
+                      ) : (
+                        <div className="flex h-32 w-32 items-center justify-center rounded-lg border border-slate-300">
+                          <QrCode className="h-8 w-8 text-slate-400" />
+                        </div>
+                      )}
+                      <div className="mt-1 font-mono text-[10px] font-bold">{studioOrder.invoiceNumber}</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[10px] font-bold uppercase text-slate-500">
+                      Isi Paket ({studioOrder.items.reduce((s, i) => s + i.quantity, 0)} item)
+                    </div>
+                    <ul className="mt-1 space-y-0.5">
+                      {studioOrder.items.map((item) => (
+                        <li key={item.id} className="flex justify-between">
+                          <span>{item.productName}</span>
+                          <strong>{item.quantity}x</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               )}
-              <div className="mt-2 text-center text-xs font-bold">
-                Pindai QR untuk Pembayaran &amp; Verifikasi Invoice
-              </div>
-              <div className="mt-0.5 max-w-full truncate font-mono text-[10px] text-slate-600">
-                {selectedOrder.qrPayload}
-              </div>
             </div>
 
-            {/* Print Actions: Bluetooth Thermal + WiFi Print */}
+            {/* Print Actions */}
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <button
                 type="button"
                 disabled={printingMode !== null}
-                onClick={() => handlePrintBluetooth(selectedOrder)}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-xs font-bold text-slate-950 transition hover:bg-cyan-400 disabled:opacity-50"
+                onClick={() => void handlePrint(studioOrder, studioTab, "bluetooth")}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-400 disabled:opacity-50"
               >
                 <Bluetooth className="h-4 w-4" />
-                {printingMode === "bluetooth" ? "Mencetak BT..." : "Cetak Thermal Bluetooth"}
+                {studioTab === "label" ? "Cetak Label QR (Bluetooth)" : "Cetak Struk Invoice (Bluetooth)"}
               </button>
               <button
                 type="button"
                 disabled={printingMode !== null}
-                onClick={() => handlePrintWifi(selectedOrder)}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-bold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
+                onClick={() => void handlePrint(studioOrder, studioTab, "wifi")}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-bold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
               >
                 <Wifi className="h-4 w-4" />
-                {printingMode === "wifi" ? "Membuka Print..." : "Cetak Invoice via WiFi"}
+                {studioTab === "label" ? "Cetak Label Pengiriman (WiFi)" : "Cetak Invoice Resmi (WiFi)"}
               </button>
-            </div>
-
-            <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-              <span className="inline-flex items-center gap-1">
-                <Printer className="h-3.5 w-3.5" /> Mendukung ESC/POS 58mm/80mm &amp; AirPrint/Android Print
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <CreditCard className="h-3.5 w-3.5" /> {selectedOrder.paymentStatus.toUpperCase()}
-              </span>
             </div>
           </div>
         </div>

@@ -96,3 +96,95 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
     return handleTenantError(error, "Gagal menambahkan supplier ERP.");
   }
 }
+
+const patchSupplierSchema = supplierSchema.partial().extend({
+  id: z.string().uuid(),
+  status: z.enum(["active", "inactive"]).optional(),
+});
+
+export async function PATCH(request: Request, { params }: { params: Promise<{ tenantId: string }> }) {
+  const auth = await requireSession();
+  if (!auth.ok) return auth.response;
+  const { tenantId } = await params;
+  const invalid = validateUuidParam(tenantId, "ID workspace");
+  if (invalid) return invalid;
+
+  const parsed = patchSupplierSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return Response.json({ error: "Pembaruan supplier tidak valid." }, { status: 400 });
+  const input = parsed.data;
+
+  try {
+    const supplier = await withTenantContext(
+      { tenantId, userId: auth.session.user.id, minRole: "agent" },
+      async (client) => {
+        const res = await client.query(
+          `UPDATE erp_suppliers
+              SET name = COALESCE($3, name),
+                  contact_person = COALESCE($4, contact_person),
+                  phone = COALESCE($5, phone),
+                  email = COALESCE($6, email),
+                  address = COALESCE($7, address),
+                  payment_terms = COALESCE($8, payment_terms),
+                  status = COALESCE($9, status)
+            WHERE tenant_id = $1::uuid AND id = $2::uuid
+            RETURNING *`,
+          [
+            tenantId,
+            input.id,
+            input.name ?? null,
+            input.contactPerson ?? null,
+            input.phone ?? null,
+            input.email ?? null,
+            input.address ?? null,
+            input.paymentTerms ?? null,
+            input.status ?? null,
+          ],
+        );
+        const r = res.rows[0];
+        if (!r) return null;
+        return {
+          id: String(r.id),
+          name: String(r.name),
+          contactPerson: r.contact_person ? String(r.contact_person) : null,
+          phone: r.phone ? String(r.phone) : null,
+          email: r.email ? String(r.email) : null,
+          address: r.address ? String(r.address) : null,
+          paymentTerms: String(r.payment_terms),
+          status: String(r.status),
+          createdAt: new Date(String(r.created_at)).toISOString(),
+        };
+      },
+    );
+    if (!supplier) return Response.json({ error: "Supplier tidak ditemukan." }, { status: 404 });
+    return Response.json({ supplier });
+  } catch (error) {
+    return handleTenantError(error, "Gagal memperbarui supplier ERP.");
+  }
+}
+
+export async function DELETE(request: Request, { params }: { params: Promise<{ tenantId: string }> }) {
+  const auth = await requireSession();
+  if (!auth.ok) return auth.response;
+  const { tenantId } = await params;
+  const invalid = validateUuidParam(tenantId, "ID workspace");
+  if (invalid) return invalid;
+
+  const supplierId = new URL(request.url).searchParams.get("supplierId") ?? "";
+  const badSupplier = validateUuidParam(supplierId, "ID supplier");
+  if (badSupplier) return badSupplier;
+
+  try {
+    await withTenantContext(
+      { tenantId, userId: auth.session.user.id, minRole: "admin" },
+      async (client) => {
+        await client.query(`DELETE FROM erp_suppliers WHERE tenant_id = $1::uuid AND id = $2::uuid`, [
+          tenantId,
+          supplierId,
+        ]);
+      },
+    );
+    return Response.json({ deleted: true });
+  } catch (error) {
+    return handleTenantError(error, "Gagal menghapus supplier ERP.");
+  }
+}

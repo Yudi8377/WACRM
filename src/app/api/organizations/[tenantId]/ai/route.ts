@@ -100,8 +100,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ten
           [tenantId],
         );
 
-        // Auto-seed the 5 autonomous AI agents on first access
-        if (agentsRes.rows.length === 0) {
+        // Auto-seed all 8 autonomous AI agents on first access or upgrade
+        if (agentsRes.rows.length < 8) {
           for (const def of buildDefaultAiAgents()) {
             await client.query(
               `INSERT INTO ai_agents
@@ -154,7 +154,16 @@ export async function GET(_request: Request, { params }: { params: Promise<{ ten
 }
 
 const patchAgentSchema = z.object({
-  agentKey: z.enum(["cs_sales", "order_pos", "knowledge_learner", "fraud_sentinel", "system_guardian"]),
+  agentKey: z.enum([
+    "cs_sales",
+    "order_pos",
+    "knowledge_learner",
+    "fraud_sentinel",
+    "system_guardian",
+    "companion_guide",
+    "followup_hunter",
+    "procurement_forecast",
+  ]),
   enabled: z.boolean().optional(),
   autoReplyEnabled: z.boolean().optional(),
   autonomousLearning: z.boolean().optional(),
@@ -673,11 +682,34 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
           [tenantId, body.conversationId, conv.channel, finalReplyText],
         );
 
-        await client.query(
-          `UPDATE conversations SET last_message_at = now(), unread_count = 0, updated_at = now()
-            WHERE tenant_id = $1::uuid AND id = $2::uuid`,
-          [tenantId, body.conversationId],
-        );
+        if (plan.escalationRequired) {
+          await client.query(
+            `UPDATE conversations
+                SET priority = 'urgent',
+                    tags = CASE WHEN 'perlu-admin' = ANY(tags) THEN tags ELSE array_append(tags, 'perlu-admin') END,
+                    last_message_at = now(),
+                    unread_count = 0,
+                    updated_at = now()
+              WHERE tenant_id = $1::uuid AND id = $2::uuid`,
+            [tenantId, body.conversationId],
+          );
+          await client.query(
+            `INSERT INTO conversation_notes (tenant_id, conversation_id, author_user_id, body_text)
+             VALUES ($1::uuid, $2::uuid, $3::uuid, $4)`,
+            [
+              tenantId,
+              body.conversationId,
+              auth.session.user.id,
+              `[Eskalasi AI ke Admin] ${plan.escalationReason ?? "Pesan memerlukan tindakan admin manusia."}`,
+            ],
+          );
+        } else {
+          await client.query(
+            `UPDATE conversations SET last_message_at = now(), unread_count = 0, updated_at = now()
+              WHERE tenant_id = $1::uuid AND id = $2::uuid`,
+            [tenantId, body.conversationId],
+          );
+        }
 
         let learnedKnowledge: AiKnowledgeItemRecord | null = null;
         if (plan.learnedKnowledgeCandidate) {
@@ -740,6 +772,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
           agentTrace: plan.agentTrace,
           confidence: plan.confidence,
           fraudRiskScore: plan.fraud.riskScore,
+          detectedIntent: plan.detectedIntent,
+          escalationRequired: plan.escalationRequired,
+          escalationReason: plan.escalationReason,
           createdOrder,
           learnedKnowledge,
           securityIncident,

@@ -54,12 +54,13 @@ export default function AndroidPage() {
             <div>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300">
                 <Smartphone className="h-3.5 w-3.5" />
-                Android App v2.0.0 · com.wacrm.android
+                Android App v3.0.0 · com.wacrm.android
               </span>
-              <h1 className="mt-2.5 text-2xl font-extrabold sm:text-3xl">Aplikasi Android WACRM v2.0 AI</h1>
+              <h1 className="mt-2.5 text-2xl font-extrabold sm:text-3xl">Aplikasi Android WACRM v3.0 AI</h1>
               <p className="mt-1.5 text-sm text-slate-300">
-                Terhubung penuh dengan database Neon Desktop ↔ HP, dilengkapi <strong>Multi-Agent AI Auto-Reply</strong>,{" "}
-                <strong>POS + QR Invoice</strong>, <strong>ERP &amp; Akuntansi</strong>, serta <strong>Cetak Printer Thermal Bluetooth ESC/POS &amp; WiFi Native</strong>.
+                Dilengkapi <strong>Asisten Pribadi AI Suara &amp; Teks 24/7</strong> (Native Android TTS &amp; Speech-to-Text),{" "}
+                <strong>AI Auto-Reply Kontekstual Otomatis</strong>, <strong>Master Data</strong>,{" "}
+                <strong>POS Invoice Otomatis &amp; Label Pengiriman QR</strong>, serta <strong>Cetak Bluetooth &amp; WiFi</strong>.
               </p>
             </div>
           </div>
@@ -70,7 +71,7 @@ export default function AndroidPage() {
               className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400"
             >
               <Download className="h-4 w-4" />
-              Unduh APK Android (v2.0.0)
+              Unduh APK Android (v3.0.0)
             </a>
             {deferredPrompt ? (
               <button
