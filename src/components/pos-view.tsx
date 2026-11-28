@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Bluetooth,
   CheckCircle2,
+  LayoutTemplate,
   Minus,
   Package,
   Plus,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import { CrudToolbar, PaginationBar } from "@/components/crud-toolbar";
 import { CodTrackingHub } from "@/components/cod-tracking-hub";
+import { InvoiceLayoutStudio } from "@/components/invoice-layout-studio";
 import { UniversalPrintPanel } from "@/components/universal-print-panel";
 import { SovereignPosSuite } from "@/components/sovereign-corporate-panels";
 import {
@@ -92,7 +94,7 @@ export function PosView({
   );
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [posSubView, setPosSubView] = useState<"pos" | "cod_tracking">("pos");
+  const [posSubView, setPosSubView] = useState<"pos" | "cod_tracking" | "invoice_layout">("pos");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(highlightOrderId ?? null);
 
   const initialScannedProduct = initialScannedSku
@@ -492,9 +494,26 @@ export function PosView({
         >
           <Truck className="h-3.5 w-3.5" /> COD Marketplace &amp; Lacak Kiriman AI ({orders.filter((o) => o.paymentMethod === "cod").length} COD)
         </button>
+        <button
+          type="button"
+          onClick={() => setPosSubView("invoice_layout")}
+          className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold transition ${
+            posSubView === "invoice_layout"
+              ? "bg-amber-400 text-slate-950 shadow"
+              : "border border-amber-500/35 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+          }`}
+        >
+          <LayoutTemplate className="h-3.5 w-3.5" /> Atur Bentuk Invoice (Header / Tata Letak / Footer)
+        </button>
       </div>
 
-      {posSubView === "cod_tracking" ? (
+      {posSubView === "invoice_layout" ? (
+        <InvoiceLayoutStudio
+          storeProfile={effectivePrintProfile}
+          sampleOrder={orders[0] ?? null}
+          onToast={onToast}
+        />
+      ) : posSubView === "cod_tracking" ? (
         <CodTrackingHub
           tenantId={adapter.tenantId}
           orders={orders}

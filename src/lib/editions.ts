@@ -16,6 +16,7 @@ export type EditionFeatureKey =
   | "white_label_store"
   | "super_admin_analytics"
   | "buyer_interest_forecast"
+  | "hrd_payroll_corporate"
   | "custom_branded_apk"
   | "dedicated_db_sla";
 
@@ -178,14 +179,15 @@ export const APP_EDITIONS: AppEditionDefinition[] = [
       "white_label_store",
       "super_admin_analytics",
       "buyer_interest_forecast",
+      "hrd_payroll_corporate",
       "custom_branded_apk",
       "dedicated_db_sla",
     ],
     highlights: [
-      "EKSKLUSIF: Menu Tren Minat Pembeli & Forecasting Permintaan/Omzet 30–90 Hari + Simulasi Harga",
-      "Semua fitur Enterprise AI Suite, Saran Produk Laku AI & Scanner QR FIFO tanpa batas agen/cabang",
-      "Custom Branded Android APK (Login Biometrik Sidik Jari/Face ID) & Custom Domain",
-      "Database Neon PostgreSQL Dedicated + SLA 99.95% & Backup Harian",
+      "EKSKLUSIF: Modul HRD & Payroll Korporat (Karyawan, Absensi, Lembur PP 35/2021, BPJS Kes/TK, PPh 21 TER 2024 & Slip Gaji PDF)",
+      "EKSKLUSIF: Akuntansi PSAK & SPT Pajak Lengkap (PPN 11%, PPh Final 0,5%, PPh Badan 31E, PPh 21/23/4(2), Rasio Keuangan & Ekuitas)",
+      "EKSKLUSIF: ERP & Gudang Korporat Penuh (ABC/MRP ROP-EOQ, Multi-Gudang, PO/GRN, BOM Produksi HPP, Stock Opname & Vendor SLA)",
+      "EKSKLUSIF: Tren Minat Pembeli & Forecasting 30–90 Hari, Custom Branded APK Biometrik & Dedicated Neon DB SLA 99.95%",
     ],
   },
 ];
@@ -193,12 +195,12 @@ export const APP_EDITIONS: AppEditionDefinition[] = [
 export const EDITION_FEATURE_LABELS: Record<EditionFeatureKey, string> = {
   omnichannel_inbox: "Inbox Omnichannel (WA, IG, Messenger, TikTok, YT)",
   zero_click_ai: "AI Auto-Reply 24/7 Otomatis Tanpa Klik + Eskalasi Admin",
-  master_data: "Menu Master Data Lengkap (6 Modul)",
+  master_data: "Menu Master Data Lengkap (6 Modul) + Cetak & Ekspor PDF/Excel",
   universal_printing_usb_edc: "Cetak Universal: USB-C/Micro-USB OTG, Bluetooth, WiFi, Inkjet/LaserJet & EDC",
-  pos_qr_shipping_label: "POS Auto-Invoice, COD Marketplace, Lacak Kiriman & Label QR",
-  erp_warehouse: "ERP Gudang, Supplier & Mutasi Stok",
+  pos_qr_shipping_label: "POS Auto-Invoice, Kustomisasi Layout Faktur, COD Marketplace, Lacak Kiriman & Label QR",
+  erp_warehouse: "ERP Gudang, Supplier, Mutasi Stok, BOM, Stock Opname & Vendor SLA",
   qr_camera_fifo_scanner: "Scanner QR Kamera Belakang HP → Master Data, Gudang FIFO Anti-Basi & Keuangan",
-  double_entry_accounting: "Akuntansi Double-Entry, Laba Rugi & Neraca Otomatis",
+  double_entry_accounting: "Akuntansi Double-Entry PSAK, SPT Pajak (PPN/PPh), Neraca & Rasio Keuangan",
   seo_growth_ai: "Multi-Agent SEO & Omnichannel Growth AI (6 Kanal)",
   voice_companion_24_7: "24/7 AI Personal Companion Suara & Teks (Memori Kontinu)",
   fraud_sentinel_healing: "Fraud Sentinel (Anti-Injection) & Self-Healing Guardian",
@@ -206,6 +208,7 @@ export const EDITION_FEATURE_LABELS: Record<EditionFeatureKey, string> = {
   white_label_store: "100% White-Label Identitas Toko pada Seluruh Dokumen",
   super_admin_analytics: "Dashboard Super Admin, Analitik SWOT & Auto-Perbaikan",
   buyer_interest_forecast: "Menu Tren Minat Pembeli & Forecasting Permintaan 30–90 Hari (Sovereign)",
+  hrd_payroll_corporate: "Modul HRD & Payroll Korporat: Karyawan, Absensi, Lembur, BPJS, PPh 21 TER & Slip Gaji (Sovereign)",
   custom_branded_apk: "Custom Branded Android APK & Custom Domain",
   dedicated_db_sla: "Dedicated Neon Database & SLA Korporasi 99.95%",
 };

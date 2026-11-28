@@ -8,6 +8,7 @@ import {
   BookOpenCheck,
   Bot,
   Boxes,
+  Briefcase,
   CloudCheck,
   Database,
   FileText,
@@ -66,6 +67,7 @@ import { AiCompanion } from "@/components/ai-companion";
 import { PosView } from "@/components/pos-view";
 import { ErpView } from "@/components/erp-view";
 import { AccountingView } from "@/components/accounting-view";
+import { HrdPayrollView } from "@/components/hrd-payroll-view";
 import { MasterDataView } from "@/components/master-data-view";
 import { SeoGrowthView } from "@/components/seo-growth-view";
 import { EditionsView } from "@/components/editions-view";
@@ -94,6 +96,7 @@ const NAV_ITEMS: Array<{
   { id: "qr_scanner", label: "QR Scanner & FIFO", shortLabel: "Scan QR", icon: QrCode, group: "core" },
   { id: "erp", label: "ERP & Gudang", shortLabel: "ERP", icon: Boxes, group: "core" },
   { id: "accounting", label: "Akuntansi", shortLabel: "Akuntansi", icon: BookOpenCheck, group: "core" },
+  { id: "hrd_payroll", label: "HRD & Payroll", shortLabel: "HRD", icon: Briefcase, group: "core" },
   { id: "ai", label: "Multi-Agent AI", shortLabel: "AI 9x", icon: Bot, group: "core" },
   { id: "forecast", label: "Tren Minat & AI Produk", shortLabel: "Forecast", icon: LineChart, group: "core" },
   { id: "seo_growth", label: "SEO & Growth AI", shortLabel: "SEO AI", icon: TrendingUp, group: "core" },
@@ -933,6 +936,7 @@ export function WorkspaceApp({
                 <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
                   <MasterDataView
                     adapter={adapter}
+                    storeProfile={storeProfile}
                     products={snapshot.products}
                     suppliers={snapshot.suppliers}
                     contacts={snapshot.contacts}
@@ -1135,6 +1139,26 @@ export function WorkspaceApp({
                     products={snapshot.products}
                     report={snapshot.financialReport}
                     onRefresh={refresh}
+                    onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
+                  />
+                </div>
+              )}
+              {tab === "hrd_payroll" && (
+                <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
+                  <HrdPayrollView
+                    tenantId={adapter.tenantId}
+                    editionId={editionId}
+                    storeProfile={storeProfile}
+                    onPostPayrollToAccounting={async (payrollSum) => {
+                      await adapter.createAccountingEntry({
+                        kind: "expense",
+                        categoryName: "6102 · Beban Gaji, BPJS & PPh 21 Karyawan",
+                        amount: payrollSum.totalCompanyCostIdr,
+                        description: `Payroll ${payrollSum.periodLabel} · THP Rp ${payrollSum.totalTakeHomePayIdr.toLocaleString("id-ID")} · PPh 21 Rp ${payrollSum.totalPph21Idr.toLocaleString("id-ID")} · BPJS Corp Rp ${payrollSum.totalCompanyBpjsIdr.toLocaleString("id-ID")}`,
+                      });
+                      await refresh();
+                    }}
+                    onOpenEditions={() => setTab("editions")}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
                 </div>

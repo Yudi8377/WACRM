@@ -9,10 +9,13 @@ import {
   LineChart,
   Lock,
   Package,
+  Printer,
   Sparkles,
   Target,
   TrendingUp,
 } from "lucide-react";
+import { ReportExportHub } from "@/components/report-export-hub";
+import { UniversalPrintPanel } from "@/components/universal-print-panel";
 import {
   formatIdr,
   type AppEditionId,
@@ -26,6 +29,10 @@ import {
   buildSovereignBuyerInterestForecast,
   buildWinningProductRecommendations,
 } from "@/lib/market-forecasting";
+import {
+  buildEscPosTextReport,
+  renderMarketForecastPrintHtml,
+} from "@/lib/printer";
 
 interface MarketForecastViewProps {
   editionId: AppEditionId;
@@ -471,6 +478,146 @@ export function MarketForecastView({
             </div>
           </div>
         )}
+      </div>
+
+      {/* ITEM #4: STUDIO CETAK & EKSPOR LAPORAN TREN MINAT & AI PRODUK */}
+      <div className="space-y-4 rounded-3xl border border-violet-500/35 bg-slate-900/95 p-4 md:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="flex items-center gap-2 text-base font-extrabold text-white">
+              <Printer className="h-4 w-4 text-violet-400" />
+              Cetak &amp; Ekspor Laporan Tren Minat Pembeli &amp; AI Produk ({horizonDays} Hari)
+            </h3>
+            <p className="text-xs text-slate-400">
+              Preview langsung PDF, cetak ke Inkjet/LaserJet/Thermal, atau kirim laporan proyeksi omzet &amp; produk terlaris AI ke Desktop (Excel / PDF / CSV via USB, Bluetooth, Wi-Fi).
+            </p>
+          </div>
+        </div>
+
+        <UniversalPrintPanel
+          documentLabel={`Laporan Tren Minat & AI Produk (${horizonDays} Hari)`}
+          jobTitle={`Laporan Tren Minat & AI Produk ${horizonDays} Hari — ${storeProfile.businessName}`}
+          filenameBase={`laporan-tren-minat-ai-produk-${horizonDays}h`}
+          defaultPaper="a4"
+          buildHtml={() =>
+            renderMarketForecastPrintHtml({
+              storeOrName: storeProfile,
+              productIntel,
+              sovereignForecast,
+              includeSovereignForecast: hasSovereignForecast,
+            })
+          }
+          buildEscPos={() =>
+            buildEscPosTextReport(
+              `LAPORAN AI PRODUK & FORECAST ${horizonDays}H`,
+              storeProfile,
+              [
+                `Toko: ${storeProfile.businessName}`,
+                `Indeks Minat: ${sovereignForecast.buyerIntentScore}/100`,
+                `Proyeksi Dasar: ${formatIdr(sovereignForecast.projected90dBaseGmvIdr)}`,
+                ...productIntel.topCatalogWinners
+                  .slice(0, 6)
+                  .map(
+                    (w) =>
+                      `#${w.opportunityScore} ${w.productName} (${w.demandMomentum}) ${formatIdr(w.targetPriceIdr)}`,
+                  ),
+              ],
+            )
+          }
+          onResult={(res) => onNotify(res.message)}
+        />
+
+        <ReportExportHub
+          heading="Ekspor Laporan Tren Minat & Saran Produk AI (Excel Multi-Sheet / PDF / CSV) ke Desktop"
+          onToast={(msg) => onNotify(msg)}
+          buildPayload={() => ({
+            reportTitle: `Laporan Tren Minat Pembeli & Multi-Agent AI Produk (${horizonDays} Hari)`,
+            subtitle: `Indeks Minat ${sovereignForecast.buyerIntentScore}/100 · Proyeksi Dasar ${formatIdr(sovereignForecast.projected90dBaseGmvIdr)}`,
+            businessName: storeProfile.businessName,
+            filenameBase: `laporan-tren-minat-ai-produk-${horizonDays}h`,
+            kpis: [
+              { label: "Indeks Minat Pembeli", value: `${sovereignForecast.buyerIntentScore}/100` },
+              {
+                label: `Proyeksi Dasar (${horizonDays}h)`,
+                value: formatIdr(sovereignForecast.projected90dBaseGmvIdr),
+              },
+              {
+                label: "Proyeksi Optimis",
+                value: formatIdr(sovereignForecast.projected90dOptimisticGmvIdr),
+              },
+              {
+                label: "Produk Terlaris AI",
+                value: `${productIntel.topCatalogWinners.length} SKU`,
+              },
+            ],
+            sheets: [
+              {
+                sheetName: "Produk Terlaris AI",
+                headers: [
+                  "Produk",
+                  "SKU / Kategori",
+                  "Skor Peluang",
+                  "Momentum",
+                  "Target Harga (Rp)",
+                  "Margin %",
+                  "Rekomendasi AI",
+                ],
+                rows: productIntel.topCatalogWinners.map((w) => [
+                  w.productName,
+                  w.sku || w.category,
+                  w.opportunityScore,
+                  w.demandMomentum,
+                  w.targetPriceIdr,
+                  w.estimatedMarginPct,
+                  w.recommendedAction,
+                ]),
+              },
+              {
+                sheetName: "Peluang Produk Baru",
+                headers: ["Ide Produk", "Kategori", "Skor", "Kanal Terbaik", "Harga Target (Rp)", "Alasan AI"],
+                rows: productIntel.newMarketWinners.map((w) => [
+                  w.productName,
+                  w.category,
+                  w.opportunityScore,
+                  w.bestChannel,
+                  w.targetPriceIdr,
+                  w.aiReason,
+                ]),
+              },
+              {
+                sheetName: `Proyeksi ${horizonDays} Hari`,
+                headers: [
+                  "Periode",
+                  "Konservatif (Rp)",
+                  "Proyeksi Dasar (Rp)",
+                  "Optimis (Rp)",
+                  "Est. Order",
+                  "Indeks Minat",
+                ],
+                rows: sovereignForecast.forecastSeries.map((pt) => [
+                  pt.label,
+                  pt.conservativeGmvIdr,
+                  pt.baseGmvIdr,
+                  pt.optimisticGmvIdr,
+                  pt.predictedOrders,
+                  pt.buyerInterestIndex,
+                ]),
+              },
+              {
+                sheetName: "Prioritas Restock FIFO",
+                headers: ["SKU", "Produk", "Stok Kini", "Prediksi 30h", "Saran Order", "Anggaran (Rp)"],
+                rows: sovereignForecast.restockPriorityQueue.map((r) => [
+                  r.sku,
+                  r.productName,
+                  r.currentStock,
+                  r.predicted30dDemand,
+                  r.suggestedOrderQty,
+                  r.estimatedBudgetIdr,
+                ]),
+              },
+            ],
+          })}
+        />
       </div>
     </div>
   );

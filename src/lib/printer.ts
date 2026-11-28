@@ -1,11 +1,26 @@
 import {
   formatIdr,
   PAYMENT_METHOD_LABELS,
+  type ContactRecord,
+  type ErpProductRecord,
+  type ErpSupplierRecord,
   type FinancialReportSummary,
+  type MasterCategoryRecord,
+  type MasterCourierRecord,
+  type MasterPaymentAccountRecord,
+  type MasterUnitRecord,
   type PosOrderRecord,
   type PrinterPaperProfile,
   type StoreBusinessProfile,
 } from "@/lib/crm-types";
+import {
+  loadInvoiceLayoutSettings,
+  type InvoiceLayoutSettings,
+} from "@/lib/invoice-layout";
+import type {
+  EnterpriseProductIntelligence,
+  SovereignBuyerForecast,
+} from "@/lib/market-forecasting";
 import { buildPdfFromPrintableHtml } from "@/lib/pdf-generator";
 import { getDefaultStoreProfile } from "@/lib/store-profile";
 
@@ -1040,66 +1055,207 @@ export function downloadPrintableHtmlAsPdf(
 }
 
 /**
- * White-Label Customer Invoice HTML — displays ONLY the User's own Store/Business Name, Address & Phone.
+ * White-Label Customer Invoice HTML — fully customizable layout (template, header alignment,
+ * accent color, logo badge, column toggles, bank transfer info, terms, signature & footer).
  */
 export function renderInvoicePrintHtml(
   order: PosOrderRecord,
   storeOrName: string | StoreBusinessProfile,
   qrDataUrl: string,
+  layoutOverride?: Partial<InvoiceLayoutSettings>,
 ): string {
   const store = resolveStore(storeOrName);
-  const rows = order.items
-    .map(
-      (i) =>
-        `<tr><td><strong>${escHtml(i.productName)}</strong><br/><span class="muted">SKU: ${escHtml(i.sku)}</span></td><td class="center">${i.quantity}</td><td class="right">${escHtml(formatIdr(i.unitPrice))}</td><td class="right"><strong>${escHtml(formatIdr(i.lineTotal))}</strong></td></tr>`,
-    )
-    .join("");
+  const layout: InvoiceLayoutSettings = {
+    ...loadInvoiceLayoutSettings(),
+    ...(layoutOverride ?? {}),
+  };
+
+  const accent = /^#[0-9a-fA-F]{6}$/.test(layout.accentColor) ? layout.accentColor : "#059669";
   const isPaid = order.paymentStatus === "paid";
+  const npwpValue = layout.customNpwp.trim() || store.taxId || "";
+  const initials =
+    layout.logoInitials.trim().slice(0, 3).toUpperCase() ||
+    store.businessName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() || "")
+      .join("") ||
+    "ID";
+
+  const isThermal = layout.templateStyle === "compact_thermal";
+  const isClassic = layout.templateStyle === "classic_formal";
+  const isMinimal = layout.templateStyle === "minimalist_clean";
+
+  const rows = order.items
+    .map((i) => {
+      const skuLine = layout.showSkuColumn
+        ? `<br/><span class="muted">SKU: ${escHtml(i.sku)}</span>`
+        : "";
+      const priceCol = layout.showUnitPriceColumn
+        ? `<td class="right">${escHtml(formatIdr(i.unitPrice))}</td>`
+        : "";
+      return `<tr><td><strong>${escHtml(i.productName)}</strong>${skuLine}</td><td class="center">${i.quantity}</td>${priceCol}<td class="right"><strong>${escHtml(formatIdr(i.lineTotal))}</strong></td></tr>`;
+    })
+    .join("");
+
+  const logoHtml = layout.showLogoBadge
+    ? `<div style="width:42px;height:42px;border-radius:${isClassic ? "4px" : "10px"};background:${isClassic ? "#0f172a" : accent};color:#ffffff;display:inline-flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;letter-spacing:0.5px;flex-shrink:0;">${escHtml(initials)}</div>`
+    : "";
+
+  const storeMetaLines = [
+    layout.showAddress && store.address ? `<div class="muted" style="margin-top:3px;">${escHtml(store.address)}</div>` : "",
+    layout.showPhoneAndEmail || (layout.showNpwp && npwpValue)
+      ? `<div class="muted">${[
+          layout.showPhoneAndEmail ? store.phone : "",
+          layout.showPhoneAndEmail ? store.email : "",
+          layout.showNpwp && npwpValue ? `NPWP: ${npwpValue}` : "",
+        ]
+          .filter(Boolean)
+          .map(escHtml)
+          .join(" · ")}</div>`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("");
+
+  const invoiceMetaHtml = `
+    <div style="font-size:11px;font-weight:800;letter-spacing:1.2px;color:${isClassic ? "#0f172a" : accent};text-transform:uppercase;">${escHtml(layout.headerTitle || "INVOICE PEMBAYARAN")}</div>
+    <div style="font-size:${isThermal ? "14px" : "18px"};font-weight:900;margin-top:2px;color:#0f172a;">${escHtml(order.invoiceNumber)}</div>
+    <div class="muted">${escHtml(new Date(order.paidAt || order.createdAt).toLocaleString("id-ID"))}</div>
+    <div style="margin-top:6px;">
+      <span class="${isPaid ? "badge" : "badge-warn"}">${isPaid ? "LUNAS / PAID" : escHtml(order.paymentStatus.toUpperCase())} · ${escHtml(PAYMENT_METHOD_LABELS[order.paymentMethod])}</span>
+    </div>
+  `;
+
+  const headerBorderStyle = isClassic
+    ? `border:2px solid #0f172a;padding:12px;margin-bottom:14px;background:#f8fafc;`
+    : isMinimal
+      ? `border-bottom:1px solid #e2e8f0;padding-bottom:12px;margin-bottom:16px;`
+      : `border-bottom:3px solid ${accent};padding-bottom:12px;margin-bottom:14px;`;
+
+  const headerBlock =
+    layout.headerAlignment === "center" || isThermal
+      ? `<div style="text-align:center;${headerBorderStyle}">
+          ${layout.showLogoBadge ? `<div style="margin-bottom:6px;">${logoHtml}</div>` : ""}
+          <h1 style="margin:0;color:#0f172a;font-size:${isThermal ? "16px" : "22px"};">${escHtml(store.businessName)}</h1>
+          ${layout.headerSubtitle || store.businessTagline ? `<div style="font-size:12px;color:${accent};font-weight:600;margin-top:2px;">${escHtml(layout.headerSubtitle || store.businessTagline || "")}</div>` : ""}
+          ${storeMetaLines}
+          <div style="margin-top:10px;padding-top:8px;border-top:1px dashed #cbd5e1;">${invoiceMetaHtml}</div>
+        </div>`
+      : layout.headerAlignment === "left"
+        ? `<div style="${headerBorderStyle}">
+            <div style="display:flex;align-items:center;gap:12px;">
+              ${logoHtml}
+              <div>
+                <h1 style="margin:0;color:#0f172a;font-size:22px;">${escHtml(store.businessName)}</h1>
+                ${layout.headerSubtitle || store.businessTagline ? `<div style="font-size:12px;color:${accent};font-weight:600;margin-top:2px;">${escHtml(layout.headerSubtitle || store.businessTagline || "")}</div>` : ""}
+                ${storeMetaLines}
+              </div>
+            </div>
+            <div style="margin-top:10px;padding-top:8px;border-top:1px dashed #cbd5e1;">${invoiceMetaHtml}</div>
+          </div>`
+        : `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;${headerBorderStyle}">
+            <div style="display:flex;align-items:flex-start;gap:11px;">
+              ${logoHtml}
+              <div>
+                <h1 style="margin:0;color:#0f172a;font-size:22px;">${escHtml(store.businessName)}</h1>
+                ${layout.headerSubtitle || store.businessTagline ? `<div style="font-size:12px;color:${accent};font-weight:600;margin-top:2px;">${escHtml(layout.headerSubtitle || store.businessTagline || "")}</div>` : ""}
+                ${storeMetaLines}
+              </div>
+            </div>
+            <div style="text-align:right;">${invoiceMetaHtml}</div>
+          </div>`;
+
+  const tableHeaderBg = isClassic ? "#0f172a" : isMinimal ? "#f8fafc" : accent;
+  const tableHeaderColor = isMinimal ? "#0f172a" : "#ffffff";
+
+  const footerText =
+    layout.footerGreeting.trim() ||
+    store.invoiceFooter ||
+    "Terima kasih atas pembelian Anda.";
 
   return `
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #059669;padding-bottom:12px;margin-bottom:14px;">
-      <div>
-        <h1 style="margin:0;color:#0f172a;font-size:22px;">${escHtml(store.businessName)}</h1>
-        ${store.businessTagline ? `<div style="font-size:12px;color:#059669;font-weight:600;margin-top:2px;">${escHtml(store.businessTagline)}</div>` : ""}
-        ${store.address ? `<div class="muted" style="margin-top:3px;">${escHtml(store.address)}</div>` : ""}
-        <div class="muted">${[store.phone, store.email, store.taxId ? `NPWP: ${store.taxId}` : ""].filter(Boolean).map(escHtml).join(" · ")}</div>
-      </div>
-      <div style="text-align:right;">
-        <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#64748b;">INVOICE PEMBAYARAN</div>
-        <div style="font-size:17px;font-weight:800;margin-top:2px;">${escHtml(order.invoiceNumber)}</div>
-        <div class="muted">${escHtml(new Date(order.paidAt || order.createdAt).toLocaleString("id-ID"))}</div>
-        <div style="margin-top:6px;">
-          <span class="${isPaid ? "badge" : "badge-warn"}">${isPaid ? "LUNAS / PAID" : escHtml(order.paymentStatus.toUpperCase())} · ${escHtml(PAYMENT_METHOD_LABELS[order.paymentMethod])}</span>
+    <div style="${isClassic ? "border:1px solid #cbd5e1;padding:14px;" : ""}">
+      ${headerBlock}
+      <div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:14px;${isThermal ? "flex-direction:column;" : ""}">
+        <div style="flex:1;">
+          <div class="muted" style="font-weight:700;letter-spacing:0.6px;">KEPADA PELANGGAN</div>
+          <div style="font-weight:800;font-size:15px;margin-top:2px;">${escHtml(order.customerName)}</div>
+          ${order.customerPhone ? `<div>Telp / WA: ${escHtml(order.customerPhone)}</div>` : ""}
+          <div>Alamat: ${escHtml(order.shippingAddress || "-")}</div>
+          ${
+            layout.showCourierAndResi && (order.shippingCourier || order.shippingService || order.trackingCode)
+              ? `<div class="muted" style="margin-top:4px;">Kurir: ${escHtml(order.shippingService || order.shippingCourier || "-")} · Resi: ${escHtml(order.trackingCode || "-")}</div>`
+              : ""
+          }
         </div>
+        ${
+          layout.showQrCode && qrDataUrl
+            ? `<div style="text-align:center;">
+                <img src="${qrDataUrl}" alt="QR Verifikasi Pesanan" style="width:${isThermal ? "96px" : "116px"};height:${isThermal ? "96px" : "116px"};border:1px solid #cbd5e1;border-radius:8px;padding:4px;" />
+                <div class="muted">QR Verifikasi &amp; Pesanan</div>
+              </div>`
+            : ""
+        }
       </div>
-    </div>
-    <div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:14px;">
-      <div style="flex:1;">
-        <div class="muted">KEPADA PELANGGAN</div>
-        <div style="font-weight:700;font-size:15px;">${escHtml(order.customerName)}</div>
-        ${order.customerPhone ? `<div>Telp: ${escHtml(order.customerPhone)}</div>` : ""}
-        <div>Alamat Kirim: ${escHtml(order.shippingAddress || "-")}</div>
-        ${order.shippingCourier || order.shippingService ? `<div class="muted" style="margin-top:3px;">Kurir: ${escHtml(order.shippingService || order.shippingCourier || "-")} · Resi: ${escHtml(order.trackingCode || "-")}</div>` : ""}
+
+      <table>
+        <thead>
+          <tr style="background:${tableHeaderBg};color:${tableHeaderColor};">
+            <th style="background:${tableHeaderBg};color:${tableHeaderColor};padding:7px 6px;">Produk</th>
+            <th class="center" style="background:${tableHeaderBg};color:${tableHeaderColor};padding:7px 6px;">Qty</th>
+            ${layout.showUnitPriceColumn ? `<th class="right" style="background:${tableHeaderBg};color:${tableHeaderColor};padding:7px 6px;">Harga</th>` : ""}
+            <th class="right" style="background:${tableHeaderBg};color:${tableHeaderColor};padding:7px 6px;">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+
+      <div style="max-width:300px;margin-left:auto;margin-top:12px;">
+        <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Subtotal</span><span>${escHtml(formatIdr(order.subtotal))}</span></div>
+        ${layout.showDiscountRow && order.discountAmount > 0 ? `<div style="display:flex;justify-content:space-between;padding:4px 0;color:#dc2626;"><span>Diskon</span><span>-${escHtml(formatIdr(order.discountAmount))}</span></div>` : ""}
+        ${layout.showTaxRow && order.taxAmount > 0 ? `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>PPN 11%</span><span>${escHtml(formatIdr(order.taxAmount))}</span></div>` : ""}
+        ${(order.shippingCost ?? 0) > 0 ? `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Ongkir (${escHtml(order.shippingService || order.shippingCourier || "Kurir")})</span><span>${escHtml(formatIdr(order.shippingCost ?? 0))}</span></div>` : ""}
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:2px solid ${accent};font-weight:900;font-size:16px;color:#0f172a;"><span>TOTAL</span><span>${escHtml(formatIdr(order.totalAmount))}</span></div>
       </div>
-      <div style="text-align:center;">
-        <img src="${qrDataUrl}" alt="QR Verifikasi Pesanan" style="width:124px;height:124px;border:1px solid #cbd5e1;border-radius:8px;padding:4px;" />
-        <div class="muted">QR Verifikasi &amp; Pesanan</div>
-      </div>
+
+      ${
+        layout.showBankTransferBox && layout.bankTransferInfo.trim()
+          ? `<div style="margin-top:14px;padding:10px 12px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;font-size:12px;">
+              <div style="font-weight:700;color:${accent};font-size:11px;text-transform:uppercase;">Informasi Pembayaran / Rekening Resmi</div>
+              <div style="margin-top:3px;color:#0f172a;">${escHtml(layout.bankTransferInfo)}</div>
+            </div>`
+          : ""
+      }
+
+      ${
+        layout.termsAndConditions.trim()
+          ? `<div class="muted" style="margin-top:10px;line-height:1.5;"><strong>Syarat &amp; Ketentuan:</strong> ${escHtml(layout.termsAndConditions)}</div>`
+          : ""
+      }
+
+      ${
+        layout.showSignatureBlock && !isThermal
+          ? `<div style="display:flex;justify-content:space-between;margin-top:26px;padding:0 18px;text-align:center;font-size:12px;">
+              <div style="width:180px;">
+                <div>${escHtml(layout.signatureLeftLabel || "Penerima / Pelanggan")}</div>
+                <div style="height:48px;"></div>
+                <div style="border-top:1px solid #64748b;padding-top:4px;font-weight:700;">${escHtml(order.customerName)}</div>
+              </div>
+              <div style="width:180px;">
+                <div>${escHtml(layout.signatureRightLabel || "Hormat Kami / Kasir")}</div>
+                <div style="height:48px;"></div>
+                <div style="border-top:1px solid #64748b;padding-top:4px;font-weight:700;">${escHtml(store.businessName)}</div>
+              </div>
+            </div>`
+          : ""
+      }
+
+      <p class="muted" style="margin-top:16px;border-top:1px dashed #cbd5e1;padding-top:8px;text-align:${layout.headerAlignment === "center" || isThermal ? "center" : "left"};">
+        ${escHtml(footerText)}
+      </p>
     </div>
-    <table>
-      <thead><tr><th>Produk</th><th class="center">Qty</th><th class="right">Harga</th><th class="right">Subtotal</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <div style="max-width:290px;margin-left:auto;margin-top:12px;">
-      <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Subtotal</span><span>${escHtml(formatIdr(order.subtotal))}</span></div>
-      ${order.discountAmount > 0 ? `<div style="display:flex;justify-content:space-between;padding:4px 0;color:#dc2626;"><span>Diskon</span><span>-${escHtml(formatIdr(order.discountAmount))}</span></div>` : ""}
-      ${order.taxAmount > 0 ? `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>PPN 11%</span><span>${escHtml(formatIdr(order.taxAmount))}</span></div>` : ""}
-      ${(order.shippingCost ?? 0) > 0 ? `<div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Ongkir (${escHtml(order.shippingService || order.shippingCourier || "Kurir")})</span><span>${escHtml(formatIdr(order.shippingCost ?? 0))}</span></div>` : ""}
-      <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:2px solid #0f172a;font-weight:800;font-size:16px;"><span>TOTAL</span><span>${escHtml(formatIdr(order.totalAmount))}</span></div>
-    </div>
-    <p class="muted" style="margin-top:18px;border-top:1px dashed #cbd5e1;padding-top:8px;">
-      ${escHtml(store.invoiceFooter || "Terima kasih atas pembelian Anda.")}
-    </p>
   `;
 }
 
@@ -1247,5 +1403,232 @@ export function renderFinancialReportPrintHtml(
       <thead><tr><th>Invoice</th><th>Pelanggan</th><th>Pembayaran</th><th>Status</th><th class="right">Total</th></tr></thead>
       <tbody>${recentOrders || '<tr><td colspan="5" class="center muted">Belum ada transaksi.</td></tr>'}</tbody>
     </table>
+  `;
+}
+
+export type MasterDataPrintScope =
+  | "all"
+  | "products"
+  | "suppliers"
+  | "customers"
+  | "categories"
+  | "couriers"
+  | "payments";
+
+/**
+ * White-Label Printable Master Data Directory HTML (Products, Suppliers, Customers,
+ * Product Groups/Categories, Couriers Multi-Tariff, Payment Accounts, or Full Bundle).
+ */
+export function renderMasterDataPrintHtml(input: {
+  scope: MasterDataPrintScope;
+  storeOrName: string | StoreBusinessProfile;
+  products: ErpProductRecord[];
+  suppliers: ErpSupplierRecord[];
+  contacts: ContactRecord[];
+  categories: MasterCategoryRecord[];
+  units: MasterUnitRecord[];
+  couriers: MasterCourierRecord[];
+  payments: MasterPaymentAccountRecord[];
+}): string {
+  const store = resolveStore(input.storeOrName);
+  const scopeTitles: Record<MasterDataPrintScope, string> = {
+    all: "Direktori Master Data Lengkap (Barang, Supplier, Pelanggan, Kategori, Kurir & Pembayaran)",
+    products: "Daftar Master Barang, Harga Jual, HPP & Stok Gudang",
+    suppliers: "Daftar Master Supplier & Mitra Pengadaan",
+    customers: "Daftar Master Pelanggan & Kontak CRM",
+    categories: "Daftar Kelompok / Kategori Barang & Satuan Unit",
+    couriers: "Daftar Kurir Ekspedisi & Multi-Tarif Ongkir",
+    payments: "Daftar Rekening & Kanal Pembayaran Resmi",
+  };
+
+  const sections: string[] = [];
+
+  if (input.scope === "all" || input.scope === "products") {
+    const totalVal = input.products.reduce((s, p) => s + p.stockQty * p.costPrice, 0);
+    const rows = input.products
+      .map(
+        (p, idx) =>
+          `<tr><td>${idx + 1}</td><td><strong>${escHtml(p.sku)}</strong></td><td>${escHtml(p.name)}<br/><span class="muted">${escHtml(p.category)}</span></td><td class="center">${p.stockQty} ${escHtml(p.unit)}</td><td class="right">${escHtml(formatIdr(p.costPrice))}</td><td class="right"><strong>${escHtml(formatIdr(p.unitPrice))}</strong></td></tr>`,
+      )
+      .join("");
+    sections.push(`
+      <h3>Daftar Master Barang (${input.products.length} SKU · Total Nilai Modal: ${escHtml(formatIdr(totalVal))})</h3>
+      <table>
+        <thead><tr><th>#</th><th>SKU</th><th>Nama &amp; Kelompok</th><th class="center">Stok</th><th class="right">HPP</th><th class="right">Harga Jual</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6" class="center muted">Belum ada data barang.</td></tr>'}</tbody>
+      </table>
+    `);
+  }
+
+  if (input.scope === "all" || input.scope === "suppliers") {
+    const rows = input.suppliers
+      .map(
+        (s, idx) =>
+          `<tr><td>${idx + 1}</td><td><strong>${escHtml(s.name)}</strong></td><td>${escHtml(s.contactPerson || "-")}</td><td>${escHtml(s.phone || "-")}<br/><span class="muted">${escHtml(s.email || "")}</span></td><td>${escHtml(s.address || "-")}</td><td>${escHtml(s.paymentTerms || "Cash")}</td></tr>`,
+      )
+      .join("");
+    sections.push(`
+      <h3>Daftar Master Supplier (${input.suppliers.length} Pemasok)</h3>
+      <table>
+        <thead><tr><th>#</th><th>Nama Supplier</th><th>PIC</th><th>Telepon / Email</th><th>Alamat</th><th>Termin</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6" class="center muted">Belum ada data supplier.</td></tr>'}</tbody>
+      </table>
+    `);
+  }
+
+  if (input.scope === "all" || input.scope === "customers") {
+    const rows = input.contacts
+      .map(
+        (c, idx) =>
+          `<tr><td>${idx + 1}</td><td><strong>${escHtml(c.displayName)}</strong></td><td>${escHtml(c.phoneE164 || "-")}</td><td>${escHtml(c.company || "-")}</td><td>${escHtml(c.lifecycleStage.toUpperCase())}</td><td>${escHtml(c.tags.join(", ") || "-")}</td></tr>`,
+      )
+      .join("");
+    sections.push(`
+      <h3>Daftar Master Pelanggan (${input.contacts.length} Kontak)</h3>
+      <table>
+        <thead><tr><th>#</th><th>Nama Pelanggan</th><th>WhatsApp / Telp</th><th>Perusahaan</th><th>Tahap</th><th>Label</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6" class="center muted">Belum ada data pelanggan.</td></tr>'}</tbody>
+      </table>
+    `);
+  }
+
+  if (input.scope === "all" || input.scope === "categories") {
+    const rows = input.categories
+      .map(
+        (c, idx) =>
+          `<tr><td>${idx + 1}</td><td><strong>${escHtml(c.groupCode || "-")}</strong></td><td>${escHtml(c.name)}</td><td>${escHtml(c.description || "-")}</td></tr>`,
+      )
+      .join("");
+    const unitSummary = input.units.map((u) => `${u.name} (${u.code})`).join(", ");
+    sections.push(`
+      <h3>Kelompok / Kategori Barang (${input.categories.length}) &amp; Satuan (${input.units.length})</h3>
+      <p class="muted">Satuan terdaftar: ${escHtml(unitSummary || "-")}</p>
+      <table>
+        <thead><tr><th>#</th><th>Kode</th><th>Nama Kelompok</th><th>Keterangan</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" class="center muted">Belum ada kategori.</td></tr>'}</tbody>
+      </table>
+    `);
+  }
+
+  if (input.scope === "all" || input.scope === "couriers") {
+    const rows = input.couriers
+      .map(
+        (c, idx) =>
+          `<tr><td>${idx + 1}</td><td><strong>${escHtml(c.name)}</strong> (${escHtml(c.code)})</td><td>${escHtml(c.serviceType)} · ${escHtml(c.estimatedDays)}</td><td class="right">${escHtml(formatIdr(c.baseRate))}/kg</td><td class="center">${c.codSupported ? "Ya (COD)" : "Non-COD"}</td></tr>`,
+      )
+      .join("");
+    sections.push(`
+      <h3>Daftar Kurir Ekspedisi &amp; Tarif (${input.couriers.length} Kurir)</h3>
+      <table>
+        <thead><tr><th>#</th><th>Kurir</th><th>Layanan &amp; Estimasi</th><th class="right">Tarif Dasar</th><th class="center">COD</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="center muted">Belum ada data kurir.</td></tr>'}</tbody>
+      </table>
+    `);
+  }
+
+  if (input.scope === "all" || input.scope === "payments") {
+    const rows = input.payments
+      .map(
+        (p, idx) =>
+          `<tr><td>${idx + 1}</td><td><strong>${escHtml(p.providerName)}</strong></td><td>${escHtml(PAYMENT_METHOD_LABELS[p.method])}</td><td>${escHtml(p.accountNumber || "-")}</td><td>${escHtml(p.accountHolder || "-")}</td><td>${p.isActive ? "Aktif" : "Nonaktif"}</td></tr>`,
+      )
+      .join("");
+    sections.push(`
+      <h3>Daftar Rekening &amp; Pembayaran (${input.payments.length} Akun)</h3>
+      <table>
+        <thead><tr><th>#</th><th>Nama Kanal</th><th>Metode</th><th>No. Rekening / ID</th><th>Atas Nama</th><th>Status</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6" class="center muted">Belum ada rekening pembayaran.</td></tr>'}</tbody>
+      </table>
+    `);
+  }
+
+  return `
+    <div style="border-bottom:2px solid #059669;padding-bottom:10px;margin-bottom:14px;">
+      <h1 style="margin:0;color:#0f172a;font-size:20px;">${escHtml(store.businessName)}</h1>
+      <div style="font-size:14px;font-weight:700;color:#059669;margin-top:2px;">${escHtml(scopeTitles[input.scope])}</div>
+      <div class="muted">${escHtml(store.address || "")} · Dicetak pada ${escHtml(new Date().toLocaleString("id-ID"))}</div>
+    </div>
+    ${sections.join("\n")}
+  `;
+}
+
+/**
+ * White-Label Printable Report HTML for "Tren Minat & AI Produk"
+ * (AI Winning Product Recommender + 30/60/90-Day Buyer Interest & Revenue Forecast).
+ */
+export function renderMarketForecastPrintHtml(input: {
+  storeOrName: string | StoreBusinessProfile;
+  productIntel: EnterpriseProductIntelligence;
+  sovereignForecast: SovereignBuyerForecast;
+  includeSovereignForecast: boolean;
+}): string {
+  const store = resolveStore(input.storeOrName);
+  const { productIntel, sovereignForecast } = input;
+
+  const winnersRows = productIntel.topCatalogWinners
+    .map(
+      (w, idx) =>
+        `<tr><td>${idx + 1}</td><td><strong>${escHtml(w.productName)}</strong><br/><span class="muted">${escHtml(w.sku || w.category)}</span></td><td class="center"><strong>${w.opportunityScore}/100</strong></td><td class="center">${escHtml(w.demandMomentum)}</td><td class="right">${escHtml(formatIdr(w.targetPriceIdr))} (${w.estimatedMarginPct}%)</td><td>${escHtml(w.recommendedAction)}</td></tr>`,
+    )
+    .join("");
+
+  const opportunityRows = productIntel.newMarketWinners
+    .map(
+      (w, idx) =>
+        `<tr><td>${idx + 1}</td><td><strong>${escHtml(w.productName)}</strong><br/><span class="muted">${escHtml(w.category)}</span></td><td class="center">${w.opportunityScore}/100</td><td>${escHtml(w.bestChannel)}</td><td class="right">${escHtml(formatIdr(w.targetPriceIdr))}</td><td>${escHtml(w.aiReason)}</td></tr>`,
+    )
+    .join("");
+
+  const sovereignSection = input.includeSovereignForecast
+    ? `
+      <h3>3. Proyeksi Tren Minat &amp; Omzet ${sovereignForecast.horizonDays} Hari (Sovereign Forecast)</h3>
+      <p class="muted">${escHtml(sovereignForecast.strategicForecastSummary)}</p>
+      <table>
+        <thead><tr><th>Periode</th><th class="right">Konservatif</th><th class="right">Proyeksi Dasar</th><th class="right">Optimis</th><th class="center">Est. Order</th><th class="center">Indeks Minat</th></tr></thead>
+        <tbody>
+          ${sovereignForecast.forecastSeries
+            .map(
+              (pt) =>
+                `<tr><td><strong>${escHtml(pt.label)}</strong></td><td class="right">${escHtml(formatIdr(pt.conservativeGmvIdr))}</td><td class="right"><strong>${escHtml(formatIdr(pt.baseGmvIdr))}</strong></td><td class="right">${escHtml(formatIdr(pt.optimisticGmvIdr))}</td><td class="center">${pt.predictedOrders}</td><td class="center">${pt.buyerInterestIndex}/100</td></tr>`,
+            )
+            .join("")}
+        </tbody>
+      </table>
+      <h3>4. Prioritas Restock &amp; Simulasi Promo AI</h3>
+      <table>
+        <thead><tr><th>SKU / Produk</th><th class="center">Stok</th><th class="center">Prediksi 30h</th><th class="center">Saran Order</th><th class="right">Anggaran Modal</th></tr></thead>
+        <tbody>
+          ${
+            sovereignForecast.restockPriorityQueue
+              .map(
+                (r) =>
+                  `<tr><td><strong>${escHtml(r.productName)}</strong> <span class="muted">(${escHtml(r.sku)})</span></td><td class="center">${r.currentStock}</td><td class="center">${r.predicted30dDemand}</td><td class="center"><strong>+${r.suggestedOrderQty}</strong></td><td class="right">${escHtml(formatIdr(r.estimatedBudgetIdr))}</td></tr>`,
+              )
+              .join("") ||
+            '<tr><td colspan="5" class="center muted">Seluruh stok aman untuk 30 hari ke depan.</td></tr>'
+          }
+        </tbody>
+      </table>
+    `
+    : "";
+
+  return `
+    <div style="border-bottom:2px solid #7c3aed;padding-bottom:10px;margin-bottom:14px;">
+      <h1 style="margin:0;color:#0f172a;font-size:20px;">${escHtml(store.businessName)}</h1>
+      <div style="font-size:14px;font-weight:700;color:#7c3aed;margin-top:2px;">Laporan Tren Minat Pembeli, Forecasting ${sovereignForecast.horizonDays} Hari &amp; Saran Produk AI</div>
+      <div class="muted">Dicetak pada ${escHtml(new Date().toLocaleString("id-ID"))} · Indeks Minat Pembeli: ${sovereignForecast.buyerIntentScore}/100 · Proyeksi Dasar: ${escHtml(formatIdr(sovereignForecast.projected90dBaseGmvIdr))}</div>
+    </div>
+    <p style="background:#f5f3ff;border-left:4px solid #7c3aed;padding:8px 12px;font-size:12px;">${escHtml(productIntel.executiveSummary)}</p>
+    <h3>1. Produk Katalog Terlaris &amp; Rekomendasi Aksi AI (${productIntel.topCatalogWinners.length})</h3>
+    <table>
+      <thead><tr><th>#</th><th>Produk</th><th class="center">Skor AI</th><th class="center">Momentum</th><th class="right">Target Harga &amp; Margin</th><th>Aksi Rekomendasi</th></tr></thead>
+      <tbody>${winnersRows || '<tr><td colspan="6" class="center muted">Belum ada produk katalog.</td></tr>'}</tbody>
+    </table>
+    <h3>2. Peluang Produk Baru Potensial di Pasar Indonesia (${productIntel.newMarketWinners.length})</h3>
+    <table>
+      <thead><tr><th>#</th><th>Ide Produk Baru</th><th class="center">Skor</th><th>Kanal Terbaik</th><th class="right">Harga Jual</th><th>Alasan Pasar AI</th></tr></thead>
+      <tbody>${opportunityRows}</tbody>
+    </table>
+    ${sovereignSection}
   `;
 }

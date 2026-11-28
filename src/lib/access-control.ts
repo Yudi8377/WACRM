@@ -13,6 +13,7 @@ export type WorkspaceTabId =
   | "qr_scanner"
   | "erp"
   | "accounting"
+  | "hrd_payroll"
   | "ai"
   | "forecast"
   | "seo_growth"
@@ -48,6 +49,7 @@ export const TAB_REQUIRED_FEATURE: Partial<Record<WorkspaceTabId, EditionFeature
   qr_scanner: "qr_camera_fifo_scanner",
   erp: "erp_warehouse",
   accounting: "double_entry_accounting",
+  hrd_payroll: "hrd_payroll_corporate",
   forecast: "ai_product_recommender",
   seo_growth: "seo_growth_ai",
   templates: "zero_click_ai",

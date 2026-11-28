@@ -3,19 +3,23 @@
 import { useMemo, useState } from "react";
 import {
   ArrowRight,
+  Award,
   BarChart3,
   Building2,
   Calculator,
   CheckCircle2,
   ClipboardCheck,
+  ClipboardList,
   Code2,
   Copy,
   Crown,
+  Factory,
   Globe2,
   Layers,
   Plus,
   Receipt,
   RefreshCw,
+  Scale,
   ShieldCheck,
   Sparkles,
   TrendingUp,
@@ -33,17 +37,27 @@ import {
   type PosOrderRecord,
 } from "@/lib/crm-types";
 import { ReportExportHub } from "@/components/report-export-hub";
+import { UniversalPrintPanel } from "@/components/universal-print-panel";
+import { buildEscPosTextReport } from "@/lib/printer";
 import {
   buildCorporateFinancialStatements,
+  computeBomUnitCost,
   computeCrmCustomerIntelligence,
+  computeEnterpriseTaxAndRatios,
   computeErpInventoryIntelligence,
   computeShiftReconciliation,
+  computeStockOpnameAudit,
+  computeVendorSlaScorecard,
   DEAL_STAGE_META,
+  renderCorporateErpPrintHtml,
+  renderCorporateTaxAndAccountingPrintHtml,
   runCorporateSeoAudit,
   VIP_TIER_DISCOUNT,
+  type CorporateErpPrintScope,
   type CorporatePipelineDeal,
   type CorporatePurchaseOrder,
   type DealStage,
+  type ErpBomRecipe,
   type VipLoyaltyTier,
   type WarehouseTransferRecord,
 } from "@/lib/sovereign-corporate";
@@ -97,10 +111,12 @@ export function SovereignAccountingSuite({
   onToast?: (msg: string, tone?: "ok" | "error") => void;
 }) {
   const [subTab, setSubTab] = useState<
-    "statements" | "trial_balance" | "cashflow_tax" | "ar_aging"
+    "statements" | "trial_balance" | "cashflow_tax" | "tax_ratios" | "ar_aging"
   >("statements");
   const [fixedAssetsIdr, setFixedAssetsIdr] = useState(25_000_000);
   const [operatingExpCustom, setOperatingExpCustom] = useState<string>("");
+  const [pph21PayrollIdr, setPph21PayrollIdr] = useState(450_000);
+  const [rentExpenseIdr, setRentExpenseIdr] = useState(2_500_000);
 
   const corp = useMemo(
     () =>
@@ -116,6 +132,15 @@ export function SovereignAccountingSuite({
             : undefined,
       }),
     [summary, orders, products, entries, fixedAssetsIdr, operatingExpCustom],
+  );
+
+  const taxReport = useMemo(
+    () =>
+      computeEnterpriseTaxAndRatios(corp, {
+        pph21PayrollIdr,
+        rentExpenseForPph42Idr: rentExpenseIdr,
+      }),
+    [corp, pph21PayrollIdr, rentExpenseIdr],
   );
 
   return (
@@ -166,7 +191,8 @@ export function SovereignAccountingSuite({
           [
             { id: "statements", label: "Laba Rugi & Neraca", icon: Calculator },
             { id: "trial_balance", label: "COA & Neraca Saldo", icon: Layers },
-            { id: "cashflow_tax", label: "Arus Kas & Pajak (PPN/PPh)", icon: Wallet },
+            { id: "cashflow_tax", label: "Arus Kas & Ringkasan Pajak", icon: Wallet },
+            { id: "tax_ratios", label: "SPT Pajak Lengkap & Rasio", icon: Scale },
             { id: "ar_aging", label: "Aging Piutang COD", icon: Receipt },
           ] as const
         ).map((t) => {
@@ -417,6 +443,121 @@ export function SovereignAccountingSuite({
         </div>
       )}
 
+      {subTab === "tax_ratios" && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-3 rounded-2xl border border-amber-500/30 bg-slate-900/90 p-3.5 text-xs">
+            <label className="flex items-center gap-2">
+              <span className="text-slate-400">PPh 21 Karyawan (TER Payroll):</span>
+              <input
+                type="number"
+                min={0}
+                step={50000}
+                value={pph21PayrollIdr}
+                onChange={(e) => setPph21PayrollIdr(Math.max(0, Number(e.target.value) || 0))}
+                className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-right font-mono text-amber-300"
+              />
+            </label>
+            <label className="flex items-center gap-2">
+              <span className="text-slate-400">Biaya Sewa (Objek PPh 4(2) 10%):</span>
+              <input
+                type="number"
+                min={0}
+                step={100000}
+                value={rentExpenseIdr}
+                onChange={(e) => setRentExpenseIdr(Math.max(0, Number(e.target.value) || 0))}
+                className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-right font-mono text-cyan-300"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Detail SPT Pajak Indonesia */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4 text-xs space-y-2">
+              <h4 className="text-sm font-extrabold text-amber-300">
+                Pusat Perpajakan Enterprise (SPT Masa &amp; Tahunan — {taxReport.periodLabel})
+              </h4>
+              <div className="flex justify-between">
+                <span className="text-slate-300">PPN Keluaran 11% (Faktur Penjualan)</span>
+                <span className="font-mono text-white">{formatIdr(taxReport.ppnKeluaran11Idr)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">PPN Masukan 11% (Faktur Pembelian/HPP)</span>
+                <span className="font-mono text-emerald-300">({formatIdr(taxReport.ppnMasukan11Idr)})</span>
+              </div>
+              <div className="flex justify-between border-t border-slate-800 pt-1.5 font-bold">
+                <span className="text-amber-200">PPN Kurang / (Lebih) Bayar (SPT 1111)</span>
+                <span className="font-mono text-amber-300">{formatIdr(taxReport.ppnNetPayableIdr)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-300">PPh Final UMKM 0,5% (PP 55/2022)</span>
+                <span className="font-mono">{formatIdr(taxReport.pphFinalUmkm05Idr)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-300">Alternatif PPh Badan Pasal 31E (11% Laba)</span>
+                <span className="font-mono text-cyan-300">{formatIdr(taxReport.pphBadanPasal31EIdr)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Alternatif PPh Badan Pasal 17 (22% Normal)</span>
+                <span className="font-mono text-slate-300">{formatIdr(taxReport.pphBadanNormal22Idr)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-300">PPh Pasal 21 Karyawan (TER PP 58/2023)</span>
+                <span className="font-mono">{formatIdr(taxReport.pph21PayrollIdr)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-300">PPh Pasal 23 Jasa (2%) &amp; PPh 4(2) Sewa (10%)</span>
+                <span className="font-mono">
+                  {formatIdr(taxReport.pph23Services2Idr + taxReport.pph4Ayat2Rent10Idr)}
+                </span>
+              </div>
+              <div className="flex justify-between rounded-xl bg-amber-500/15 px-3 py-2 font-extrabold text-amber-200">
+                <span>TOTAL ESTIMASI KEWAJIBAN SETOR PAJAK</span>
+                <span className="font-mono">{formatIdr(taxReport.totalEstimatedTaxLiabilityIdr)}</span>
+              </div>
+            </div>
+
+            {/* Perubahan Ekuitas & Rasio Keuangan Eksekutif */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4 text-xs space-y-2.5">
+              <h4 className="text-sm font-extrabold text-emerald-300">
+                Laporan Perubahan Ekuitas &amp; Rasio Keuangan Eksekutif
+              </h4>
+              <div className="rounded-xl bg-slate-950 p-3 space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Modal Awal &amp; Laba Ditahan</span>
+                  <span className="font-mono">{formatIdr(taxReport.openingEquityIdr)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Laba Bersih Periode Berjalan</span>
+                  <span className="font-mono text-emerald-300">+{formatIdr(taxReport.currentNetIncomeIdr)}</span>
+                </div>
+                <div className="flex justify-between border-t border-slate-800 pt-1.5 font-extrabold text-white">
+                  <span>Ekuitas Akhir Periode</span>
+                  <span className="font-mono text-cyan-300">{formatIdr(taxReport.closingEquityIdr)}</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
+                  <div className="text-[10px] text-slate-400">Current Ratio (Likuiditas)</div>
+                  <div className="font-mono text-base font-extrabold text-emerald-300">{taxReport.currentRatio}x</div>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
+                  <div className="text-[10px] text-slate-400">Debt-to-Equity (DER)</div>
+                  <div className="font-mono text-base font-extrabold text-cyan-300">{taxReport.debtToEquityRatio}x</div>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
+                  <div className="text-[10px] text-slate-400">Return on Assets (ROA)</div>
+                  <div className="font-mono text-base font-extrabold text-amber-300">{taxReport.returnOnAssetsPct}%</div>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950 p-2.5">
+                  <div className="text-[10px] text-slate-400">Estimasi BEP Omzet</div>
+                  <div className="font-mono text-xs font-extrabold text-white">{formatIdr(taxReport.breakEvenRevenueIdr)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {subTab === "ar_aging" && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {corp.arAging.map((b) => (
@@ -434,20 +575,47 @@ export function SovereignAccountingSuite({
         </div>
       )}
 
+      {/* Direct Corporate PSAK + SPT Tax PDF Print Panel */}
+      <UniversalPrintPanel
+        documentLabel="Laporan Keuangan PSAK & SPT Pajak Korporat"
+        jobTitle={`Laporan PSAK & Pajak — ${businessName}`}
+        filenameBase="laporan-psak-pajak-sovereign"
+        defaultPaper="a4"
+        buildHtml={() =>
+          renderCorporateTaxAndAccountingPrintHtml(corp, taxReport, businessName)
+        }
+        buildEscPos={() =>
+          buildEscPosTextReport(
+            `PSAK & PAJAK ${taxReport.periodLabel}`,
+            businessName,
+            [
+              `Omzet: ${formatIdr(corp.incomeStatement.netRevenueIdr)}`,
+              `Laba Bersih: ${formatIdr(corp.incomeStatement.netProfitAfterTaxIdr)}`,
+              `PPN Netto: ${formatIdr(taxReport.ppnNetPayableIdr)}`,
+              `PPh Final 0.5%: ${formatIdr(taxReport.pphFinalUmkm05Idr)}`,
+              `PPh 21 TER: ${formatIdr(taxReport.pph21PayrollIdr)}`,
+              `Total Pajak: ${formatIdr(taxReport.totalEstimatedTaxLiabilityIdr)}`,
+            ],
+          )
+        }
+        onResult={(res) => onToast?.(res.message, res.ok ? "ok" : "error")}
+        compact
+      />
+
       {/* Multi-Format Export + USB/Bluetooth/Wi-Fi Transfer to Desktop */}
       <ReportExportHub
-        heading="Ekspor Laporan Keuangan PSAK (Excel Multi-Sheet / PDF / CSV / JSON) & Transfer ke Desktop"
+        heading="Ekspor Laporan Keuangan PSAK & SPT Pajak Lengkap (Excel Multi-Sheet / PDF / CSV / JSON) ke Desktop"
         onToast={onToast}
         buildPayload={() => ({
-          reportTitle: "Laporan Keuangan Korporat PSAK (Neraca, Laba Rugi, COA & Pajak)",
-          subtitle: `Sovereign Corporate Accounting · Margin Bersih ${corp.incomeStatement.netMarginPct}%`,
+          reportTitle: "Laporan Keuangan Korporat PSAK & SPT Pajak Indonesia",
+          subtitle: `Sovereign Corporate Accounting · Margin Bersih ${corp.incomeStatement.netMarginPct}% · Current Ratio ${taxReport.currentRatio}x`,
           businessName,
-          filenameBase: "laporan-keuangan-corporate-psak",
+          filenameBase: "laporan-keuangan-pajak-corporate-psak",
           kpis: [
             { label: "Pendapatan Kotor", value: formatIdr(corp.incomeStatement.grossRevenueIdr) },
             { label: "Laba Bersih", value: formatIdr(corp.incomeStatement.netProfitAfterTaxIdr) },
             { label: "Total Aset", value: formatIdr(corp.balanceSheet.totalAssetsIdr) },
-            { label: "Total Pajak Est.", value: formatIdr(corp.taxSummary.estimatedTotalTaxIdr) },
+            { label: "Total Pajak Est.", value: formatIdr(taxReport.totalEstimatedTaxLiabilityIdr) },
           ],
           sheets: [
             {
@@ -462,17 +630,33 @@ export function SovereignAccountingSuite({
               ]),
             },
             {
-              sheetName: "Laba Rugi & Pajak",
-              headers: ["Pos Laporan", "Nominal (Rp)"],
+              sheetName: "SPT Pajak Indonesia",
+              headers: ["Jenis Pajak", "Tarif / Regulasi", "Nominal (Rp)"],
               rows: [
-                ["Pendapatan Penjualan Kotor", corp.incomeStatement.grossRevenueIdr],
-                ["Harga Pokok Penjualan (HPP)", corp.incomeStatement.cogsIdr],
-                ["Laba Kotor", corp.incomeStatement.grossProfitIdr],
-                ["Beban Operasional", corp.incomeStatement.operatingExpenseIdr],
-                ["EBITDA", corp.incomeStatement.ebitdaIdr],
-                ["Estimasi PPh Final 0,5%", corp.incomeStatement.pphFinalUmkmIdr],
-                ["PPN Keluaran 11%", corp.incomeStatement.ppnCollectedIdr],
-                ["Laba Bersih Setelah Pajak", corp.incomeStatement.netProfitAfterTaxIdr],
+                ["PPN Keluaran", "11% UU HPP", taxReport.ppnKeluaran11Idr],
+                ["PPN Masukan", "11% Pembelian/HPP", -taxReport.ppnMasukan11Idr],
+                ["PPN Kurang / (Lebih) Bayar", "SPT Masa 1111", taxReport.ppnNetPayableIdr],
+                ["PPh Final UMKM", "0,5% PP 55/2022", taxReport.pphFinalUmkm05Idr],
+                ["PPh Badan Pasal 31E (Simulasi)", "11% Fasilitas", taxReport.pphBadanPasal31EIdr],
+                ["PPh Badan Pasal 17 (Normal)", "22% Tarif Umum", taxReport.pphBadanNormal22Idr],
+                ["PPh Pasal 21 Karyawan", "TER PP 58/2023", taxReport.pph21PayrollIdr],
+                ["PPh Pasal 23 Jasa", "2% Withholding", taxReport.pph23Services2Idr],
+                ["PPh Pasal 4(2) Sewa", "10% Final", taxReport.pph4Ayat2Rent10Idr],
+              ],
+            },
+            {
+              sheetName: "Rasio & Ekuitas",
+              headers: ["Metrik Keuangan", "Nilai"],
+              rows: [
+                ["Modal Awal + Laba Ditahan (Rp)", taxReport.openingEquityIdr],
+                ["Laba Periode Berjalan (Rp)", taxReport.currentNetIncomeIdr],
+                ["Ekuitas Akhir (Rp)", taxReport.closingEquityIdr],
+                ["Gross Margin (%)", taxReport.grossMarginPct],
+                ["Net Margin (%)", taxReport.netMarginPct],
+                ["Current Ratio (x)", taxReport.currentRatio],
+                ["Debt-to-Equity Ratio (x)", taxReport.debtToEquityRatio],
+                ["Return on Assets (%)", taxReport.returnOnAssetsPct],
+                ["Estimasi BEP Omzet (Rp)", taxReport.breakEvenRevenueIdr],
               ],
             },
             {
@@ -504,10 +688,80 @@ export function SovereignErpSuite({
   orders: PosOrderRecord[];
   onToast?: (msg: string, tone?: "ok" | "error") => void;
 }) {
-  const [erpSubTab, setErpSubTab] = useState<"abc_mrp" | "transfers" | "po_procurement">("abc_mrp");
+  const [erpSubTab, setErpSubTab] = useState<
+    "abc_mrp" | "transfers" | "po_procurement" | "bom" | "stock_opname" | "vendor_sla"
+  >("abc_mrp");
+  const [erpPrintScope, setErpPrintScope] = useState<CorporateErpPrintScope>("all");
   const intel = useMemo(
     () => computeErpInventoryIntelligence(products, orders),
     [products, orders],
+  );
+
+  // BOM & Production recipes
+  const [boms, setBoms] = useState<ErpBomRecipe[]>(() => [
+    {
+      id: "bom-1",
+      sku: products[0]?.sku || "PKG-BUNDLE-01",
+      finishedProductName: `Paket Bundling ${products[0]?.name || "Produk Unggulan"}`,
+      batchQty: 20,
+      laborAndOverheadIdr: 320_000,
+      components: [
+        {
+          materialName: products[0]?.name || "Unit Produk Utama",
+          qtyPerBatch: 20,
+          unit: "pcs",
+          unitCostIdr: products[0]?.costPrice || 45_000,
+        },
+        {
+          materialName: "Box Premium + Bubble Wrap + Segel QR",
+          qtyPerBatch: 20,
+          unit: "set",
+          unitCostIdr: 6_500,
+        },
+        {
+          materialName: "Kartu Garansi & Stiker Brand",
+          qtyPerBatch: 20,
+          unit: "lbr",
+          unitCostIdr: 1_500,
+        },
+      ],
+    },
+  ]);
+
+  // Stock Opname physical counts per productId
+  const [physicalCounts, setPhysicalCounts] = useState<Record<string, number>>({});
+  const opnameAudit = useMemo(
+    () => computeStockOpnameAudit(products, physicalCounts),
+    [products, physicalCounts],
+  );
+
+  // Vendor SLA Scorecard
+  const vendorSlaRows = useMemo(
+    () =>
+      computeVendorSlaScorecard([
+        {
+          vendorName: "PT Distribusi Nusantara Tbk",
+          poCount: 18,
+          onTimeDeliveryPct: 96,
+          defectRatePct: 0.4,
+          avgLeadTimeDays: 2,
+        },
+        {
+          vendorName: "CV Sumber Makmur Jaya",
+          poCount: 12,
+          onTimeDeliveryPct: 88,
+          defectRatePct: 1.2,
+          avgLeadTimeDays: 4,
+        },
+        {
+          vendorName: "PT Logistik Kemasan Prima",
+          poCount: 9,
+          onTimeDeliveryPct: 79,
+          defectRatePct: 2.1,
+          avgLeadTimeDays: 5,
+        },
+      ]),
+    [],
   );
 
   const [transfers, setTransfers] = useState<WarehouseTransferRecord[]>(() => [
@@ -628,7 +882,10 @@ export function SovereignErpSuite({
           [
             { id: "abc_mrp", label: "ABC Valuation & MRP ROP/EOQ", icon: BarChart3 },
             { id: "transfers", label: "Mutasi Multi-Gudang / Cabang", icon: Truck },
-            { id: "po_procurement", label: "Purchase Order & GRN Approval", icon: ClipboardCheck },
+            { id: "po_procurement", label: "Purchase Order & GRN", icon: ClipboardCheck },
+            { id: "bom", label: "BOM Produksi & HPP", icon: Factory },
+            { id: "stock_opname", label: "Stock Opname / Audit", icon: ClipboardList },
+            { id: "vendor_sla", label: "Vendor SLA Scorecard", icon: Award },
           ] as const
         ).map((t) => {
           const Icon = t.icon;
@@ -838,18 +1095,319 @@ export function SovereignErpSuite({
         </div>
       )}
 
+      {/* SUB-TAB 4: BILL OF MATERIALS (BOM) & HPP PRODUKSI */}
+      {erpSubTab === "bom" && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-800 bg-slate-900 p-3.5 text-xs">
+            <div>
+              <strong className="text-white">Bill of Materials (BOM) &amp; Kalkulasi HPP Produksi/Bundling</strong>
+              <p className="text-[11px] text-slate-400">
+                Hitung biaya bahan baku, tenaga kerja, overhead, dan HPP netto per unit untuk manufaktur ringan atau paket bundling.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const p = products[boms.length % Math.max(1, products.length)];
+                const nextIdx = boms.length + 1;
+                setBoms((prev) => [
+                  ...prev,
+                  {
+                    id: `bom-${nextIdx}`,
+                    sku: `BOM-${String(nextIdx).padStart(3, "0")}`,
+                    finishedProductName: `Paket Produksi ${p?.name || "Komersial"} #${nextIdx}`,
+                    batchQty: 25,
+                    laborAndOverheadIdr: 375_000,
+                    components: [
+                      {
+                        materialName: p?.name || "Bahan Baku Utama",
+                        qtyPerBatch: 25,
+                        unit: "pcs",
+                        unitCostIdr: p?.costPrice || 40_000,
+                      },
+                      {
+                        materialName: "Kemasan & Label QR Enterprise",
+                        qtyPerBatch: 25,
+                        unit: "set",
+                        unitCostIdr: 5_500,
+                      },
+                    ],
+                  },
+                ]);
+                onToast?.("Resep BOM produksi baru ditambahkan!", "ok");
+              }}
+              className="inline-flex items-center gap-1 rounded-xl bg-emerald-500 px-3 py-1.5 font-extrabold text-slate-950 hover:bg-emerald-400"
+            >
+              <Plus className="h-3.5 w-3.5" /> Tambah Resep BOM
+            </button>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            {boms.map((b) => {
+              const calc = computeBomUnitCost(b);
+              return (
+                <div
+                  key={b.id}
+                  className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4 text-xs space-y-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="font-mono text-[10px] font-bold text-cyan-300">{b.sku}</span>
+                      <h4 className="text-sm font-extrabold text-white">{b.finishedProductName}</h4>
+                      <div className="text-[11px] text-slate-400">Ukuran Batch: {b.batchQty} unit</div>
+                    </div>
+                    <div className="rounded-xl bg-emerald-500/15 px-3 py-1.5 text-right">
+                      <div className="text-[10px] text-emerald-200">HPP / Unit</div>
+                      <div className="font-mono text-sm font-extrabold text-emerald-300">
+                        {formatIdr(calc.unitHppIdr)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-1 rounded-xl bg-slate-950 p-2.5 text-[11px]">
+                    {b.components.map((c, idx) => (
+                      <div key={idx} className="flex justify-between">
+                        <span className="text-slate-300">
+                          {c.materialName} ({c.qtyPerBatch} {c.unit})
+                        </span>
+                        <span className="font-mono text-slate-200">
+                          {formatIdr(c.qtyPerBatch * c.unitCostIdr)}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between border-t border-slate-800 pt-1 text-amber-300">
+                      <span>Tenaga Kerja &amp; Overhead Batch</span>
+                      <span className="font-mono">{formatIdr(b.laborAndOverheadIdr)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-white">
+                      <span>Total Biaya 1 Batch</span>
+                      <span className="font-mono">{formatIdr(calc.totalBatchCostIdr)}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB 5: STOCK OPNAME / CYCLE COUNT AUDIT */}
+      {erpSubTab === "stock_opname" && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-3 text-xs">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
+              <div className="text-[11px] text-slate-400">Akurasi Stok Gudang</div>
+              <div className="mt-1 font-mono text-lg font-extrabold text-emerald-300">
+                {opnameAudit.accuracyPct}%
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
+              <div className="text-[11px] text-slate-400">Total Selisih Qty</div>
+              <div className="mt-1 font-mono text-lg font-extrabold text-amber-300">
+                {opnameAudit.totalVarianceQty >= 0
+                  ? `+${opnameAudit.totalVarianceQty}`
+                  : opnameAudit.totalVarianceQty}{" "}
+                pcs
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
+              <div className="text-[11px] text-slate-400">Dampak Selisih Nilai (Rp)</div>
+              <div
+                className={`mt-1 font-mono text-base font-extrabold ${
+                  opnameAudit.totalVarianceValueIdr < 0 ? "text-rose-400" : "text-cyan-300"
+                }`}
+              >
+                {formatIdr(opnameAudit.totalVarianceValueIdr)}
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/90">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-950 text-[11px] text-slate-400">
+                <tr>
+                  <th className="px-3 py-2">SKU &amp; Nama Barang</th>
+                  <th className="px-3 py-2 text-right">Stok Sistem</th>
+                  <th className="px-3 py-2 text-right">Input Hitung Fisik</th>
+                  <th className="px-3 py-2 text-right">Selisih Qty</th>
+                  <th className="px-3 py-2 text-right">Nilai Selisih</th>
+                  <th className="px-3 py-2 text-center">Status Audit</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {opnameAudit.lines.map((line) => (
+                  <tr key={line.productId} className="hover:bg-slate-800/40">
+                    <td className="px-3 py-2">
+                      <div className="font-bold text-white">{line.productName}</div>
+                      <div className="font-mono text-[10px] text-slate-400">{line.sku}</div>
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">{line.systemQty}</td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        min={0}
+                        value={line.physicalQty}
+                        onChange={(e) =>
+                          setPhysicalCounts((prev) => ({
+                            ...prev,
+                            [line.productId]: Math.max(0, Number(e.target.value) || 0),
+                          }))
+                        }
+                        className="w-20 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-right font-mono text-cyan-300"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono font-bold">
+                      {line.varianceQty >= 0 ? `+${line.varianceQty}` : line.varianceQty}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      {formatIdr(line.varianceValueIdr)}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                          line.status === "MATCH"
+                            ? "bg-emerald-500/20 text-emerald-300"
+                            : line.status === "SURPLUS"
+                              ? "bg-cyan-500/20 text-cyan-300"
+                              : "bg-rose-500/20 text-rose-300"
+                        }`}
+                      >
+                        {line.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB 6: VENDOR SLA SCORECARD */}
+      {erpSubTab === "vendor_sla" && (
+        <div className="grid gap-3 md:grid-cols-3">
+          {vendorSlaRows.map((v) => (
+            <div
+              key={v.vendorName}
+              className="rounded-2xl border border-slate-800 bg-slate-900/90 p-4 text-xs space-y-2"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h4 className="text-sm font-extrabold text-white">{v.vendorName}</h4>
+                  <div className="text-[11px] text-slate-400">{v.poCount} Purchase Order selesai</div>
+                </div>
+                <span
+                  className={`rounded-xl px-2.5 py-1 font-mono text-sm font-extrabold ${
+                    v.grade === "A+" || v.grade === "A"
+                      ? "bg-emerald-500/20 text-emerald-300"
+                      : v.grade === "B"
+                        ? "bg-amber-500/20 text-amber-300"
+                        : "bg-rose-500/20 text-rose-300"
+                  }`}
+                >
+                  Grade {v.grade}
+                </span>
+              </div>
+              <div className="space-y-1 rounded-xl bg-slate-950 p-2.5 text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">On-Time Delivery (OTD)</span>
+                  <strong className="font-mono text-emerald-300">{v.onTimeDeliveryPct}%</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Tingkat Retur / Defect</span>
+                  <strong className="font-mono text-amber-300">{v.defectRatePct}%</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Rata-rata Lead Time</span>
+                  <strong className="font-mono text-cyan-300">{v.avgLeadTimeDays} hari</strong>
+                </div>
+                <div className="flex justify-between border-t border-slate-800 pt-1">
+                  <span className="text-slate-300">Skor Komposit SLA</span>
+                  <strong className="font-mono text-white">{v.compositeScore} / 100</strong>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* CONTEXT-SPECIFIC ERP PRINT CENTER */}
+      <div className="rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-3.5 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs font-extrabold text-cyan-300">
+            Cetak Laporan ERP &amp; Gudang Konteks-Spesifik (PDF / Printer)
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {(
+              [
+                { id: "all", label: "Semua ERP" },
+                { id: "abc_mrp", label: "ABC & MRP" },
+                { id: "transfers", label: "Mutasi Gudang" },
+                { id: "bom", label: "BOM & HPP" },
+                { id: "stock_opname", label: "Berita Acara Opname" },
+                { id: "vendor_sla", label: "Vendor SLA" },
+              ] as const
+            ).map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setErpPrintScope(s.id)}
+                className={`rounded-lg px-2 py-1 text-[10px] font-bold transition ${
+                  erpPrintScope === s.id
+                    ? "bg-cyan-400 text-slate-950"
+                    : "border border-slate-700 bg-slate-950 text-slate-300 hover:border-cyan-500/40"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <UniversalPrintPanel
+          documentLabel={`Laporan ERP (${erpPrintScope.toUpperCase()})`}
+          jobTitle={`Laporan ERP ${erpPrintScope.toUpperCase()} — ${businessName}`}
+          filenameBase={`laporan-erp-${erpPrintScope}`}
+          defaultPaper="a4"
+          buildHtml={() =>
+            renderCorporateErpPrintHtml({
+              scope: erpPrintScope,
+              businessName,
+              abcRows: intel,
+              transfers,
+              boms,
+              opname: opnameAudit,
+              vendorSla: vendorSlaRows,
+            })
+          }
+          buildEscPos={() =>
+            buildEscPosTextReport(
+              `LAPORAN ERP (${erpPrintScope.toUpperCase()})`,
+              businessName,
+              [
+                `Total SKU: ${intel.length}`,
+                `Valuasi FIFO: ${formatIdr(totalStockValue)}`,
+                `Alert Reorder: ${reorderAlertCount} SKU`,
+                `Akurasi Opname: ${opnameAudit.accuracyPct}%`,
+                `Resep BOM: ${boms.length} · Transfer: ${transfers.length}`,
+              ],
+            )
+          }
+          onResult={(res) => onToast?.(res.message, res.ok ? "ok" : "error")}
+          compact
+        />
+      </div>
+
       <ReportExportHub
-        heading="Ekspor Laporan ERP (Valuasi ABC, MRP ROP/EOQ, Mutasi & PO) ke Desktop"
+        heading="Ekspor Laporan ERP Lengkap (ABC/MRP, Mutasi, PO, BOM, Stock Opname & Vendor SLA) ke Desktop"
         onToast={onToast}
         buildPayload={() => ({
-          reportTitle: "Laporan ERP Corporate — Valuasi ABC, MRP ROP/EOQ & Pengadaan",
-          subtitle: `Total Valuasi Persediaan: ${formatIdr(totalStockValue)} · ${reorderAlertCount} SKU Perlu Reorder`,
+          reportTitle: "Laporan ERP Corporate — Valuasi ABC, MRP, BOM, Stock Opname & Vendor SLA",
+          subtitle: `Total Valuasi Persediaan: ${formatIdr(totalStockValue)} · Akurasi Opname ${opnameAudit.accuracyPct}%`,
           businessName,
-          filenameBase: "laporan-erp-corporate-mrp",
+          filenameBase: "laporan-erp-corporate-lengkap",
           kpis: [
             { label: "Valuasi Stok FIFO", value: formatIdr(totalStockValue) },
             { label: "Total SKU", value: `${intel.length} SKU` },
-            { label: "Alert Reorder", value: `${reorderAlertCount} SKU` },
+            { label: "Akurasi Stock Opname", value: `${opnameAudit.accuracyPct}%` },
             { label: "Purchase Order", value: `${posList.length} PO` },
           ],
           sheets: [
@@ -874,6 +1432,47 @@ export function SovereignErpSuite({
                 i.reorderPoint,
                 i.eoqQty,
                 i.needsReorder ? "REORDER URGENT" : "AMAN",
+              ]),
+            },
+            {
+              sheetName: "BOM Produksi & HPP",
+              headers: ["SKU", "Produk Jadi", "Batch Qty", "Biaya Bahan (Rp)", "Overhead (Rp)", "HPP/Unit (Rp)"],
+              rows: boms.map((b) => {
+                const c = computeBomUnitCost(b);
+                return [
+                  b.sku,
+                  b.finishedProductName,
+                  b.batchQty,
+                  c.materialCostPerBatchIdr,
+                  b.laborAndOverheadIdr,
+                  c.unitHppIdr,
+                ];
+              }),
+            },
+            {
+              sheetName: "Stock Opname Audit",
+              headers: ["SKU", "Produk", "Sistem", "Fisik", "Selisih Qty", "Selisih Nilai (Rp)", "Status"],
+              rows: opnameAudit.lines.map((l) => [
+                l.sku,
+                l.productName,
+                l.systemQty,
+                l.physicalQty,
+                l.varianceQty,
+                l.varianceValueIdr,
+                l.status,
+              ]),
+            },
+            {
+              sheetName: "Vendor SLA Scorecard",
+              headers: ["Vendor", "Total PO", "OTD %", "Defect %", "Lead Time (hr)", "Skor", "Grade"],
+              rows: vendorSlaRows.map((v) => [
+                v.vendorName,
+                v.poCount,
+                v.onTimeDeliveryPct,
+                v.defectRatePct,
+                v.avgLeadTimeDays,
+                v.compositeScore,
+                v.grade,
               ]),
             },
             {

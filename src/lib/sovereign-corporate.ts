@@ -871,3 +871,483 @@ export function runCorporateSeoAudit(
     ],
   };
 }
+
+/* ============================================================================
+ * 6. ENTERPRISE INDONESIAN TAX CENTER (PPN 11%, PPh FINAL 0.5%, PPh BADAN 31E,
+ *    PPh 21/23/4(2)) & EXECUTIVE FINANCIAL RATIOS + PRINTABLE HTML (v5.2)
+ * ============================================================================ */
+
+export interface EnterpriseTaxReport {
+  periodLabel: string;
+  taxableRevenueIdr: number;
+  purchaseInputBaseIdr: number;
+  // PPN 11% (UU HPP)
+  ppnKeluaran11Idr: number;
+  ppnMasukan11Idr: number;
+  ppnNetPayableIdr: number; // positive = Kurang Bayar, negative = Lebih Bayar
+  // PPh Final UMKM 0,5% (PP 55/2022)
+  pphFinalUmkm05Idr: number;
+  // PPh Badan Pasal 17 (22%) & Fasilitas Pasal 31E (11% untuk bagian omzet <= 4,8M)
+  fiscalNetProfitIdr: number;
+  pphBadanPasal31EIdr: number;
+  pphBadanNormal22Idr: number;
+  // Withholding taxes
+  pph21PayrollIdr: number;
+  pph23Services2Idr: number;
+  pph4Ayat2Rent10Idr: number;
+  totalEstimatedTaxLiabilityIdr: number;
+  // Financial Ratios
+  grossMarginPct: number;
+  netMarginPct: number;
+  currentRatio: number;
+  debtToEquityRatio: number;
+  returnOnAssetsPct: number;
+  breakEvenRevenueIdr: number;
+  // Statement of Changes in Equity
+  openingEquityIdr: number;
+  currentNetIncomeIdr: number;
+  dividendsOrPriveIdr: number;
+  closingEquityIdr: number;
+}
+
+export function computeEnterpriseTaxAndRatios(
+  report: CorporateFinancialStatements,
+  options?: {
+    periodLabel?: string;
+    pph21PayrollIdr?: number;
+    serviceExpenseForPph23Idr?: number;
+    rentExpenseForPph42Idr?: number;
+    dividendsOrPriveIdr?: number;
+  },
+): EnterpriseTaxReport {
+  const periodLabel =
+    options?.periodLabel ||
+    new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+  const taxableRevenueIdr = Math.max(0, report.incomeStatement.netRevenueIdr);
+  const purchaseInputBaseIdr = Math.max(0, report.incomeStatement.cogsIdr);
+
+  const ppnKeluaran11Idr = Math.round(taxableRevenueIdr * 0.11);
+  const ppnMasukan11Idr = Math.round(purchaseInputBaseIdr * 0.11);
+  const ppnNetPayableIdr = ppnKeluaran11Idr - ppnMasukan11Idr;
+
+  const pphFinalUmkm05Idr = Math.round(taxableRevenueIdr * 0.005);
+  const fiscalNetProfitIdr = Math.max(0, report.incomeStatement.ebitdaIdr);
+  const pphBadanPasal31EIdr = Math.round(fiscalNetProfitIdr * 0.11);
+  const pphBadanNormal22Idr = Math.round(fiscalNetProfitIdr * 0.22);
+
+  const pph21PayrollIdr = Math.max(0, Math.round(options?.pph21PayrollIdr ?? 0));
+  const pph23Services2Idr = Math.round(
+    Math.max(
+      0,
+      options?.serviceExpenseForPph23Idr ?? report.incomeStatement.operatingExpenseIdr * 0.1,
+    ) * 0.02,
+  );
+  const pph4Ayat2Rent10Idr = Math.round(
+    Math.max(0, options?.rentExpenseForPph42Idr ?? 0) * 0.1,
+  );
+
+  const totalEstimatedTaxLiabilityIdr =
+    Math.max(0, ppnNetPayableIdr) +
+    pphFinalUmkm05Idr +
+    pph21PayrollIdr +
+    pph23Services2Idr +
+    pph4Ayat2Rent10Idr;
+
+  const grossMarginPct = report.incomeStatement.grossMarginPct;
+  const netMarginPct = report.incomeStatement.netMarginPct;
+
+  const currentAssets =
+    report.balanceSheet.cashAndBankIdr +
+    report.balanceSheet.accountsReceivableIdr +
+    report.balanceSheet.inventoryAssetIdr;
+  const currentLiabilities = Math.max(1, report.balanceSheet.totalLiabilitiesIdr);
+  const currentRatio =
+    report.balanceSheet.totalLiabilitiesIdr > 0
+      ? Number((currentAssets / currentLiabilities).toFixed(2))
+      : Number((currentAssets > 0 ? 9.99 : 0).toFixed(2));
+
+  const equityBase = Math.max(1, Math.abs(report.balanceSheet.totalEquityIdr));
+  const debtToEquityRatio = Number(
+    (report.balanceSheet.totalLiabilitiesIdr / equityBase).toFixed(2),
+  );
+  const returnOnAssetsPct =
+    report.balanceSheet.totalAssetsIdr > 0
+      ? Number(
+          (
+            (report.incomeStatement.netProfitAfterTaxIdr /
+              report.balanceSheet.totalAssetsIdr) *
+            100
+          ).toFixed(1),
+        )
+      : 0;
+
+  const contributionMarginRatio =
+    taxableRevenueIdr > 0
+      ? Math.max(0.05, report.incomeStatement.grossProfitIdr / taxableRevenueIdr)
+      : 0.35;
+  const breakEvenRevenueIdr = Math.round(
+    report.incomeStatement.operatingExpenseIdr / contributionMarginRatio,
+  );
+
+  const dividendsOrPriveIdr = Math.max(0, options?.dividendsOrPriveIdr ?? 0);
+  const openingEquityIdr =
+    report.balanceSheet.paidInCapitalIdr + report.balanceSheet.retainedEarningsIdr;
+  const closingEquityIdr =
+    openingEquityIdr + report.incomeStatement.netProfitAfterTaxIdr - dividendsOrPriveIdr;
+
+  return {
+    periodLabel,
+    taxableRevenueIdr,
+    purchaseInputBaseIdr,
+    ppnKeluaran11Idr,
+    ppnMasukan11Idr,
+    ppnNetPayableIdr,
+    pphFinalUmkm05Idr,
+    fiscalNetProfitIdr,
+    pphBadanPasal31EIdr,
+    pphBadanNormal22Idr,
+    pph21PayrollIdr,
+    pph23Services2Idr,
+    pph4Ayat2Rent10Idr,
+    totalEstimatedTaxLiabilityIdr,
+    grossMarginPct,
+    netMarginPct,
+    currentRatio,
+    debtToEquityRatio,
+    returnOnAssetsPct,
+    breakEvenRevenueIdr,
+    openingEquityIdr,
+    currentNetIncomeIdr: report.incomeStatement.netProfitAfterTaxIdr,
+    dividendsOrPriveIdr,
+    closingEquityIdr,
+  };
+}
+
+function escapeCorpHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function formatRpHtml(n: number): string {
+  return `Rp ${Math.round(n).toLocaleString("id-ID")}`;
+}
+
+export function renderCorporateTaxAndAccountingPrintHtml(
+  report: CorporateFinancialStatements,
+  tax: EnterpriseTaxReport,
+  businessName: string,
+  npwp = "-",
+): string {
+  const tbRows = report.coaTrialBalance
+    .map(
+      (r) => `<tr>
+        <td><strong>${escapeCorpHtml(r.code)}</strong></td>
+        <td>${escapeCorpHtml(r.name)}</td>
+        <td>${escapeCorpHtml(r.category)}</td>
+        <td style="text-align:right;font-family:monospace">${formatRpHtml(r.debit)}</td>
+        <td style="text-align:right;font-family:monospace">${formatRpHtml(r.credit)}</td>
+      </tr>`,
+    )
+    .join("");
+
+  return `<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8" />
+<title>Laporan Keuangan PSAK & Pajak Korporat — ${escapeCorpHtml(businessName)}</title>
+<style>
+  body { font-family: Arial, sans-serif; color: #0f172a; margin: 0; padding: 20px; font-size: 11px; }
+  .head { border-bottom: 3px solid #047857; padding-bottom: 10px; margin-bottom: 14px; display: flex; justify-content: space-between; }
+  h1 { margin: 0; font-size: 16px; color: #047857; }
+  h2 { font-size: 12px; color: #047857; margin: 14px 0 6px; border-left: 3px solid #047857; padding-left: 7px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+  .kpi { border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; background: #f8fafc; }
+  .kpi .lbl { font-size: 9px; color: #64748b; text-transform: uppercase; }
+  .kpi .val { font-size: 12px; font-weight: 800; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  th { background: #ecfdf5; color: #065f46; border: 1px solid #cbd5e1; padding: 5px 7px; font-size: 10px; text-align: left; }
+  td { border: 1px solid #e2e8f0; padding: 5px 7px; font-size: 10px; }
+  .foot { margin-top: 14px; border-top: 1px dashed #cbd5e1; padding-top: 8px; font-size: 9px; color: #64748b; display: flex; justify-content: space-between; }
+</style></head><body>
+  <div class="head">
+    <div>
+      <h1>LAPORAN KEUANGAN PSAK &amp; SPT PAJAK KORPORAT</h1>
+      <div>${escapeCorpHtml(businessName)} · NPWP: ${escapeCorpHtml(npwp)}</div>
+    </div>
+    <div style="text-align:right">
+      <div><strong>Periode: ${escapeCorpHtml(tax.periodLabel)}</strong></div>
+      <div>Dicetak: ${new Date().toLocaleString("id-ID")}</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="kpi"><div class="lbl">Pendapatan Usaha</div><div class="val">${formatRpHtml(report.incomeStatement.netRevenueIdr)}</div></div>
+    <div class="kpi"><div class="lbl">Laba Bersih</div><div class="val">${formatRpHtml(report.incomeStatement.netProfitAfterTaxIdr)}</div></div>
+    <div class="kpi"><div class="lbl">Total Aset (Neraca)</div><div class="val">${formatRpHtml(report.balanceSheet.totalAssetsIdr)}</div></div>
+    <div class="kpi"><div class="lbl">Total Kewajiban Pajak</div><div class="val">${formatRpHtml(tax.totalEstimatedTaxLiabilityIdr)}</div></div>
+  </div>
+
+  <h2>1. Ikhtisar Perpajakan Indonesia (SPT Masa &amp; Tahunan)</h2>
+  <table>
+    <thead><tr><th>Jenis Pajak / Regulasi</th><th>Dasar Pengenaan Pajak (DPP)</th><th>Tarif</th><th style="text-align:right">Nominal Pajak (Rp)</th></tr></thead>
+    <tbody>
+      <tr><td>PPN Keluaran (UU HPP)</td><td style="font-family:monospace">${formatRpHtml(tax.taxableRevenueIdr)}</td><td>11%</td><td style="text-align:right;font-family:monospace">${formatRpHtml(tax.ppnKeluaran11Idr)}</td></tr>
+      <tr><td>PPN Masukan (Pembelian/HPP)</td><td style="font-family:monospace">${formatRpHtml(tax.purchaseInputBaseIdr)}</td><td>11%</td><td style="text-align:right;font-family:monospace">(${formatRpHtml(tax.ppnMasukan11Idr)})</td></tr>
+      <tr><td><strong>PPN Kurang / (Lebih) Bayar</strong></td><td>SPT Masa PPN 1111</td><td>Netto</td><td style="text-align:right;font-family:monospace"><strong>${formatRpHtml(tax.ppnNetPayableIdr)}</strong></td></tr>
+      <tr><td>PPh Final UMKM (PP 55/2022)</td><td style="font-family:monospace">${formatRpHtml(tax.taxableRevenueIdr)}</td><td>0,5%</td><td style="text-align:right;font-family:monospace">${formatRpHtml(tax.pphFinalUmkm05Idr)}</td></tr>
+      <tr><td>PPh Badan Fasilitas Pasal 31E</td><td style="font-family:monospace">${formatRpHtml(tax.fiscalNetProfitIdr)}</td><td>11%</td><td style="text-align:right;font-family:monospace">${formatRpHtml(tax.pphBadanPasal31EIdr)}</td></tr>
+      <tr><td>PPh Badan Tarif Normal Pasal 17</td><td style="font-family:monospace">${formatRpHtml(tax.fiscalNetProfitIdr)}</td><td>22%</td><td style="text-align:right;font-family:monospace">${formatRpHtml(tax.pphBadanNormal22Idr)}</td></tr>
+      <tr><td>PPh Pasal 21 Karyawan (TER)</td><td>Payroll Bulanan</td><td>TER 2024</td><td style="text-align:right;font-family:monospace">${formatRpHtml(tax.pph21PayrollIdr)}</td></tr>
+      <tr><td>PPh Pasal 23 (Jasa/Vendor) &amp; Pasal 4(2) (Sewa)</td><td>Jasa 2% + Sewa 10%</td><td>Withholding</td><td style="text-align:right;font-family:monospace">${formatRpHtml(tax.pph23Services2Idr + tax.pph4Ayat2Rent10Idr)}</td></tr>
+    </tbody>
+  </table>
+
+  <h2>2. Perubahan Ekuitas &amp; Rasio Keuangan Eksekutif</h2>
+  <table>
+    <thead><tr><th>Metrik / Rasio Keuangan</th><th style="text-align:right">Nilai</th><th>Keterangan</th></tr></thead>
+    <tbody>
+      <tr><td>Modal Awal + Laba Periode - Prive/Dividen = Ekuitas Akhir</td><td style="text-align:right;font-family:monospace"><strong>${formatRpHtml(tax.closingEquityIdr)}</strong></td><td>Modal ${formatRpHtml(tax.openingEquityIdr)} + Laba ${formatRpHtml(tax.currentNetIncomeIdr)}</td></tr>
+      <tr><td>Gross Margin / Net Profit Margin</td><td style="text-align:right;font-family:monospace">${tax.grossMarginPct}% / ${tax.netMarginPct}%</td><td>Profitabilitas Operasional</td></tr>
+      <tr><td>Current Ratio / Debt-to-Equity (DER) / ROA</td><td style="text-align:right;font-family:monospace">${tax.currentRatio}x / ${tax.debtToEquityRatio}x / ${tax.returnOnAssetsPct}%</td><td>Likuiditas &amp; Solvabilitas</td></tr>
+      <tr><td>Estimasi Break-Even Point (BEP Omzet)</td><td style="text-align:right;font-family:monospace">${formatRpHtml(tax.breakEvenRevenueIdr)}</td><td>Titik Impas Operasional</td></tr>
+    </tbody>
+  </table>
+
+  <h2>3. Neraca Saldo (Trial Balance COA)</h2>
+  <table>
+    <thead><tr><th>Kode</th><th>Nama Akun COA</th><th>Kategori</th><th style="text-align:right">Debit</th><th style="text-align:right">Kredit</th></tr></thead>
+    <tbody>${tbRows}</tbody>
+  </table>
+
+  <div class="foot">
+    <span>Dokumen Akuntansi &amp; Perpajakan Sovereign Corporate — WA CRM Enterprise</span>
+    <span>Disiapkan untuk Review Direksi, Auditor &amp; Konsultan Pajak</span>
+  </div>
+</body></html>`;
+}
+
+/* ============================================================================
+ * 7. ENTERPRISE ERP SUB-MODULES: BOM PRODUKSI, STOCK OPNAME AUDIT,
+ *    VENDOR SLA SCORECARD & CORPORATE ERP PRINTABLE REPORT (v5.2)
+ * ============================================================================ */
+
+export interface ErpBomRecipe {
+  id: string;
+  finishedProductName: string;
+  sku: string;
+  batchQty: number;
+  laborAndOverheadIdr: number;
+  components: Array<{
+    materialName: string;
+    qtyPerBatch: number;
+    unit: string;
+    unitCostIdr: number;
+  }>;
+}
+
+export interface ErpBomCostResult {
+  recipeId: string;
+  materialCostPerBatchIdr: number;
+  totalBatchCostIdr: number;
+  unitHppIdr: number;
+}
+
+export function computeBomUnitCost(recipe: ErpBomRecipe): ErpBomCostResult {
+  const materialCostPerBatchIdr = recipe.components.reduce(
+    (s, c) => s + Math.max(0, c.qtyPerBatch) * Math.max(0, c.unitCostIdr),
+    0,
+  );
+  const totalBatchCostIdr = materialCostPerBatchIdr + Math.max(0, recipe.laborAndOverheadIdr);
+  const safeBatch = Math.max(1, recipe.batchQty);
+  return {
+    recipeId: recipe.id,
+    materialCostPerBatchIdr: Math.round(materialCostPerBatchIdr),
+    totalBatchCostIdr: Math.round(totalBatchCostIdr),
+    unitHppIdr: Math.round(totalBatchCostIdr / safeBatch),
+  };
+}
+
+export interface StockOpnameLine {
+  productId: string;
+  sku: string;
+  productName: string;
+  systemQty: number;
+  physicalQty: number;
+  unitCostIdr: number;
+  varianceQty: number;
+  varianceValueIdr: number;
+  status: "MATCH" | "SURPLUS" | "SHORTAGE";
+}
+
+export function computeStockOpnameAudit(
+  products: ErpProductRecord[],
+  physicalCountMap: Record<string, number>,
+): {
+  lines: StockOpnameLine[];
+  totalVarianceQty: number;
+  totalVarianceValueIdr: number;
+  accuracyPct: number;
+} {
+  const lines: StockOpnameLine[] = products.map((p) => {
+    const physicalQty =
+      physicalCountMap[p.id] !== undefined ? Math.max(0, physicalCountMap[p.id]) : p.stockQty;
+    const varianceQty = physicalQty - p.stockQty;
+    const varianceValueIdr = varianceQty * p.costPrice;
+    const status: StockOpnameLine["status"] =
+      varianceQty === 0 ? "MATCH" : varianceQty > 0 ? "SURPLUS" : "SHORTAGE";
+    return {
+      productId: p.id,
+      sku: p.sku,
+      productName: p.name,
+      systemQty: p.stockQty,
+      physicalQty,
+      unitCostIdr: p.costPrice,
+      varianceQty,
+      varianceValueIdr,
+      status,
+    };
+  });
+  const matchedCount = lines.filter((l) => l.status === "MATCH").length;
+  return {
+    lines,
+    totalVarianceQty: lines.reduce((s, l) => s + l.varianceQty, 0),
+    totalVarianceValueIdr: lines.reduce((s, l) => s + l.varianceValueIdr, 0),
+    accuracyPct: lines.length > 0 ? Number(((matchedCount / lines.length) * 100).toFixed(1)) : 100,
+  };
+}
+
+export interface VendorSlaScoreRow {
+  vendorName: string;
+  poCount: number;
+  onTimeDeliveryPct: number;
+  defectRatePct: number;
+  avgLeadTimeDays: number;
+  compositeScore: number;
+  grade: "A+" | "A" | "B" | "C";
+}
+
+export function computeVendorSlaScorecard(
+  vendors: Array<{
+    vendorName: string;
+    poCount: number;
+    onTimeDeliveryPct: number;
+    defectRatePct: number;
+    avgLeadTimeDays: number;
+  }>,
+): VendorSlaScoreRow[] {
+  return vendors
+    .map((v) => {
+      const otdScore = Math.min(100, Math.max(0, v.onTimeDeliveryPct)) * 0.55;
+      const qualityScore = Math.max(0, 100 - v.defectRatePct * 12) * 0.3;
+      const speedScore = Math.max(0, 100 - Math.max(0, v.avgLeadTimeDays - 2) * 8) * 0.15;
+      const compositeScore = Math.round(otdScore + qualityScore + speedScore);
+      const grade: VendorSlaScoreRow["grade"] =
+        compositeScore >= 92 ? "A+" : compositeScore >= 82 ? "A" : compositeScore >= 70 ? "B" : "C";
+      return { ...v, compositeScore, grade };
+    })
+    .sort((a, b) => b.compositeScore - a.compositeScore);
+}
+
+export type CorporateErpPrintScope =
+  | "all"
+  | "abc_mrp"
+  | "transfers"
+  | "bom"
+  | "stock_opname"
+  | "vendor_sla";
+
+export function renderCorporateErpPrintHtml(input: {
+  scope: CorporateErpPrintScope;
+  businessName: string;
+  abcRows: ErpSkuIntelligence[];
+  transfers: WarehouseTransferRecord[];
+  boms: ErpBomRecipe[];
+  opname: ReturnType<typeof computeStockOpnameAudit>;
+  vendorSla: VendorSlaScoreRow[];
+}): string {
+  const show = (s: CorporateErpPrintScope) => input.scope === "all" || input.scope === s;
+  const sections: string[] = [];
+
+  if (show("abc_mrp")) {
+    sections.push(`<h2>Analisis ABC &amp; MRP Reorder Point (${input.abcRows.length} SKU)</h2>
+    <table><thead><tr><th>SKU</th><th>Produk</th><th>Kelas ABC</th><th>Stok</th><th>ROP</th><th>EOQ</th><th style="text-align:right">Nilai Persediaan</th></tr></thead>
+    <tbody>${input.abcRows
+      .map(
+        (r) => `<tr><td>${escapeCorpHtml(r.sku)}</td><td>${escapeCorpHtml(r.name)}</td><td><strong>${r.abcClass}</strong></td><td>${r.stock}</td><td>${r.reorderPoint}</td><td>${r.eoqQty}</td><td style="text-align:right;font-family:monospace">${formatRpHtml(r.stockValueIdr)}</td></tr>`,
+      )
+      .join("")}</tbody></table>`);
+  }
+
+  if (show("transfers")) {
+    sections.push(`<h2>Mutasi Transfer Multi-Gudang &amp; Surat Jalan (${input.transfers.length})</h2>
+    <table><thead><tr><th>No. Transfer</th><th>Produk</th><th>Asal → Tujuan</th><th>Qty</th><th>Status</th><th>Tanggal</th></tr></thead>
+    <tbody>${input.transfers
+      .map(
+        (t) => `<tr><td>${escapeCorpHtml(t.transferCode)}</td><td>${escapeCorpHtml(t.productName)}</td><td>${escapeCorpHtml(t.fromWarehouse)} → ${escapeCorpHtml(t.toWarehouse)}</td><td>${t.qty}</td><td>${escapeCorpHtml(t.status)}</td><td>${new Date(t.createdAt).toLocaleDateString("id-ID")}</td></tr>`,
+      )
+      .join("")}</tbody></table>`);
+  }
+
+  if (show("bom")) {
+    sections.push(`<h2>Bill of Materials (BOM) &amp; HPP Produksi (${input.boms.length} Resep)</h2>
+    <table><thead><tr><th>SKU</th><th>Produk Jadi</th><th>Qty/Batch</th><th style="text-align:right">Biaya Bahan</th><th style="text-align:right">Tenaga &amp; Overhead</th><th style="text-align:right">HPP / Unit</th></tr></thead>
+    <tbody>${input.boms
+      .map((b) => {
+        const calc = computeBomUnitCost(b);
+        return `<tr><td>${escapeCorpHtml(b.sku)}</td><td>${escapeCorpHtml(b.finishedProductName)}</td><td>${b.batchQty}</td><td style="text-align:right;font-family:monospace">${formatRpHtml(calc.materialCostPerBatchIdr)}</td><td style="text-align:right;font-family:monospace">${formatRpHtml(b.laborAndOverheadIdr)}</td><td style="text-align:right;font-family:monospace"><strong>${formatRpHtml(calc.unitHppIdr)}</strong></td></tr>`;
+      })
+      .join("")}</tbody></table>`);
+  }
+
+  if (show("stock_opname")) {
+    sections.push(`<h2>Berita Acara Stock Opname / Cycle Count (Akurasi ${input.opname.accuracyPct}%)</h2>
+    <table><thead><tr><th>SKU</th><th>Barang</th><th>Stok Sistem</th><th>Stok Fisik</th><th>Selisih Qty</th><th style="text-align:right">Selisih Nilai (Rp)</th><th>Status</th></tr></thead>
+    <tbody>${input.opname.lines
+      .map(
+        (l) => `<tr><td>${escapeCorpHtml(l.sku)}</td><td>${escapeCorpHtml(l.productName)}</td><td>${l.systemQty}</td><td>${l.physicalQty}</td><td>${l.varianceQty >= 0 ? `+${l.varianceQty}` : l.varianceQty}</td><td style="text-align:right;font-family:monospace">${formatRpHtml(l.varianceValueIdr)}</td><td>${l.status}</td></tr>`,
+      )
+      .join("")}</tbody></table>`);
+  }
+
+  if (show("vendor_sla")) {
+    sections.push(`<h2>Vendor SLA Scorecard &amp; Kinerja Supplier (${input.vendorSla.length})</h2>
+    <table><thead><tr><th>Vendor / Supplier</th><th>Total PO</th><th>OTD %</th><th>Defect %</th><th>Lead Time</th><th>Skor</th><th>Grade</th></tr></thead>
+    <tbody>${input.vendorSla
+      .map(
+        (v) => `<tr><td><strong>${escapeCorpHtml(v.vendorName)}</strong></td><td>${v.poCount}</td><td>${v.onTimeDeliveryPct}%</td><td>${v.defectRatePct}%</td><td>${v.avgLeadTimeDays} hari</td><td>${v.compositeScore}/100</td><td><strong>${v.grade}</strong></td></tr>`,
+      )
+      .join("")}</tbody></table>`);
+  }
+
+  return `<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8" />
+<title>Laporan ERP &amp; Gudang Sovereign Corporate — ${escapeCorpHtml(input.businessName)}</title>
+<style>
+  body { font-family: Arial, sans-serif; color: #0f172a; margin: 0; padding: 20px; font-size: 11px; }
+  .head { border-bottom: 3px solid #0e7490; padding-bottom: 10px; margin-bottom: 14px; display: flex; justify-content: space-between; }
+  h1 { margin: 0; font-size: 16px; color: #0e7490; }
+  h2 { font-size: 12px; color: #0e7490; margin: 14px 0 6px; border-left: 3px solid #0e7490; padding-left: 7px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  th { background: #ecfeff; color: #155e75; border: 1px solid #cbd5e1; padding: 5px 7px; font-size: 10px; text-align: left; }
+  td { border: 1px solid #e2e8f0; padding: 5px 7px; font-size: 10px; }
+  .foot { margin-top: 14px; border-top: 1px dashed #cbd5e1; padding-top: 8px; font-size: 9px; color: #64748b; display: flex; justify-content: space-between; }
+</style></head><body>
+  <div class="head">
+    <div>
+      <h1>LAPORAN ERP, RANTAI PASOK &amp; AUDIT GUDANG</h1>
+      <div>${escapeCorpHtml(input.businessName)} · Sovereign Corporate Supply Chain</div>
+    </div>
+    <div style="text-align:right">
+      <div><strong>Cakupan: ${escapeCorpHtml(input.scope.toUpperCase())}</strong></div>
+      <div>Dicetak: ${new Date().toLocaleString("id-ID")}</div>
+    </div>
+  </div>
+  ${sections.join("")}
+  <div class="foot">
+    <span>Berita Acara &amp; Laporan ERP Sovereign Corporate — WA CRM Enterprise</span>
+    <span>Mengetahui: Kepala Gudang / Manajer Operasional</span>
+  </div>
+</body></html>`;
+}
+

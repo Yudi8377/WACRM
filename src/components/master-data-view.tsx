@@ -17,6 +17,7 @@ import {
   MapPin,
   Phone,
   Plus,
+  Printer,
   QrCode,
   ShieldCheck,
   Sparkles,
@@ -28,6 +29,8 @@ import {
   X,
 } from "lucide-react";
 import { CrudToolbar, PaginationBar } from "@/components/crud-toolbar";
+import { ReportExportHub } from "@/components/report-export-hub";
+import { UniversalPrintPanel } from "@/components/universal-print-panel";
 import {
   formatIdr,
   LIFECYCLE_LABELS,
@@ -42,11 +45,18 @@ import {
   type MasterPaymentAccountRecord,
   type MasterUnitRecord,
   type PaymentMethod,
+  type StoreBusinessProfile,
 } from "@/lib/crm-types";
+import {
+  buildEscPosTextReport,
+  renderMasterDataPrintHtml,
+  type MasterDataPrintScope,
+} from "@/lib/printer";
 import { sanitizeImageUrl, sanitizePhoneDigits, sanitizeTrackingUrl } from "@/lib/security";
 import {
   buildCourierKnowledgeSummary,
   deriveGroupCode,
+  getDefaultStoreProfile,
   loadLocalMasterData,
   normalizeProductGroup,
   saveLocalMasterData,
@@ -57,6 +67,7 @@ import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 interface MasterDataViewProps {
   adapter: WorkspaceAdapter;
+  storeProfile?: StoreBusinessProfile;
   products: ErpProductRecord[];
   suppliers: ErpSupplierRecord[];
   contacts: ContactRecord[];
@@ -118,6 +129,7 @@ async function compressImageFileToDataUrl(file: File): Promise<string> {
 
 export function MasterDataView({
   adapter,
+  storeProfile,
   products,
   suppliers,
   contacts,
@@ -125,7 +137,10 @@ export function MasterDataView({
   onToast,
   onOpenQrGenerator,
 }: MasterDataViewProps) {
+  const effectiveStore = storeProfile ?? getDefaultStoreProfile();
   const [subTab, setSubTab] = useState<MasterSubTab>("products");
+  const [showPrintStudio, setShowPrintStudio] = useState(false);
+  const [printScope, setPrintScope] = useState<MasterDataPrintScope>("products");
   const [productLayout, setProductLayout] = useState<"cards" | "table">("cards");
   const [productGroupFilter, setProductGroupFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
@@ -753,6 +768,22 @@ export function MasterDataView({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setPrintScope(subTab);
+              setShowPrintStudio((prev) => !prev);
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-extrabold transition ${
+              showPrintStudio
+                ? "bg-amber-400 text-slate-950"
+                : "border border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+            }`}
+          >
+            <Printer className="h-3.5 w-3.5" />
+            {showPrintStudio ? "Tutup Studio Cetak" : "Cetak & Ekspor Master Data"}
+          </button>
+
           {onOpenQrGenerator && (
             <button
               type="button"
@@ -794,6 +825,159 @@ export function MasterDataView({
           )}
         </div>
       </div>
+
+      {/* STUDIO CETAK & EKSPOR MASTER DATA (Daftar Barang, Supplier, Pelanggan, Kategori, Kurir, Rekening) */}
+      {showPrintStudio && (
+        <div className="space-y-3 rounded-3xl border border-amber-500/35 bg-slate-900/95 p-4 md:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="flex items-center gap-1.5 text-sm font-extrabold text-amber-300">
+                <Printer className="h-4 w-4" /> Studio Cetak Daftar Master Data (Barang, Supplier, Pelanggan, Kurir &amp; Rekening)
+              </h3>
+              <p className="text-[11px] text-slate-400">
+                Pilih daftar yang ingin dicetak atau dipreview langsung sebagai PDF, cetak Inkjet/LaserJet/Thermal, atau ekspor Excel ke PC.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1.5 text-[11px]">
+              {(
+                [
+                  { id: "products", label: `Daftar Barang (${products.length})` },
+                  { id: "suppliers", label: `Daftar Supplier (${suppliers.length})` },
+                  { id: "customers", label: `Pelanggan (${contacts.length})` },
+                  { id: "categories", label: `Kelompok & Satuan` },
+                  { id: "couriers", label: `Kurir & Ongkir` },
+                  { id: "payments", label: `Rekening Bayar` },
+                  { id: "all", label: "Semua Bundel Lengkap" },
+                ] as const
+              ).map((sc) => (
+                <button
+                  key={sc.id}
+                  type="button"
+                  onClick={() => setPrintScope(sc.id)}
+                  className={`rounded-lg px-2.5 py-1 font-bold transition ${
+                    printScope === sc.id
+                      ? "bg-emerald-500 text-slate-950"
+                      : "border border-slate-700 bg-slate-950 text-slate-300 hover:border-emerald-500/40"
+                  }`}
+                >
+                  {sc.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <UniversalPrintPanel
+            documentLabel={`Master Data — ${printScope.toUpperCase()}`}
+            jobTitle={`Master Data ${printScope.toUpperCase()} — ${effectiveStore.businessName}`}
+            filenameBase={`master-data-${printScope}`}
+            defaultPaper="a4"
+            buildHtml={() =>
+              renderMasterDataPrintHtml({
+                scope: printScope,
+                storeOrName: effectiveStore,
+                products,
+                suppliers,
+                contacts,
+                categories: localMaster.categories,
+                units: localMaster.units,
+                couriers: localMaster.couriers,
+                payments: localMaster.paymentAccounts,
+              })
+            }
+            buildEscPos={() =>
+              buildEscPosTextReport(
+                `MASTER DATA (${printScope.toUpperCase()})`,
+                effectiveStore,
+                [
+                  `Toko: ${effectiveStore.businessName}`,
+                  `Barang: ${products.length} SKU`,
+                  `Supplier: ${suppliers.length} Pemasok`,
+                  `Pelanggan: ${contacts.length} Kontak`,
+                  ...products
+                    .slice(0, 15)
+                    .map((p) => `${p.sku} ${p.name} | Stok ${p.stockQty} | ${formatIdr(p.unitPrice)}`),
+                ],
+              )
+            }
+            onResult={(res) => onToast(res.message, res.ok ? "success" : "error")}
+            compact
+          />
+
+          <ReportExportHub
+            heading="Ekspor Master Data (Excel Multi-Sheet / PDF / CSV / JSON) ke Desktop via USB / Bluetooth / Wi-Fi"
+            compact
+            onToast={(msg, tone) => onToast(msg, tone === "error" ? "error" : "success")}
+            buildPayload={() => ({
+              reportTitle: `Master Data Usaha — ${effectiveStore.businessName}`,
+              subtitle: `${products.length} Barang · ${suppliers.length} Supplier · ${contacts.length} Pelanggan`,
+              businessName: effectiveStore.businessName,
+              filenameBase: `master-data-${printScope}`,
+              kpis: [
+                { label: "Total Barang", value: `${products.length} SKU` },
+                { label: "Total Supplier", value: `${suppliers.length}` },
+                { label: "Total Pelanggan", value: `${contacts.length}` },
+                { label: "Kurir Aktif", value: `${localMaster.couriers.length}` },
+              ],
+              sheets: [
+                {
+                  sheetName: "Master Barang",
+                  headers: ["SKU", "Nama Barang", "Kelompok", "Stok", "Satuan", "HPP (Rp)", "Harga Jual (Rp)"],
+                  rows: products.map((p) => [
+                    p.sku,
+                    p.name,
+                    p.category,
+                    p.stockQty,
+                    p.unit,
+                    p.costPrice,
+                    p.unitPrice,
+                  ]),
+                },
+                {
+                  sheetName: "Master Supplier",
+                  headers: ["Nama Supplier", "PIC", "Telepon", "Email", "Alamat", "Termin"],
+                  rows: suppliers.map((s) => [
+                    s.name,
+                    s.contactPerson || "-",
+                    s.phone || "-",
+                    s.email || "-",
+                    s.address || "-",
+                    s.paymentTerms || "Cash",
+                  ]),
+                },
+                {
+                  sheetName: "Master Pelanggan",
+                  headers: ["Nama", "Telepon", "Perusahaan", "Tahap", "Tag"],
+                  rows: contacts.map((c) => [
+                    c.displayName,
+                    c.phoneE164 || "-",
+                    c.company || "-",
+                    c.lifecycleStage,
+                    c.tags.join(", "),
+                  ]),
+                },
+                {
+                  sheetName: "Kurir & Pembayaran",
+                  headers: ["Tipe", "Nama", "Detail", "Tarif / No Rekening"],
+                  rows: [
+                    ...localMaster.couriers.map((c) => [
+                      "Kurir",
+                      c.name,
+                      `${c.serviceType} (${c.estimatedDays})`,
+                      c.baseRate,
+                    ]),
+                    ...localMaster.paymentAccounts.map((p) => [
+                      "Pembayaran",
+                      p.providerName,
+                      PAYMENT_METHOD_LABELS[p.method],
+                      `${p.accountNumber || "-"} a.n. ${p.accountHolder || "-"}`,
+                    ]),
+                  ],
+                },
+              ],
+            })}
+          />
+        </div>
+      )}
 
       {/* Sub-module Tabs */}
       <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
