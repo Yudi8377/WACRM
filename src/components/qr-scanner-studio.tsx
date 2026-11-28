@@ -154,11 +154,16 @@ export function QrScannerStudio({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scanCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraPermissionState, setCameraPermissionState] = useState<
+    "unknown" | "granted" | "prompt" | "denied"
+  >("unknown");
+  const [showAndroidHelp, setShowAndroidHelp] = useState(false);
   const [manualCode, setManualCode] = useState("");
   const [lastScannedCode, setLastScannedCode] = useState<string | null>(null);
 
@@ -926,32 +931,98 @@ export function QrScannerStudio({
     }
   }, [cameraActive, studioTab]);
 
+  interface WacrmAndroidCameraBridge {
+    hasCameraPermission?: () => boolean;
+    hasMicrophonePermission?: () => boolean;
+    requestCameraAndMicPermissions?: () => void;
+    openAppPermissionSettings?: () => void;
+  }
+
+  function getAndroidBridge(): WacrmAndroidCameraBridge | null {
+    if (typeof window === "undefined") return null;
+    return (
+      (window as unknown as { WACRMAndroid?: WacrmAndroidCameraBridge }).WACRMAndroid ?? null
+    );
+  }
+
+  function isPermissionRejection(err: unknown): boolean {
+    const name = err instanceof Error ? err.name : "";
+    const msg = err instanceof Error ? err.message.toLowerCase() : "";
+    return (
+      name === "NotAllowedError" ||
+      name === "PermissionDeniedError" ||
+      name === "SecurityError" ||
+      msg.includes("permission") ||
+      msg.includes("denied")
+    );
+  }
+
+  async function ensureNativeAndroidCameraPermission(): Promise<boolean> {
+    const bridge = getAndroidBridge();
+    if (!bridge?.requestCameraAndMicPermissions) return true;
+    try {
+      if (bridge.hasCameraPermission?.()) {
+        setCameraPermissionState("granted");
+        return true;
+      }
+      return await new Promise<boolean>((resolve) => {
+        const w = window as unknown as {
+          __wacrmOnMediaPermissionsResult?: (cam: boolean, mic: boolean) => void;
+        };
+        const timer = setTimeout(() => {
+          w.__wacrmOnMediaPermissionsResult = undefined;
+          resolve(Boolean(bridge.hasCameraPermission?.()));
+        }, 12_000);
+        w.__wacrmOnMediaPermissionsResult = (cam: boolean) => {
+          clearTimeout(timer);
+          w.__wacrmOnMediaPermissionsResult = undefined;
+          setCameraPermissionState(cam ? "granted" : "denied");
+          resolve(cam);
+        };
+        bridge.requestCameraAndMicPermissions?.();
+      });
+    } catch {
+      return true;
+    }
+  }
+
   async function acquireCameraStream(facing: "environment" | "user"): Promise<MediaStream> {
     const md = navigator.mediaDevices;
+    // IMPORTANT: Never start with `{ facingMode: { exact: facing } }` on Android WebView/PWA!
+    // Start with `ideal` so Android Chrome/WebView prompts cleanly ONCE and immediately stops on NotAllowedError.
     const attempts: MediaStreamConstraints[] = [
       {
         video: {
-          facingMode: { exact: facing },
+          facingMode: { ideal: facing },
           width: { ideal: 1280 },
           height: { ideal: 720 },
         },
         audio: false,
       },
       {
-        video: { facingMode: { ideal: facing } },
+        video: { facingMode: facing },
+        audio: false,
+      },
+      {
+        video: true,
         audio: false,
       },
     ];
 
+    let lastErr: unknown = null;
     for (const constraints of attempts) {
       try {
         return await md.getUserMedia(constraints);
-      } catch {
-        // try next tier
+      } catch (err) {
+        lastErr = err;
+        // Stop immediately on explicit permission denial — never spam multiple permission prompts!
+        if (isPermissionRejection(err)) {
+          throw err;
+        }
       }
     }
 
-    // Tier 3: Enumerate explicit rear/front videoinput deviceId (helps Xiaomi/Samsung/Oppo multi-lens phones)
+    // Optional deviceId fallback only when non-permission constraint error occurred
     try {
       const devices = await md.enumerateDevices();
       const videoInputs = devices.filter((d) => d.kind === "videoinput");
@@ -963,24 +1034,57 @@ export function QrScannerStudio({
             : videoInputs.find((d) => /front|user|selfie/i.test(d.label)) ?? videoInputs[0];
         if (match?.deviceId) {
           return await md.getUserMedia({
-            video: { deviceId: { exact: match.deviceId } },
+            video: { deviceId: { ideal: match.deviceId } },
             audio: false,
           });
         }
       }
-    } catch {
-      // fall through
+    } catch (err) {
+      lastErr = err;
     }
 
-    // Tier 4: Generic camera fallback
-    return md.getUserMedia({ video: true, audio: false });
+    throw lastErr ?? new Error("Kamera tidak dapat diakses.");
   }
 
   async function startRearCamera(requestedFacing: "environment" | "user" = cameraFacing) {
     setCameraError(null);
+    setShowAndroidHelp(false);
+
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      setCameraError(
+        "Browser memblokir kamera karena koneksi bukan HTTPS. Buka aplikasi melalui https://wacrm-seven-dusky.vercel.app/ atau gunakan tombol 'Foto QR (Kamera HP)'.",
+      );
+      setShowAndroidHelp(true);
+      return;
+    }
+
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       setCameraError(
-        "Kamera langsung tidak tersedia di browser ini. Gunakan tombol 'Foto QR (Kamera HP)' di bawah, atau input scanner USB/Bluetooth.",
+        "Kamera langsung (WebRTC) tidak tersedia di browser ini. Gunakan tombol 'Foto QR (Kamera HP)' atau 'Pilih dari Galeri' di bawah — 100% langsung baca QR tanpa izin browser!",
+      );
+      setShowAndroidHelp(true);
+      return;
+    }
+
+    // Check Web Permissions API state (non-blocking diagnostic)
+    try {
+      const permStatus = await navigator.permissions?.query({
+        name: "camera" as PermissionName,
+      });
+      if (permStatus?.state === "granted" || permStatus?.state === "prompt" || permStatus?.state === "denied") {
+        setCameraPermissionState(permStatus.state);
+      }
+    } catch {
+      // Safari / older WebView doesn't support permissions.query("camera")
+    }
+
+    // If running inside Native Android APK v5.3+, ask Android OS runtime CAMERA+MIC permissions FIRST
+    const nativeOk = await ensureNativeAndroidCameraPermission();
+    if (!nativeOk) {
+      setCameraPermissionState("denied");
+      setShowAndroidHelp(true);
+      setCameraError(
+        "Izin Kamera Android belum diaktifkan pada aplikasi WACRM. Tekan 'Buka Pengaturan Izin HP' di bawah untuk mengizinkan Kamera, atau gunakan tombol 'Foto QR (Kamera HP)' langsung tanpa izin live.",
       );
       return;
     }
@@ -991,6 +1095,7 @@ export function QrScannerStudio({
     try {
       const stream = await acquireCameraStream(requestedFacing);
       streamRef.current = stream;
+      setCameraPermissionState("granted");
       setCameraActive(true);
 
       // Attach immediately if already mounted (useEffect above also guarantees attachment after tab switch!)
@@ -1053,11 +1158,13 @@ export function QrScannerStudio({
         }
       }, 280);
     } catch (err) {
-      const errName = err instanceof Error ? err.name : "";
+      const rejected = isPermissionRejection(err);
+      if (rejected) setCameraPermissionState("denied");
+      setShowAndroidHelp(true);
       setCameraError(
-        errName === "NotAllowedError" || errName === "PermissionDeniedError"
-          ? "Izin kamera ditolak oleh HP/browser. Buka Pengaturan Aplikasi / ikon gembok browser → Izinkan Kamera, atau gunakan tombol 'Foto QR (Kamera HP)' di bawah."
-          : "Kamera belakang belum dapat dibuka langsung. Gunakan tombol 'Foto QR (Kamera HP)' untuk memotret QR dengan kamera belakang asli HP Anda.",
+        rejected
+          ? "Izin kamera live belum diaktifkan di Chrome/Android. Jika tidak menemukan menu 'Kamera/Mikrofon' di Pengaturan → Aplikasi → WACRM (karena PWA memakai izin Google Chrome), lihat panduan 10 detik di bawah atau langsung pakai 'Foto QR (Kamera HP)'!"
+          : "Kamera belakang live sedang dipakai aplikasi lain atau tidak mendukung mode live. Gunakan tombol 'Foto QR (Kamera HP)' untuk memotret QR langsung dengan kamera belakang asli HP Anda.",
       );
     }
   }
@@ -1106,7 +1213,7 @@ export function QrScannerStudio({
         el.onload = () => resolve(el);
         el.src = dataUrl;
       });
-      const maxDim = 1024;
+      const maxDim = 1280;
       const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
       const w = Math.max(1, Math.round(img.width * scale));
       const h = Math.max(1, Math.round(img.height * scale));
@@ -1116,15 +1223,50 @@ export function QrScannerStudio({
       const ctx = canvas.getContext("2d");
       if (!ctx) throw new Error("Canvas tidak tersedia.");
       ctx.drawImage(img, 0, 0, w, h);
+
+      // Pass 1: Full-frame jsQR
       const imgData = ctx.getImageData(0, 0, w, h);
-      const decoded = jsQR(imgData.data, w, h, { inversionAttempts: "attemptBoth" });
-      if (!decoded?.data) {
+      let decodedText =
+        jsQR(imgData.data, w, h, { inversionAttempts: "attemptBoth" })?.data ?? null;
+
+      // Pass 2: Center-crop 65% zoom pass (helps when QR sticker is small in 12MP Android photos)
+      if (!decodedText) {
+        const cropW = Math.max(1, Math.round(w * 0.65));
+        const cropH = Math.max(1, Math.round(h * 0.65));
+        const cropX = Math.round((w - cropW) / 2);
+        const cropY = Math.round((h - cropH) / 2);
+        const cropData = ctx.getImageData(cropX, cropY, cropW, cropH);
+        decodedText =
+          jsQR(cropData.data, cropW, cropH, { inversionAttempts: "attemptBoth" })?.data ?? null;
+      }
+
+      // Pass 3: Native Chromium BarcodeDetector fallback (handles rotated/EAN/Code128 barcodes too!)
+      if (!decodedText) {
+        const DetectorCtor = (
+          window as unknown as {
+            BarcodeDetector?: new (opts?: { formats?: string[] }) => BarcodeDetectorLike;
+          }
+        ).BarcodeDetector;
+        if (DetectorCtor) {
+          try {
+            const det = new DetectorCtor({
+              formats: ["qr_code", "ean_13", "ean_8", "code_128", "code_39"],
+            });
+            const found = await det.detect(canvas);
+            decodedText = found[0]?.rawValue?.trim() ?? null;
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      if (!decodedText) {
         setCameraError(
-          "QR Code belum terbaca pada foto ini. Pastikan stiker QR fokus, cukup cahaya, lalu potret ulang.",
+          "QR Code belum terbaca pada foto ini. Dekatkan kamera ke stiker QR (fokus & cukup cahaya), lalu potret ulang.",
         );
         return;
       }
-      handleDecodedQrValue(decoded.data);
+      handleDecodedQrValue(decodedText);
     } catch (err) {
       setCameraError(err instanceof Error ? err.message : "Gagal membaca QR dari foto.");
     }
@@ -2342,6 +2484,13 @@ export function QrScannerStudio({
             onChange={(e) => void handleDecodeQrPhotoFile(e)}
             className="hidden"
           />
+          <input
+            ref={galleryInputRef}
+            type="file"
+            accept="image/*"
+            onChange={(e) => void handleDecodeQrPhotoFile(e)}
+            className="hidden"
+          />
 
           <div className="relative mt-3 aspect-[4/3] overflow-hidden rounded-2xl border border-slate-700 bg-slate-950">
             <video
@@ -2358,7 +2507,7 @@ export function QrScannerStudio({
                   Kamera Belakang Siap Memindai QR &amp; Barcode (Auto-Decode)
                 </p>
                 <p className="mt-1 text-[11px] text-slate-400">
-                  Klik Buka Kamera Belakang untuk scan live, atau Foto QR langsung via Kamera HP.
+                  Klik Buka Kamera Belakang untuk scan live, atau Foto QR / Galeri langsung tanpa izin WebRTC.
                 </p>
                 <div className="mt-3.5 flex flex-wrap justify-center gap-2">
                   <button
@@ -2374,6 +2523,13 @@ export function QrScannerStudio({
                     className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/50 bg-cyan-500/15 px-3.5 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-500/25"
                   >
                     <Camera className="h-4 w-4" /> Foto QR (Kamera HP)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => galleryInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-800"
+                  >
+                    🖼️ Galeri Foto QR
                   </button>
                 </div>
               </div>
@@ -2397,9 +2553,65 @@ export function QrScannerStudio({
             </div>
           )}
 
-          {cameraError && (
-            <div className="mt-3 rounded-xl border border-amber-500/35 bg-amber-500/10 p-3 text-[11px] text-amber-200">
-              {cameraError}
+          {(cameraError || showAndroidHelp) && (
+            <div className="mt-3 space-y-2.5 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3.5 text-[11px] text-amber-100">
+              {cameraError && <div className="font-semibold text-amber-200">⚠️ {cameraError}</div>}
+              <div className="rounded-xl border border-amber-500/25 bg-slate-950/85 p-3 text-slate-200 space-y-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 font-extrabold text-amber-300">
+                  <span>Panduan Cepat Izin Kamera &amp; Mikrofon di Android:</span>
+                  <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-mono text-cyan-300">
+                    Status Izin: {cameraPermissionState.toUpperCase()} ·{" "}
+                    {getAndroidBridge() ? "APK Native" : "Chrome / PWA"}
+                  </span>
+                </div>
+                <ol className="list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-slate-300">
+                  <li>
+                    <strong>Mengapa menu Kamera/Mikrofon tidak muncul di Pengaturan → Aplikasi → WACRM?</strong>{" "}
+                    Karena jika Anda menginstal dari Chrome (<em>Tambahkan ke Layar Utama / PWA</em>), izin kamera dikelola oleh <strong>Google Chrome</strong>, bukan ikon pintasan WACRM!
+                  </li>
+                  <li>
+                    <strong>Solusi 1 (Aktifkan Live Camera di Chrome Android):</strong> Buka{" "}
+                    <strong>Pengaturan HP → Aplikasi → Google Chrome → Izin → Kamera &amp; Mikrofon → Izinkan saat aplikasi digunakan</strong>. Lalu buka Chrome ke{" "}
+                    <code className="text-emerald-300">wacrm-seven-dusky.vercel.app</code> → ketuk <strong>ikon Pengaturan/Gembok di kiri alamat URL → Izin → Kamera → Izinkan</strong> → Refresh.
+                  </li>
+                  <li>
+                    <strong>Solusi 2 (Paling Cepat — 100% Jalan Tanpa Setting Izin Browser):</strong> Tekan tombol{" "}
+                    <strong className="text-cyan-300">📷 Foto QR (Kamera HP)</strong> di bawah — langsung memotret memakai aplikasi Kamera bawaan HP lalu otomatis membaca QR!
+                  </li>
+                </ol>
+                <div className="flex flex-wrap gap-2 pt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    className="inline-flex items-center gap-1 rounded-lg bg-cyan-500 px-3 py-1.5 text-[11px] font-extrabold text-slate-950 hover:bg-cyan-400"
+                  >
+                    <Camera className="h-3.5 w-3.5" /> Foto QR Langsung (Kamera HP)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => galleryInputRef.current?.click()}
+                    className="inline-flex items-center gap-1 rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-slate-200 hover:bg-slate-800"
+                  >
+                    🖼️ Pilih Foto QR dari Galeri
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void startRearCamera("environment")}
+                    className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-[11px] font-extrabold text-slate-950 hover:bg-emerald-400"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" /> Coba Izin Kamera Lagi
+                  </button>
+                  {getAndroidBridge()?.openAppPermissionSettings && (
+                    <button
+                      type="button"
+                      onClick={() => getAndroidBridge()?.openAppPermissionSettings?.()}
+                      className="inline-flex items-center gap-1 rounded-lg border border-amber-400/50 bg-amber-500/20 px-3 py-1.5 text-[11px] font-extrabold text-amber-200 hover:bg-amber-500/30"
+                    >
+                      ⚙️ Buka Pengaturan Izin Aplikasi
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 

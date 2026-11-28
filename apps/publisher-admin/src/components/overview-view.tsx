@@ -6,6 +6,7 @@ import {
   BookOpenCheck,
   CheckCircle2,
   Crown,
+  Download,
   KeyRound,
   Layers,
   ShieldCheck,
@@ -72,6 +73,13 @@ export function OverviewView({
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <a
+            href="/downloads/WACRM-Publisher-HQ-v5.3-Windows-Offline-Installer.zip"
+            download
+            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 px-3.5 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-amber-300"
+          >
+            <Download className="h-4 w-4" /> Unduh Offline Installer Windows
+          </a>
           {onSyncLive && (
             <button
               type="button"

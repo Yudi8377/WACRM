@@ -128,6 +128,26 @@ class WacrmJsBridge(
     }
 
     @JavascriptInterface
+    fun hasCameraPermission(): Boolean = activity.hasCameraPermission()
+
+    @JavascriptInterface
+    fun hasMicrophonePermission(): Boolean = activity.hasMicrophonePermission()
+
+    @JavascriptInterface
+    fun requestCameraAndMicPermissions() {
+        activity.runOnUiThread {
+            activity.requestCameraAndMicPermissionsFromJs()
+        }
+    }
+
+    @JavascriptInterface
+    fun openAppPermissionSettings() {
+        activity.runOnUiThread {
+            activity.openAppPermissionSettings()
+        }
+    }
+
+    @JavascriptInterface
     fun openSettings() {
         activity.runOnUiThread {
             activity.showServerSettingsDialog()

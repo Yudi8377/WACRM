@@ -7,6 +7,8 @@ import {
   Briefcase,
   Crown,
   Database,
+  Download,
+  ExternalLink,
   KeyRound,
   LayoutDashboard,
   LineChart,
@@ -444,7 +446,7 @@ export function PublisherEmsApp() {
                 WACRM Publisher HQ
               </span>
               <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-300">
-                Super Admin EMS
+                v5.3 · Super Admin EMS
               </span>
             </div>
             <div className="text-[11px] text-slate-400">
@@ -453,7 +455,24 @@ export function PublisherEmsApp() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/downloads/WACRM-Publisher-HQ-v5.3-Windows-Offline-Installer.zip"
+            download
+            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 px-3 py-1.5 text-[11px] font-extrabold text-slate-950 hover:bg-amber-300"
+            title="Unduh Offline Windows Installer (instalasi 100% offline, operasi terhubung online)"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Windows Offline Installer
+          </a>
+          <a
+            href="https://wacrm-seven-dusky.vercel.app"
+            target="_blank"
+            rel="noreferrer"
+            className="hidden items-center gap-1 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/20 md:inline-flex"
+          >
+            <ExternalLink className="h-3.5 w-3.5" /> Aplikasi WACRM v5.3
+          </a>
           <button
             type="button"
             disabled={syncingLive}

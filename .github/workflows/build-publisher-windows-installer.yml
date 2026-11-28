@@ -1,0 +1,46 @@
+name: Build WACRM Publisher HQ Windows Offline Installer
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "apps/publisher-admin/windows-installer/**"
+      - ".github/workflows/build-publisher-windows-installer.yml"
+
+jobs:
+  build-windows-setup-exe:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compile native WACRM-Publisher-HQ.exe launcher (.NET Framework)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path apps/publisher-admin/windows-installer/dist | Out-Null
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          & $csc /nologo /target:winexe /optimize+ `
+            /out:apps/publisher-admin/windows-installer/dist/WACRM-Publisher-HQ.exe `
+            /win32icon:apps/publisher-admin/windows-installer/payload/wacrm-publisher.ico `
+            /r:System.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll `
+            apps/publisher-admin/windows-installer/payload/WacrmPublisherLauncher.cs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build single-file offline Setup EXE with Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+          & $iscc apps/publisher-admin/windows-installer/WACRM-Publisher-HQ.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem apps/publisher-admin/windows-installer/dist
+
+      - name: Upload WACRM-Publisher-HQ-v5.3-Setup.exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WACRM-Publisher-HQ-v5.3-Windows-Setup-EXE
+          path: |
+            apps/publisher-admin/windows-installer/dist/WACRM-Publisher-HQ-v5.3-Setup.exe
+            apps/publisher-admin/windows-installer/dist/WACRM-Publisher-HQ.exe

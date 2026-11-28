@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Building2, Lock, RotateCcw, Save, ShieldCheck } from "lucide-react";
+import { Building2, Download, Lock, Monitor, RotateCcw, Save, ShieldCheck } from "lucide-react";
 import type { PublisherCompanyProfile, PublisherEmsState } from "@/lib/publisher-types";
 
 interface PublisherSettingsViewProps {
@@ -140,6 +140,23 @@ export function PublisherSettingsView({
                 • <strong>API Verifikasi Lisensi:</strong> Aplikasi WACRM klien memvalidasi License Key via <code className="font-mono">POST /api/licenses/verify</code> atau verifikasi tanda tangan kriptografi offline.
               </li>
             </ul>
+          </div>
+
+          <div className="rounded-2xl border border-amber-500/35 bg-amber-950/15 p-5">
+            <div className="flex items-center gap-2 text-sm font-bold text-amber-300">
+              <Monitor className="h-4 w-4" /> Aplikasi Desktop Windows v5.3 (Offline Installer)
+            </div>
+            <p className="mt-2 text-slate-300 leading-relaxed">
+              Instal <strong>100% secara offline</strong> di Windows 10/11 (mengompilasi launcher native{" "}
+              <code className="font-mono">WACRM-Publisher-HQ.exe</code> + shortcut Desktop &amp; Start Menu tanpa Node.js/Admin). Saat dijalankan, aplikasi langsung terhubung <strong>online</strong> ke server Publisher HQ v5.3.
+            </p>
+            <a
+              href="/downloads/WACRM-Publisher-HQ-v5.3-Windows-Offline-Installer.zip"
+              download
+              className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-amber-400 px-4 py-2 text-xs font-extrabold text-slate-950 hover:bg-amber-300"
+            >
+              <Download className="h-4 w-4" /> Unduh Paket Windows Offline Installer (.zip)
+            </a>
           </div>
 
           <div className="rounded-2xl border border-slate-800 bg-slate-900/95 p-5">
