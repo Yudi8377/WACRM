@@ -9,6 +9,8 @@ coverage/
 *.log
 .DS_Store
 .vercel
+.open-next/
+.wrangler/
 android/.gradle/
 android/build/
 android/app/build/

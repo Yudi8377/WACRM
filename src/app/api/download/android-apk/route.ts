@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 const APK_RELEASE_URL =
   process.env.WACRM_ANDROID_APK_URL ||
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
         {
           ok: probe.ok && validApkZipMagic && totalBytes > 1_000_000,
           status: probe.status,
-          runtime: "edge",
+          runtime: "nodejs",
           filename: APK_FILENAME,
           contentType: APK_CONTENT_TYPE,
           packageId: "com.wacrm.android",

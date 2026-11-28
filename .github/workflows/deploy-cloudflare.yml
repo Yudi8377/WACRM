@@ -1,6 +1,10 @@
 name: Deploy to Cloudflare Workers (Rp 0 Commercial Tier)
 
 on:
+  push:
+    branches:
+      - main
+      - arena/ea0f83cd-wacrm
   workflow_dispatch:
     inputs:
       target_app:
@@ -13,50 +17,138 @@ on:
           - wacrm
           - wacrm-enterprise
 
+concurrency:
+  group: cloudflare-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   deploy-wacrm:
-    if: github.event.inputs.target_app == 'both' || github.event.inputs.target_app == 'wacrm'
+    if: github.event_name == 'push' || github.event.inputs.target_app == 'both' || github.event.inputs.target_app == 'wacrm'
     runs-on: ubuntu-latest
     steps:
+      - name: Check Cloudflare secrets configured
+        id: cf_check
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CF_TOKEN" ] && [ -n "$CF_ACCOUNT" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping Cloudflare deploy: CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID not configured."
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.cf_check.outputs.ready == 'true'
+
       - uses: actions/setup-node@v4
+        if: steps.cf_check.outputs.ready == 'true'
         with:
           node-version: "22"
           cache: "npm"
+
       - name: Install dependencies
+        if: steps.cf_check.outputs.ready == 'true'
         run: npm ci
-      - name: Install OpenNext Cloudflare & Wrangler
-        run: npm install --no-save @opennextjs/cloudflare wrangler
+
       - name: Build WACRM for Cloudflare Workers
+        if: steps.cf_check.outputs.ready == 'true'
         run: npx opennextjs-cloudflare build
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
           APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
-      - name: Deploy WACRM to Cloudflare Workers (Commercial Free Tier)
+
+      - name: Deploy WACRM to Cloudflare Workers (Rp 0 Commercial Free Tier)
+        if: steps.cf_check.outputs.ready == 'true'
         run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      - name: Sync Runtime Secrets to Cloudflare Worker (Encrypted)
+        if: steps.cf_check.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL_UNPOOLED: ${{ secrets.DATABASE_URL_UNPOOLED }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          APP_ENCRYPTION_KEY: ${{ secrets.APP_ENCRYPTION_KEY }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          PUBLISHER_SYNC_SECRET: ${{ secrets.PUBLISHER_SYNC_SECRET }}
+          PUBLISHER_LICENSE_API_URL: ${{ secrets.PUBLISHER_LICENSE_API_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          MIDTRANS_SERVER_KEY: ${{ secrets.MIDTRANS_SERVER_KEY }}
+          XENDIT_SECRET_KEY: ${{ secrets.XENDIT_SECRET_KEY }}
+          XENDIT_WEBHOOK_TOKEN: ${{ secrets.XENDIT_WEBHOOK_TOKEN }}
+          TRIPAY_API_KEY: ${{ secrets.TRIPAY_API_KEY }}
+          TRIPAY_PRIVATE_KEY: ${{ secrets.TRIPAY_PRIVATE_KEY }}
+          TRIPAY_MERCHANT_CODE: ${{ secrets.TRIPAY_MERCHANT_CODE }}
+        run: |
+          node -e '
+            const keys = [
+              "DATABASE_URL","DATABASE_URL_UNPOOLED","AUTH_SECRET","APP_ENCRYPTION_KEY",
+              "CRON_SECRET","PUBLISHER_SYNC_SECRET","PUBLISHER_LICENSE_API_URL",
+              "RESEND_API_KEY","BREVO_API_KEY","MIDTRANS_SERVER_KEY","XENDIT_SECRET_KEY",
+              "XENDIT_WEBHOOK_TOKEN","TRIPAY_API_KEY","TRIPAY_PRIVATE_KEY","TRIPAY_MERCHANT_CODE"
+            ];
+            const out = {};
+            for (const k of keys) {
+              if (process.env[k] && process.env[k].trim()) out[k] = process.env[k].trim();
+            }
+            if (Object.keys(out).length > 0) {
+              require("fs").writeFileSync("/tmp/cf-secrets.json", JSON.stringify(out));
+              console.log("Prepared " + Object.keys(out).length + " Cloudflare Worker runtime secrets: " + Object.keys(out).join(", "));
+            } else {
+              console.log("No optional runtime secrets set in GitHub Secrets yet.");
+            }
+          '
+          if [ -f /tmp/cf-secrets.json ]; then
+            npx wrangler secret bulk /tmp/cf-secrets.json
+            rm -f /tmp/cf-secrets.json
+          fi
+
   deploy-wacrm-enterprise:
-    if: github.event.inputs.target_app == 'both' || github.event.inputs.target_app == 'wacrm-enterprise'
+    if: github.event_name == 'push' || github.event.inputs.target_app == 'both' || github.event.inputs.target_app == 'wacrm-enterprise'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: apps/marketing-web
     steps:
+      - name: Check Cloudflare secrets configured
+        id: cf_check
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CF_TOKEN" ] && [ -n "$CF_ACCOUNT" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping Cloudflare deploy: CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID not configured."
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.cf_check.outputs.ready == 'true'
+
       - uses: actions/setup-node@v4
+        if: steps.cf_check.outputs.ready == 'true'
         with:
           node-version: "22"
+
       - name: Install dependencies
-        run: npm install
-      - name: Install OpenNext Cloudflare & Wrangler
-        run: npm install --no-save @opennextjs/cloudflare wrangler
+        if: steps.cf_check.outputs.ready == 'true'
+        run: npm ci
+
       - name: Build Enterprise Marketing Web for Cloudflare Workers
+        if: steps.cf_check.outputs.ready == 'true'
         run: npx opennextjs-cloudflare build
-      - name: Deploy Enterprise Web to Cloudflare Workers
+
+      - name: Deploy Enterprise Web to Cloudflare Workers (Rp 0 Commercial Free Tier)
+        if: steps.cf_check.outputs.ready == 'true'
         run: npx wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

@@ -2,12 +2,18 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "wacrm-enterprise-web",
   "main": ".open-next/worker.js",
-  "compatibility_date": "2026-01-01",
+  "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "wacrm-enterprise-web"
+    }
+  ],
   "observability": {
     "enabled": true
   },

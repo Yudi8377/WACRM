@@ -155,8 +155,12 @@ describe("Autonomous Commercial Activation & Cloudflare Rp 0 Kit", () => {
     expect(wranglerText).toContain("nodejs_compat");
     expect(wranglerText).toContain(".open-next/worker.js");
 
+    const openNextText = readFileSync(rootOpenNext, "utf8");
+    expect(openNextText).toContain("@opennextjs/cloudflare");
+    expect(openNextText).toContain("defineCloudflareConfig");
+
     const workflowText = readFileSync(workflow, "utf8");
-    expect(workflowText).toContain("@opennextjs/cloudflare");
+    expect(workflowText).toContain("opennextjs-cloudflare");
     expect(workflowText).toContain("CLOUDFLARE_API_TOKEN");
     expect(workflowText).toContain("CLOUDFLARE_ACCOUNT_ID");
   });
