@@ -2,78 +2,117 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+const APK_VERSION = "5.3.4";
+const APK_VERSION_CODE = 12;
+const APK_FILENAME = `WACRM-v${APK_VERSION}-Android.apk`;
+const STATIC_APK_PATH = `/downloads/${APK_FILENAME}`;
+const APK_CONTENT_TYPE = "application/vnd.android.package-archive";
+
 const APK_RELEASE_URL =
   process.env.WACRM_ANDROID_APK_URL ||
   "https://github.com/Yudi8377/WACRM/releases/latest/download/wacrm-android.apk";
 
-const APK_FILENAME = "WACRM-v5.3.3-Android.apk";
-const APK_CONTENT_TYPE = "application/vnd.android.package-archive";
+const TARGET_BASE_URL = "https://wacrm-commercial.dwahyudi8377.workers.dev";
+const PRIVACY_POLICY_URL = `${TARGET_BASE_URL}/privacy`;
 
-function buildDownloadHeaders(upstream: Response, isPartial = false): Headers {
-  const headers = new Headers();
-  headers.set("Content-Type", APK_CONTENT_TYPE);
-  headers.set("Content-Disposition", `attachment; filename="${APK_FILENAME}"`);
-  headers.set("X-Content-Type-Options", "nosniff");
-  headers.set("Accept-Ranges", "bytes");
-  headers.set("Cache-Control", "public, max-age=300, s-maxage=300");
-
-  const contentLength = upstream.headers.get("content-length");
-  if (contentLength) {
-    headers.set("Content-Length", contentLength);
+async function probeStaticEdgeApk(origin: string): Promise<{
+  available: boolean;
+  url: string;
+  totalBytes: number;
+  contentType: string;
+}> {
+  const staticUrl = `${origin}${STATIC_APK_PATH}`;
+  try {
+    const res = await fetch(staticUrl, {
+      method: "HEAD",
+      redirect: "follow",
+      headers: {
+        "User-Agent": `WACRM-Android-Distributor/${APK_VERSION}`,
+      },
+    });
+    const contentLength = Number(res.headers.get("content-length") || "0");
+    const contentType = (res.headers.get("content-type") || "").toLowerCase();
+    const available =
+      res.ok && contentLength > 1_000_000 && !contentType.includes("text/html");
+    return {
+      available,
+      url: staticUrl,
+      totalBytes: contentLength,
+      contentType: contentType || APK_CONTENT_TYPE,
+    };
+  } catch {
+    return {
+      available: false,
+      url: staticUrl,
+      totalBytes: 0,
+      contentType: APK_CONTENT_TYPE,
+    };
   }
-  const contentRange = upstream.headers.get("content-range");
-  if (isPartial && contentRange) {
-    headers.set("Content-Range", contentRange);
-  }
-  const etag = upstream.headers.get("etag");
-  if (etag) {
-    headers.set("ETag", etag);
-  }
-  return headers;
 }
 
 /**
- * HEAD handler so Android DownloadManager, Chrome, and MIUI Browser can
- * inspect Content-Length, filename, and Accept-Ranges before fetching bytes.
+ * HEAD handler for Android DownloadManager / Chrome / MIUI Browser preflight checks.
+ * Never buffers the 5 MB binary through the Worker isolate (avoids Cloudflare 10ms CPU / HTTP 500).
  */
-export async function HEAD() {
+export async function HEAD(request: NextRequest) {
+  const edge = await probeStaticEdgeApk(request.nextUrl.origin);
+  if (edge.available) {
+    const headers = new Headers();
+    headers.set("Content-Type", APK_CONTENT_TYPE);
+    headers.set("Content-Disposition", `attachment; filename="${APK_FILENAME}"`);
+    headers.set("Content-Length", String(edge.totalBytes));
+    headers.set("Accept-Ranges", "bytes");
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("Cache-Control", "public, max-age=300");
+    return new Response(null, { status: 200, headers });
+  }
+
   try {
     const upstream = await fetch(APK_RELEASE_URL, {
       method: "HEAD",
       redirect: "follow",
       headers: {
-        "User-Agent": "WACRM-Android-Distributor/5.3.2",
+        "User-Agent": `WACRM-Android-Distributor/${APK_VERSION}`,
       },
     });
     if (!upstream.ok) {
       return new Response(null, { status: 502 });
     }
-    return new Response(null, {
-      status: 200,
-      headers: buildDownloadHeaders(upstream),
-    });
+    const headers = new Headers();
+    headers.set("Content-Type", APK_CONTENT_TYPE);
+    headers.set("Content-Disposition", `attachment; filename="${APK_FILENAME}"`);
+    headers.set("Accept-Ranges", "bytes");
+    headers.set("X-Content-Type-Options", "nosniff");
+    const len = upstream.headers.get("content-length");
+    if (len) headers.set("Content-Length", len);
+    return new Response(null, { status: 200, headers });
   } catch {
     return new Response(null, { status: 502 });
   }
 }
 
 /**
- * Edge-streamed same-origin Android APK download endpoint.
- * Runs on Vercel Edge Runtime so >4.5 MB APK binaries stream directly without
- * hitting Node.js Serverless 4.5 MB payload caps, supports HTTP Range resumable
- * downloads on mobile networks, and enforces `application/vnd.android.package-archive`.
+ * Zero-CPU Android APK download distributor for Cloudflare Workers Free Tier.
  *
- * Pass `?check=1` to run a lightweight ZIP/APK magic-bytes (`PK\x03\x04`) & size check.
+ * IMPORTANT: Streaming a 5+ MB binary through `@opennextjs/cloudflare` Node.js stream adapters
+ * can exceed the Workers Free Tier 10 ms CPU limit and emit HTTP 500 (corrupting the downloaded APK).
+ * Instead, this route redirects (HTTP 302) directly to the verified same-origin Cloudflare Edge Static
+ * Asset (`/downloads/WACRM-v5.3.4-Android.apk`, served at 0 ms Worker CPU with exact Content-Length
+ * and resumable HTTP Range support), falling back to GitHub Releases CDN if static asset is absent.
+ *
+ * Pass `?check=1` to verify APK ZIP magic bytes (`PK\x03\x04`) and exact size.
  */
 export async function GET(request: NextRequest) {
-  try {
-    const isCheck = request.nextUrl.searchParams.get("check") === "1";
+  const isCheck = request.nextUrl.searchParams.get("check") === "1";
+  const edge = await probeStaticEdgeApk(request.nextUrl.origin);
 
-    if (isCheck) {
-      const probe = await fetch(APK_RELEASE_URL, {
+  if (isCheck) {
+    const targetUrl = edge.available ? edge.url : APK_RELEASE_URL;
+    try {
+      const probe = await fetch(targetUrl, {
         redirect: "follow",
         headers: {
-          "User-Agent": "WACRM-Android-Distributor/5.3.2",
+          "User-Agent": `WACRM-Android-Distributor/${APK_VERSION}`,
           Range: "bytes=0-3",
         },
       });
@@ -89,20 +128,25 @@ export async function GET(request: NextRequest) {
       const totalBytesMatch = contentRange.match(/\/(\d+)$/);
       const totalBytes = totalBytesMatch
         ? Number(totalBytesMatch[1])
-        : Number(probe.headers.get("content-length") || "0");
+        : edge.available
+          ? edge.totalBytes
+          : Number(probe.headers.get("content-length") || "0");
 
       return NextResponse.json(
         {
           ok: probe.ok && validApkZipMagic && totalBytes > 1_000_000,
           status: probe.status,
           runtime: "nodejs",
+          delivery: edge.available ? "cloudflare-edge-static" : "github-releases-cdn",
+          edgeStaticReady: edge.available,
+          downloadPath: STATIC_APK_PATH,
           filename: APK_FILENAME,
           contentType: APK_CONTENT_TYPE,
           packageId: "com.wacrm.android",
-          versionName: "5.3.3",
-          versionCode: 11,
-          targetBaseUrl: "https://wacrm-commercial.dwahyudi8377.workers.dev",
-          privacyPolicyUrl: "https://wacrm-commercial.dwahyudi8377.workers.dev/privacy",
+          versionName: APK_VERSION,
+          versionCode: APK_VERSION_CODE,
+          targetBaseUrl: TARGET_BASE_URL,
+          privacyPolicyUrl: PRIVACY_POLICY_URL,
           signingSchemes: ["v1", "v2", "v3"],
           totalBytes,
           totalMB: Number((totalBytes / (1024 * 1024)).toFixed(2)),
@@ -111,44 +155,19 @@ export async function GET(request: NextRequest) {
         },
         { status: probe.ok && validApkZipMagic ? 200 : 502 },
       );
-    }
-
-    const rangeHeader = request.headers.get("range");
-    const fetchHeaders: Record<string, string> = {
-      "User-Agent": "WACRM-Android-Distributor/5.3.2",
-      Accept: "application/vnd.android.package-archive, application/octet-stream, */*",
-    };
-    if (rangeHeader) {
-      fetchHeaders["Range"] = rangeHeader;
-    }
-
-    const upstream = await fetch(APK_RELEASE_URL, {
-      redirect: "follow",
-      headers: fetchHeaders,
-    });
-
-    if (!upstream.ok || !upstream.body) {
-      return NextResponse.redirect(APK_RELEASE_URL, 302);
-    }
-
-    const contentType = (upstream.headers.get("content-type") || "").toLowerCase();
-    // Guard against HTML 404/error pages accidentally served with .apk extension
-    if (contentType.includes("text/html")) {
+    } catch {
       return NextResponse.json(
         {
           ok: false,
-          error: "Berkas APK rilis belum tersedia. Silakan coba beberapa saat lagi.",
+          error: "Gagal memverifikasi berkas APK rilis.",
+          releaseUrl: APK_RELEASE_URL,
         },
-        { status: 503 },
+        { status: 502 },
       );
     }
-
-    const isPartial = upstream.status === 206;
-    return new Response(upstream.body, {
-      status: isPartial ? 206 : 200,
-      headers: buildDownloadHeaders(upstream, isPartial),
-    });
-  } catch {
-    return NextResponse.redirect(APK_RELEASE_URL, 302);
   }
+
+  // Always redirect to a zero-CPU CDN binary endpoint so Android browsers receive 100% intact bytes.
+  const redirectTarget = edge.available ? edge.url : APK_RELEASE_URL;
+  return NextResponse.redirect(redirectTarget, 302);
 }

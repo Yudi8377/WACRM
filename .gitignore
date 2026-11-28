@@ -17,5 +17,6 @@ android/app/build/
 android/local.properties
 *.iml
 tsconfig.tsbuildinfo
+public/downloads/*.apk
 
 

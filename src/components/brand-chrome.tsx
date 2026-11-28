@@ -5,7 +5,7 @@ export const OFFICIAL_PRIVACY_POLICY_URL =
   "https://wacrm-commercial.dwahyudi8377.workers.dev/privacy";
 
 export function BrandLogoMark({
-  subtitle = "Commercial OS v5.3.3",
+  subtitle = "Commercial OS v5.3.4",
   compact = false,
 }: {
   subtitle?: string;
@@ -63,7 +63,7 @@ export function CorporateTopUtilityBar() {
           <span className="inline-flex items-center gap-1 font-semibold text-[#00A885]">
             <Lock className="h-3.5 w-3.5" /> Portal Aplikasi Commercial OS
           </span>
-          <span className="text-[#888888]">PT WACRM Digital Nusantara · v5.3.3</span>
+          <span className="text-[#888888]">PT WACRM Digital Nusantara · v5.3.4</span>
         </div>
       </div>
     </div>
@@ -111,7 +111,7 @@ export function CorporateNavbar({
               href="/android"
               className="inline-flex items-center gap-1.5 rounded bg-[#00A885] px-4 py-2 font-heading text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#008C6F]"
             >
-              <Smartphone className="h-3.5 w-3.5" /> Unduh APK v5.3.3
+              <Smartphone className="h-3.5 w-3.5" /> Unduh APK v5.3.4
             </Link>
           </nav>
 
@@ -126,7 +126,7 @@ export function CorporateNavbar({
               href="/android"
               className="rounded bg-[#00A885] px-3 py-1.5 font-heading text-[11px] font-bold uppercase tracking-wider text-white hover:bg-[#008C6F]"
             >
-              APK v5.3.3
+              APK v5.3.4
             </Link>
           </div>
         </div>
@@ -145,7 +145,7 @@ export function CorporateFooter() {
           </span>
           <span className="font-heading text-sm font-extrabold tracking-tight text-white">
             WACRM<span className="text-[#00A885]">.</span>{" "}
-            <span className="text-xs font-normal text-zinc-400">Commercial OS v5.3.3</span>
+            <span className="text-xs font-normal text-zinc-400">Commercial OS v5.3.4</span>
           </span>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-4">
@@ -159,7 +159,7 @@ export function CorporateFooter() {
             Kebijakan Refund
           </Link>
           <Link href="/android" className="transition hover:text-[#00D4A8]">
-            Android APK v5.3.3
+            Android APK v5.3.4
           </Link>
           <Link href="/setup" className="transition hover:text-[#00D4A8]">
             Setup &amp; Aktivasi

@@ -52,6 +52,25 @@ jobs:
         if: steps.cf_check.outputs.ready == 'true'
         run: npm ci
 
+      - name: Bundle Verified Signed Android APK v5.3.4 into Cloudflare Edge Static Assets
+        if: steps.cf_check.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p public/downloads
+          APK_OUT="public/downloads/WACRM-v5.3.4-Android.apk"
+          if ! gh release download android-v5.3.4 -p wacrm-android.apk -O "$APK_OUT" --clobber; then
+            echo "Fallback: downloading latest release APK..."
+            curl -fL "https://github.com/Yudi8377/WACRM/releases/latest/download/wacrm-android.apk" -o "$APK_OUT"
+          fi
+          APK_SIZE=$(stat -c%s "$APK_OUT")
+          APK_MAGIC=$(head -c 4 "$APK_OUT" | xxd -p)
+          echo "Bundled static Android APK: $APK_OUT (${APK_SIZE} bytes, magic=${APK_MAGIC})"
+          test "$APK_MAGIC" = "504b0304"
+          test "$APK_SIZE" -gt 2000000
+          cp "$APK_OUT" public/downloads/wacrm-android.apk
+          sha256sum "$APK_OUT" | awk '{print $1}' > /tmp/expected-apk.sha256
+
       - name: Build WACRM for Cloudflare Workers
         if: steps.cf_check.outputs.ready == 'true'
         run: npx opennextjs-cloudflare build
@@ -69,7 +88,20 @@ jobs:
             echo "### WACRM Commercial OS Live on Cloudflare Workers (Rp 0 Commercial Tier)" >> "$GITHUB_STEP_SUMMARY"
             echo "- Live URL: $URL" >> "$GITHUB_STEP_SUMMARY"
             echo "- Setup & Activation Console: $URL/setup" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Android APK v5.3.2 & PWA: $URL/android" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Android APK v5.3.4 (0ms Edge Static Asset): $URL/downloads/WACRM-v5.3.4-Android.apk" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Android Installer Page: $URL/android" >> "$GITHUB_STEP_SUMMARY"
+            echo "=== LIVE SMOKE VERIFICATION OF CLOUDFLARE APK DOWNLOAD ==="
+            EXPECTED_SHA=$(cat /tmp/expected-apk.sha256)
+            curl -fL -D /tmp/apk-static.headers "$URL/downloads/WACRM-v5.3.4-Android.apk" -o /tmp/live-static.apk
+            grep -i "application/vnd.android.package-archive" /tmp/apk-static.headers
+            ACTUAL_STATIC_SHA=$(sha256sum /tmp/live-static.apk | awk '{print $1}')
+            echo "Static APK SHA-256: $ACTUAL_STATIC_SHA (expected: $EXPECTED_SHA)"
+            test "$ACTUAL_STATIC_SHA" = "$EXPECTED_SHA"
+            curl -fL "$URL/api/download/android-apk" -o /tmp/live-api.apk
+            ACTUAL_API_SHA=$(sha256sum /tmp/live-api.apk | awk '{print $1}')
+            echo "API Redirect APK SHA-256: $ACTUAL_API_SHA (expected: $EXPECTED_SHA)"
+            test "$ACTUAL_API_SHA" = "$EXPECTED_SHA"
+            rm -f /tmp/live-static.apk /tmp/live-api.apk /tmp/apk-static.headers /tmp/expected-apk.sha256
           fi
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

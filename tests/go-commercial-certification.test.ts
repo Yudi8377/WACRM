@@ -124,8 +124,8 @@ describe("WACRM v5.3.1 Go-Commercial 8-Gate Enterprise Certification Suite", () 
     expect(manifest).toContain("android.permission.POST_NOTIFICATIONS");
 
     const gradle = fs.readFileSync(path.join(REPO_ROOT, "android/app/build.gradle.kts"), "utf8");
-    expect(gradle).toContain('versionName = "5.3.3"');
-    expect(gradle).toContain("versionCode = 11");
+    expect(gradle).toContain('versionName = "5.3.4"');
+    expect(gradle).toContain("versionCode = 12");
     expect(gradle).toContain("https://wacrm-commercial.dwahyudi8377.workers.dev");
     expect(gradle).toContain("enableV1Signing = true");
     expect(gradle).toContain("enableV2Signing = true");
@@ -137,11 +137,19 @@ describe("WACRM v5.3.1 Go-Commercial 8-Gate Enterprise Certification Suite", () 
     );
     expect(wf).toContain("apksigner");
     expect(wf).toContain("zipalign");
+    expect(wf).toContain("zipalign\" -c -v 4");
+    expect(wf).toContain("resources.arsc");
     expect(wf).toContain("assembleRelease");
     expect(wf).toContain("https://wacrm-commercial.dwahyudi8377.workers.dev");
     expect(fs.existsSync(path.join(REPO_ROOT, "src/app/api/download/android-apk/route.ts"))).toBe(
       true,
     );
+    const dlRoute = fs.readFileSync(
+      path.join(REPO_ROOT, "src/app/api/download/android-apk/route.ts"),
+      "utf8",
+    );
+    expect(dlRoute).toContain("NextResponse.redirect");
+    expect(dlRoute).not.toContain("new Response(upstream.body");
 
     const mainAct = fs.readFileSync(
       path.join(REPO_ROOT, "android/app/src/main/java/com/wacrm/android/MainActivity.kt"),

@@ -74,29 +74,30 @@ export default function AndroidPage() {
             <div>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[#00A885]/20 px-3 py-1 font-heading text-xs font-bold text-[#00D4A8]">
                 <Smartphone className="h-3.5 w-3.5" />
-                Go-Commercial Suite v5.3.3 · Unified Commercial OS UX/UI + Signed Release APK (v1/v2/v3)
+                Go-Commercial Suite v5.3.4 · Clean Single-Pass Signed Release APK (v1/v2/v3)
               </span>
               <h1 className="font-heading mt-2.5 text-2xl font-extrabold sm:text-3xl">
-                Pusat Installer Resmi WACRM v5.3.3 (Android APK &amp; Windows Offline Bundle)
+                Pusat Installer Resmi WACRM v5.3.4 (Android APK &amp; Windows Offline Bundle)
               </h1>
               <p className="mt-1.5 text-sm text-zinc-300">
-                APK Release resmi <strong>com.wacrm.android v5.3.3</strong> terhubung langsung ke{" "}
-                <strong className="text-[#00D4A8]">https://wacrm-commercial.dwahyudi8377.workers.dev/</strong>{" "}
-                sehingga tampilan landing page, portal login, hingga ruang kerja 100% identik dengan
-                versi Web Commercial OS, disertai akses resmi Kebijakan Privasi (UU PDP No. 27/2022),
-                tanda tangan v1+v2+v3, serta auto-izin Kamera QR, Mikrofon AI, USB &amp; Bluetooth.
+                APK Release resmi <strong>com.wacrm.android v5.3.4</strong> terhubung langsung ke{" "}
+                <strong className="text-[#00D4A8]">https://wacrm-commercial.dwahyudi8377.workers.dev/</strong>,
+                dikirim langsung via Cloudflare Edge Static CDN (anti gagal / anti korupsi unduhan),
+                terverifikasi 4-byte <code className="font-mono text-[#00D4A8]">zipalign</code> &amp;{" "}
+                <code className="font-mono text-[#00D4A8]">resources.arsc</code> Android 11–15, serta
+                tanda tangan v1+v2+v3 dan akses resmi Kebijakan Privasi (UU PDP No. 27/2022).
               </p>
             </div>
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
             <a
-              href="/api/download/android-apk"
-              download="WACRM-v5.3.3-Android.apk"
+              href="/downloads/WACRM-v5.3.4-Android.apk"
+              download="WACRM-v5.3.4-Android.apk"
               className="inline-flex items-center gap-2 rounded bg-[#00A885] px-5 py-3 font-heading text-xs font-extrabold uppercase tracking-wider text-white shadow-lg transition hover:bg-[#008C6F]"
             >
               <Download className="h-4 w-4" />
-              Unduh APK Android Resmi (Signed Release v5.3.3)
+              Unduh APK Android Resmi (Signed Release v5.3.4)
             </a>
             <a
               href="/downloads/WACRM-v5.3-Commercial-Offline-Installer-Bundle.zip"
@@ -146,7 +147,7 @@ export default function AndroidPage() {
             </div>
             <div>
               <div className="text-zinc-400">Versi / Build</div>
-              <div className="font-mono font-bold text-white">v5.3.3 (code 11)</div>
+              <div className="font-mono font-bold text-white">v5.3.4 (code 12)</div>
             </div>
             <div>
               <div className="text-zinc-400">Server UX/UI Resmi</div>
@@ -171,17 +172,17 @@ export default function AndroidPage() {
               </h2>
               <ol className="list-decimal space-y-1.5 pl-4 text-xs leading-relaxed text-[#333333]">
                 <li>
-                  <strong>Hapus versi uji coba lama (jika ada):</strong> Jika sebelumnya Anda
-                  pernah memasang WACRM versi debug lama, hapus instalasinya terlebih dulu agar
-                  Android tidak memunculkan peringatan bentrok paket.
+                  <strong>Hapus versi lama / berkas gagal sebelumnya (sangat disarankan jika pernah menginstal v1–v4):</strong>{" "}
+                  Jika di HP Anda terpasang WACRM versi lama (build debug atau v1–v4), lakukan{" "}
+                  <strong>Copot Pemasangan (Uninstall)</strong> terlebih dulu agar tanda tangan rilis resmi tidak bentrok, lalu hapus file APK lama di folder Download.
                 </li>
                 <li>
                   <strong>Unduh melalui browser Chrome (bukan browser dalam WhatsApp):</strong>{" "}
-                  Ketuk tombol hijau <em>&ldquo;Unduh APK Android Resmi (Signed Release v5.3.3)&rdquo;</em> di atas, lalu buka berkas{" "}
+                  Ketuk tombol hijau <em>&ldquo;Unduh APK Android Resmi (Signed Release v5.3.4)&rdquo;</em> di atas. Pastikan ukuran berkas{" "}
                   <code className="rounded bg-white px-1.5 py-0.5 font-mono text-[#008C6F]">
-                    WACRM-v5.3.3-Android.apk
+                    WACRM-v5.3.4-Android.apk
                   </code>{" "}
-                  dari menu <strong>Download</strong>.
+                  sekitar <strong>~5,0 MB</strong> sebelum diketuk dari menu <strong>Download</strong>.
                 </li>
                 <li>
                   <strong>Izinkan Sumber Tidak Dikenal (Instalasi Langsung):</strong> Saat Android
@@ -224,7 +225,7 @@ export default function AndroidPage() {
               <Shield className="h-5 w-5" />
             </div>
             <h2 className="font-heading mt-4 text-lg font-extrabold text-[#222222]">
-              2. Native Kotlin APK v5.3.3 (Signed Release)
+              2. Native Kotlin APK v5.3.4 (Signed Release)
             </h2>
             <p className="mt-1.5 text-sm text-[#666666]">
               Proyek Android Studio native berbasis Kotlin + Material 3 + Hardware Permission Bridge
