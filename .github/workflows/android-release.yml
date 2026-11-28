@@ -104,20 +104,23 @@ jobs:
           if [ -z "${WACRM_BASE_URL}" ] || echo "${WACRM_BASE_URL}" | grep -qi "wacrm-seven-dusky.vercel.app"; then
             WACRM_BASE_URL="https://wacrm-commercial.dwahyudi8377.workers.dev"
           fi
-          echo "=== COMPILING ANDROID APK FOR BASE URL: ${WACRM_BASE_URL} ==="
-          gradle assembleRelease --no-daemon -PWACRM_BASE_URL="${WACRM_BASE_URL}"
+          echo "=== COMPILING CLEAN UNSIGNED RELEASE APK FOR BASE URL: ${WACRM_BASE_URL} ==="
+          gradle clean assembleRelease --no-daemon -PWACRM_BASE_URL="${WACRM_BASE_URL}" -PANDROID_MANUAL_SIGN=true
           mkdir -p dist
 
           BUILD_TOOLS="${ANDROID_HOME}/build-tools/35.0.0"
           RAW_APK=""
-          if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
-            RAW_APK="app/build/outputs/apk/release/app-release.apk"
-          else
+          if [ -f "app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
             RAW_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          else
+            RAW_APK="app/build/outputs/apk/release/app-release.apk"
           fi
+          echo "Raw unsigned APK: $RAW_APK ($(stat -c%s "$RAW_APK") bytes)"
 
-          # Explicitly 4-byte page-align + re-sign with APK Signature Scheme v1, v2, and v3
+          # Clean single-pass 4-byte + page alignment BEFORE signing (strict Android 11-15 PackageManager rule)
           "${BUILD_TOOLS}/zipalign" -f -v -p 4 "$RAW_APK" dist/wacrm-aligned.apk >/dev/null
+
+          # Single-pass release signing with APK Signature Scheme v1, v2, and v3
           "${BUILD_TOOLS}/apksigner" sign \
             --ks "${ANDROID_KEYSTORE_PATH}" \
             --ks-pass "pass:${ANDROID_KEYSTORE_PASSWORD}" \
@@ -129,34 +132,66 @@ jobs:
             --out dist/wacrm-android.apk \
             dist/wacrm-aligned.apk
 
-          cp dist/wacrm-android.apk dist/wacrm-android-v5.3.3-signed.apk
+          cp dist/wacrm-android.apk dist/wacrm-android-v5.3.4-signed.apk
           rm -f dist/wacrm-aligned.apk
 
-          echo "=== VERIFYING APK SIGNATURE (v1/v2/v3) ==="
+          echo "=== GATE 1: VERIFYING APK SIGNATURE (v1/v2/v3) ==="
           "${BUILD_TOOLS}/apksigner" verify --verbose --print-certs dist/wacrm-android.apk
 
-          echo "=== VERIFYING APK MANIFEST BADGING ==="
+          echo "=== GATE 2: VERIFYING 4-BYTE ZIPALIGN ON FINAL SIGNED APK ==="
+          "${BUILD_TOOLS}/zipalign" -c -v 4 dist/wacrm-android.apk >/dev/null
+          echo "zipalign -c -v 4 PASS!"
+
+          echo "=== GATE 3: VERIFYING Android 11-15 resources.arsc UNCOMPRESSED & 4-BYTE ALIGNED ==="
+          python3 - <<'PY'
+          import struct, zipfile
+
+          apk = "dist/wacrm-android.apk"
+          with open(apk, "rb") as raw:
+              data = raw.read()
+          assert data[:4] == b"PK\x03\x04", "Invalid APK ZIP magic bytes"
+          assert b"APK Sig Block 42" in data, "Missing APK Signature Scheme v2/v3 block"
+
+          with zipfile.ZipFile(apk, "r") as zf:
+              names = set(zf.namelist())
+              assert "AndroidManifest.xml" in names, "Missing AndroidManifest.xml"
+              assert "classes.dex" in names, "Missing classes.dex"
+              assert "resources.arsc" in names, "Missing resources.arsc"
+              assert "META-INF/MANIFEST.MF" in names, "Missing v1 META-INF/MANIFEST.MF"
+
+              info = zf.getinfo("resources.arsc")
+              assert info.compress_type == zipfile.ZIP_STORED, f"resources.arsc must be STORED (0), got {info.compress_type}"
+              # Compute exact data offset from local file header (30 bytes + filename len + extra len)
+              lh_offset = info.header_offset
+              _, _, _, _, _, _, _, _, _, fname_len, extra_len = struct.unpack_from("<IHHHHHIIIHH", data, lh_offset)
+              data_offset = lh_offset + 30 + fname_len + extra_len
+              assert data_offset % 4 == 0, f"resources.arsc data_offset={data_offset} is NOT 4-byte aligned!"
+              print(f"PASS: resources.arsc STORED, size={info.file_size}, data_offset={data_offset} (mod 4 == 0)")
+              print(f"PASS: total entries={len(names)}, total APK bytes={len(data)}")
+          PY
+
+          echo "=== GATE 4: VERIFYING APK MANIFEST BADGING ==="
           BADGING=$("${BUILD_TOOLS}/aapt2" dump badging dist/wacrm-android.apk)
           echo "$BADGING" | head -n 25
           echo "$BADGING" | grep -q "package: name='com.wacrm.android'"
-          echo "$BADGING" | grep -q "versionCode='11'"
-          echo "$BADGING" | grep -q "versionName='5.3.3'"
+          echo "$BADGING" | grep -q "versionCode='12'"
+          echo "$BADGING" | grep -q "versionName='5.3.4'"
           if echo "$BADGING" | grep -q "application-debuggable"; then
             echo "::error::Release APK must NOT have application-debuggable set!"
             exit 1
           fi
 
-          (cd dist && sha256sum wacrm-android.apk wacrm-android-v5.3.3-signed.apk > SHA256SUMS-android.txt)
+          (cd dist && sha256sum wacrm-android.apk wacrm-android-v5.3.4-signed.apk > SHA256SUMS-android.txt)
           cat dist/SHA256SUMS-android.txt
           ls -lh dist/
 
       - name: Upload Signed Release APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wacrm-android-v5.3.3-signed-apk
+          name: wacrm-android-v5.3.4-signed-apk
           path: |
             android/dist/wacrm-android.apk
-            android/dist/wacrm-android-v5.3.3-signed.apk
+            android/dist/wacrm-android-v5.3.4-signed.apk
             android/dist/SHA256SUMS-android.txt
           retention-days: 30
 
@@ -165,35 +200,34 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="android-v5.3.3"
-          TITLE="WACRM Android v5.3.3 — Unified Commercial OS UX/UI + Kebijakan Privasi (UU PDP) + Signed Release APK"
+          TAG="android-v5.3.4"
+          TITLE="WACRM Android v5.3.4 — Fix Instalasi Android (Clean Single-Pass ZipAlign+Sign v1/v2/v3 + Cloudflare Edge CDN)"
           NOTES=$(cat <<'EOF'
-          Aplikasi Android native Kotlin **WACRM v5.3.3** (Package ID resmi `com.wacrm.android`, `versionCode 11`, `minSdk 24 / Android 7.0+`, `targetSdk 34 / Android 14–15`) yang terhubung langsung ke **https://wacrm-commercial.dwahyudi8377.workers.dev/**.
+          Aplikasi Android native Kotlin **WACRM v5.3.4** (Package ID resmi `com.wacrm.android`, `versionCode 12`, `minSdk 24 / Android 7.0+`, `targetSdk 34 / Android 14–15`) yang terhubung langsung ke **https://wacrm-commercial.dwahyudi8377.workers.dev/**.
 
-          Pembaruan Utama v5.3.3:
-          - **Sinkronisasi Penuh UX/UI Commercial OS:** Sekarang langsung memuat landing page & portal resmi `https://wacrm-commercial.dwahyudi8377.workers.dev/` (tema korporat `#00A885` / `#222222` / `#F5F5F5`, Raleway + Open Sans) beserta auto-migrasi dari URL lama & pembersihan cache otomatis saat upgrade.
-          - **Integrasi Resmi Kebijakan Privasi (UU PDP No. 27/2022):** Akses langsung ke `https://wacrm-commercial.dwahyudi8377.workers.dev/privacy` tersedia di layar aplikasi, menu Pengaturan Server Android, layar offline, maupun di dalam portal & ruang kerja WACRM.
-          - **Production Signed Release APK (Non-Debuggable):** Ditandatangani dengan APK Signature Scheme v1 + v2 + v3 (`apksigner verify` PASS) dan 4-byte `zipalign`, menggunakan keystore rilis persisten yang sama sehingga aman untuk upgrade langsung dari v5.3.2.
-          - **Auto-Permission Hardware Bridge:** Izin Kamera Belakang QR/FIFO, Mikrofon Voice AI 24/7, Notifikasi, Bluetooth Thermal & USB OTG aktif di domain `*.workers.dev`.
+          Perbaikan Kritis Instalasi v5.3.4:
+          - **Clean Single-Pass Alignment & Signing:** APK dibangun unsigned, diselaraskan 4-byte (`zipalign -p 4` terverifikasi `zipalign -c -v 4` + `resources.arsc` STORED & 4-byte aligned untuk Android 11–15), lalu ditandatangani satu kali penuh dengan APK Signature Scheme v1 + v2 + v3.
+          - **Bebas Korupsi Unduhan (0ms Cloudflare Edge Static CDN):** Berkas APK sekarang dikirim langsung melalui Cloudflare Edge Static Asset (`/downloads/WACRM-v5.3.4-Android.apk`) sehingga tidak lagi memicu HTTP 500 / pemotongan stream pada Workers Free Tier.
+          - **Sinkronisasi Penuh UX/UI Commercial OS + Kebijakan Privasi (UU PDP No. 27/2022):** Langsung memuat tampilan korporat `https://wacrm-commercial.dwahyudi8377.workers.dev/` beserta akses resmi `https://wacrm-commercial.dwahyudi8377.workers.dev/privacy`.
 
           - **wacrm-android.apk**: APK Release Signed resmi siap instal langsung di HP Android.
-          - **wacrm-android-v5.3.3-signed.apk**: Salinan berversi untuk arsip distribusi.
+          - **wacrm-android-v5.3.4-signed.apk**: Salinan berversi untuk arsip distribusi.
           - **SHA256SUMS-android.txt**: Checksum integritas resmi.
           EOF
           )
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/wacrm-android.apk dist/wacrm-android-v5.3.3-signed.apk dist/SHA256SUMS-android.txt --clobber
+            gh release upload "$TAG" dist/wacrm-android.apk dist/wacrm-android-v5.3.4-signed.apk dist/SHA256SUMS-android.txt --clobber
             gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --latest
           else
-            gh release create "$TAG" dist/wacrm-android.apk dist/wacrm-android-v5.3.3-signed.apk dist/SHA256SUMS-android.txt \
+            gh release create "$TAG" dist/wacrm-android.apk dist/wacrm-android-v5.3.4-signed.apk dist/SHA256SUMS-android.txt \
               --title "$TITLE" \
               --notes "$NOTES" \
               --latest \
               --target "${{ github.sha }}"
           fi
 
-          # Also refresh legacy v5.3.2 and v4.0.0 release assets so older bookmarks get the unified v5.3.3 APK
-          for LEGACY_TAG in android-v5.3.2 android-v4.0.0; do
+          # Also refresh legacy tags so older bookmarks download the verified v5.3.4 APK
+          for LEGACY_TAG in android-v5.3.3 android-v5.3.2 android-v4.0.0; do
             if gh release view "$LEGACY_TAG" >/dev/null 2>&1; then
               gh release upload "$LEGACY_TAG" dist/wacrm-android.apk --clobber || true
             fi

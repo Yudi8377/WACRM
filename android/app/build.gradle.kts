@@ -7,6 +7,10 @@ val wacrmBaseUrl: String = (project.findProperty("WACRM_BASE_URL") as String?)
     ?: System.getenv("WACRM_BASE_URL")
     ?: "https://wacrm-commercial.dwahyudi8377.workers.dev"
 
+val manualSign: Boolean =
+    ((project.findProperty("ANDROID_MANUAL_SIGN") as String?) ?: System.getenv("ANDROID_MANUAL_SIGN"))
+        ?.equals("true", ignoreCase = true) == true
+
 val releaseKeystorePath: String? = (project.findProperty("ANDROID_KEYSTORE_PATH") as String?)
     ?: System.getenv("ANDROID_KEYSTORE_PATH")
 val releaseKeystorePassword: String? = (project.findProperty("ANDROID_KEYSTORE_PASSWORD") as String?)
@@ -24,8 +28,8 @@ android {
         applicationId = "com.wacrm.android"
         minSdk = 24
         targetSdk = 34
-        versionCode = 11
-        versionName = "5.3.3"
+        versionCode = 12
+        versionName = "5.3.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WACRM_BASE_URL", "\"$wacrmBaseUrl\"")
@@ -62,8 +66,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfigs.findByName("release")?.let {
-                signingConfig = it
+            if (!manualSign) {
+                signingConfigs.findByName("release")?.let {
+                    signingConfig = it
+                }
             }
         }
         debug {
