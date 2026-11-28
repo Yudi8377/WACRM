@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import type { CommercialRuntimeConfig } from "@/lib/commercial-runtime-config";
 import type { AppEditionId } from "@/lib/crm-types";
 import { issueSignedLicenseKey } from "@/lib/license-crypto";
 
@@ -27,6 +28,7 @@ export interface CreateCheckoutInput {
   /** Optional Tripay channel code e.g. QRIS, BRIVA, BCAVA, MANDIRIVA */
   tripayMethod?: string;
   returnBaseUrl?: string;
+  runtimeConfig?: CommercialRuntimeConfig;
 }
 
 export interface CheckoutCreationResult {
@@ -96,14 +98,16 @@ export function getCheckoutPlanSpec(
   };
 }
 
-export function listConfiguredPaymentProviders(): Array<Exclude<PaymentGatewayProvider, "manual_transfer">> {
+export function listConfiguredPaymentProviders(
+  cfg?: CommercialRuntimeConfig,
+): Array<Exclude<PaymentGatewayProvider, "manual_transfer">> {
   const list: Array<Exclude<PaymentGatewayProvider, "manual_transfer">> = [];
-  if (process.env.MIDTRANS_SERVER_KEY?.trim()) list.push("midtrans");
-  if (process.env.XENDIT_SECRET_KEY?.trim()) list.push("xendit");
+  if ((cfg?.midtransServerKey ?? process.env.MIDTRANS_SERVER_KEY)?.trim()) list.push("midtrans");
+  if ((cfg?.xenditSecretKey ?? process.env.XENDIT_SECRET_KEY)?.trim()) list.push("xendit");
   if (
-    process.env.TRIPAY_API_KEY?.trim() &&
-    process.env.TRIPAY_PRIVATE_KEY?.trim() &&
-    process.env.TRIPAY_MERCHANT_CODE?.trim()
+    (cfg?.tripayApiKey ?? process.env.TRIPAY_API_KEY)?.trim() &&
+    (cfg?.tripayPrivateKey ?? process.env.TRIPAY_PRIVATE_KEY)?.trim() &&
+    (cfg?.tripayMerchantCode ?? process.env.TRIPAY_MERCHANT_CODE)?.trim()
   ) {
     list.push("tripay");
   }
@@ -112,14 +116,15 @@ export function listConfiguredPaymentProviders(): Array<Exclude<PaymentGatewayPr
 
 export function resolveActivePaymentProvider(
   preferred?: PaymentGatewayProvider,
+  cfg?: CommercialRuntimeConfig,
 ): PaymentGatewayProvider {
-  const configured = listConfiguredPaymentProviders();
+  const configured = listConfiguredPaymentProviders(cfg);
   if (preferred && preferred !== "manual_transfer" && configured.includes(preferred)) {
     return preferred;
   }
-  const envDefault = process.env.PAYMENT_PROVIDER?.trim().toLowerCase() as
-    | PaymentGatewayProvider
-    | undefined;
+  const envDefault = (
+    cfg?.paymentProvider || (process.env.PAYMENT_PROVIDER?.trim().toLowerCase() as PaymentGatewayProvider | undefined)
+  );
   if (envDefault && envDefault !== "manual_transfer" && configured.includes(envDefault)) {
     return envDefault;
   }
@@ -214,9 +219,10 @@ export function issueLicenseForPaidPlan(
 export async function createPaymentCheckout(
   input: CreateCheckoutInput,
 ): Promise<CheckoutCreationResult> {
+  const cfg = input.runtimeConfig;
   const plan = getCheckoutPlanSpec(input.editionId, input.billingCycle);
   const orderId = buildBillingOrderId(input.editionId, input.billingCycle);
-  const provider = resolveActivePaymentProvider(input.preferredProvider);
+  const provider = resolveActivePaymentProvider(input.preferredProvider, cfg);
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   const baseUrl = (
     input.returnBaseUrl ||
@@ -225,10 +231,19 @@ export async function createPaymentCheckout(
   ).replace(/\/$/, "");
 
   if (provider === "manual_transfer") {
-    const bankName = process.env.MANUAL_BANK_NAME?.trim() || "Bank BCA / QRIS Resmi WACRM";
-    const accountNumber = process.env.MANUAL_BANK_ACCOUNT?.trim() || "Hubungi Admin Billing";
-    const accountHolder = process.env.MANUAL_BANK_HOLDER?.trim() || "WACRM Commercial OS";
-    const waDigits = (process.env.MANUAL_BILLING_WA?.trim() || "6281234567890").replace(/\D/g, "");
+    const bankName =
+      (cfg?.manualBankName || process.env.MANUAL_BANK_NAME)?.trim() ||
+      "Bank BCA / QRIS Resmi WACRM";
+    const accountNumber =
+      (cfg?.manualBankAccount || process.env.MANUAL_BANK_ACCOUNT)?.trim() ||
+      "Hubungi Admin Billing";
+    const accountHolder =
+      (cfg?.manualBankHolder || process.env.MANUAL_BANK_HOLDER)?.trim() ||
+      "PT WACRM Digital Nusantara";
+    const waDigits = (
+      (cfg?.manualBillingWa || process.env.MANUAL_BILLING_WA)?.trim() ||
+      "6281234567890"
+    ).replace(/\D/g, "");
     const waText = encodeURIComponent(
       `Halo Admin Billing WACRM, saya ingin aktivasi paket *${plan.planName}* (${plan.amountIdr.toLocaleString("id-ID")} IDR).\nNo. Invoice: ${orderId}\nEmail Akun: ${input.customerEmail}\nTenant: ${input.tenantId}`,
     );
@@ -245,15 +260,15 @@ export async function createPaymentCheckout(
         accountHolder,
         whatsappNumber: waDigits,
         whatsappConfirmUrl: `https://wa.me/${waDigits}?text=${waText}`,
-        note: "Mode Rp 0,- Aktif: Lakukan transfer manual & konfirmasi via WhatsApp untuk menerima License Key resmi dari Publisher HQ (atau pasang API Key Midtrans/Xendit/Tripay untuk aktivasi otomatis 24 jam).",
+        note: "Mode Rp 0,- Aktif: Lakukan transfer manual & konfirmasi via WhatsApp untuk menerima License Key resmi dari Publisher HQ (atau pasang API Key Midtrans/Xendit/Tripay di /setup untuk aktivasi otomatis 24 jam).",
       },
     };
   }
 
   try {
     if (provider === "midtrans") {
-      const serverKey = process.env.MIDTRANS_SERVER_KEY!.trim();
-      const isProd = process.env.MIDTRANS_IS_PRODUCTION === "true";
+      const serverKey = (cfg?.midtransServerKey || process.env.MIDTRANS_SERVER_KEY || "").trim();
+      const isProd = cfg ? cfg.midtransIsProduction : process.env.MIDTRANS_IS_PRODUCTION === "true";
       const endpoint = isProd
         ? "https://app.midtrans.com/snap/v1/transactions"
         : "https://app.sandbox.midtrans.com/snap/v1/transactions";
@@ -324,7 +339,7 @@ export async function createPaymentCheckout(
     }
 
     if (provider === "xendit") {
-      const secretKey = process.env.XENDIT_SECRET_KEY!.trim();
+      const secretKey = (cfg?.xenditSecretKey || process.env.XENDIT_SECRET_KEY || "").trim();
       const basicAuth = Buffer.from(`${secretKey}:`).toString("base64");
       const res = await fetch("https://api.xendit.co/v2/invoices", {
         method: "POST",
@@ -379,10 +394,10 @@ export async function createPaymentCheckout(
     }
 
     // Tripay Closed Payment API
-    const apiKey = process.env.TRIPAY_API_KEY!.trim();
-    const privateKey = process.env.TRIPAY_PRIVATE_KEY!.trim();
-    const merchantCode = process.env.TRIPAY_MERCHANT_CODE!.trim();
-    const isProd = process.env.TRIPAY_IS_PRODUCTION === "true";
+    const apiKey = (cfg?.tripayApiKey || process.env.TRIPAY_API_KEY || "").trim();
+    const privateKey = (cfg?.tripayPrivateKey || process.env.TRIPAY_PRIVATE_KEY || "").trim();
+    const merchantCode = (cfg?.tripayMerchantCode || process.env.TRIPAY_MERCHANT_CODE || "").trim();
+    const isProd = cfg ? cfg.tripayIsProduction : process.env.TRIPAY_IS_PRODUCTION === "true";
     const endpoint = isProd
       ? "https://tripay.co.id/api/transaction/create"
       : "https://tripay.co.id/api-sandbox/transaction/create";

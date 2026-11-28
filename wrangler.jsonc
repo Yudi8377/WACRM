@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wacrm-commercial",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-01-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "NODE_ENV": "production",
+    "EMAIL_FROM_NAME": "WACRM Commercial OS",
+    "EMAIL_FROM_ADDRESS": "no-reply@wacrm.id",
+    "PAYMENT_PROVIDER": "manual_transfer",
+    "MANUAL_BANK_NAME": "Bank BCA / QRIS Resmi WACRM",
+    "MANUAL_BANK_HOLDER": "PT WACRM Digital Nusantara"
+  }
+}

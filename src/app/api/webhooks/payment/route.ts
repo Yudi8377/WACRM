@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getEffectiveCommercialConfig } from "@/lib/commercial-runtime-config";
 import {
   verifyAndParsePaymentWebhook,
   type PaymentGatewayProvider,
@@ -60,12 +61,18 @@ export async function POST(request: Request) {
     );
   }
 
+  const runtimeCfg = await getEffectiveCommercialConfig();
   const verified = verifyAndParsePaymentWebhook({
     provider,
     rawBody,
     headers: {
       "x-callback-token": request.headers.get("x-callback-token"),
       "x-callback-signature": request.headers.get("x-callback-signature"),
+    },
+    secrets: {
+      midtransServerKey: runtimeCfg.midtransServerKey,
+      xenditWebhookToken: runtimeCfg.xenditWebhookToken,
+      tripayPrivateKey: runtimeCfg.tripayPrivateKey,
     },
   });
 

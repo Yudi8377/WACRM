@@ -9,6 +9,7 @@ import {
   evaluatePasswordStrength,
   getClientIpFromRequest,
 } from "@/lib/security";
+import { getEffectiveCommercialConfig } from "@/lib/commercial-runtime-config";
 import {
   buildPasswordResetOtpEmail,
   detectConfiguredEmailProvider,
@@ -116,7 +117,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const provider = detectConfiguredEmailProvider();
+    const runtimeCfg = await getEffectiveCommercialConfig();
+    const provider = detectConfiguredEmailProvider(runtimeCfg);
     const isProd = isProductionRuntime();
 
     // CRITICAL SECURITY LOCK: Never expose OTP in production responses when no email provider is configured.
@@ -143,6 +145,7 @@ export async function POST(request: Request) {
       const sent = await sendTransactionalEmail({
         to: emailKey,
         ...emailPayload,
+        configOverride: runtimeCfg,
       });
       if (!sent.ok) {
         return NextResponse.json(

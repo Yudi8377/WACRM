@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getEffectiveCommercialConfig } from "@/lib/commercial-runtime-config";
 import {
   createPaymentCheckout,
   getCheckoutPlanSpec,
@@ -23,8 +24,9 @@ const CheckoutRequestSchema = z.object({
 });
 
 export async function GET() {
-  const configuredProviders = listConfiguredPaymentProviders();
-  const activeProvider = resolveActivePaymentProvider();
+  const runtimeConfig = await getEffectiveCommercialConfig();
+  const configuredProviders = listConfiguredPaymentProviders(runtimeConfig);
+  const activeProvider = resolveActivePaymentProvider(undefined, runtimeConfig);
   return NextResponse.json({
     ok: true,
     activeProvider,
@@ -67,10 +69,12 @@ export async function POST(request: Request) {
     );
   }
 
+  const runtimeConfig = await getEffectiveCommercialConfig();
   const origin = request.headers.get("origin") || undefined;
   const result = await createPaymentCheckout({
     ...parsed.data,
     returnBaseUrl: origin,
+    runtimeConfig,
   });
 
   return NextResponse.json(result, { status: result.ok ? 200 : 502 });

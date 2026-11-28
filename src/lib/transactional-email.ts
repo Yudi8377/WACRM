@@ -6,6 +6,8 @@
  * - Custom SMTP/Email Webhook Relay (EMAIL_WEBHOOK_URL + optional EMAIL_WEBHOOK_SECRET)
  */
 
+import type { CommercialRuntimeConfig } from "@/lib/commercial-runtime-config";
+
 export type EmailProviderName = "resend" | "brevo" | "webhook" | "none";
 
 export interface EmailSendInput {
@@ -13,6 +15,15 @@ export interface EmailSendInput {
   subject: string;
   html: string;
   text: string;
+  configOverride?: Pick<
+    CommercialRuntimeConfig,
+    | "resendApiKey"
+    | "brevoApiKey"
+    | "emailWebhookUrl"
+    | "emailWebhookSecret"
+    | "emailFromAddress"
+    | "emailFromName"
+  >;
 }
 
 export interface EmailSendResult {
@@ -22,29 +33,37 @@ export interface EmailSendResult {
   error?: string;
 }
 
-export function detectConfiguredEmailProvider(): EmailProviderName {
-  if (process.env.RESEND_API_KEY?.trim()) return "resend";
-  if (process.env.BREVO_API_KEY?.trim()) return "brevo";
-  if (process.env.EMAIL_WEBHOOK_URL?.trim()) return "webhook";
+export function detectConfiguredEmailProvider(
+  cfg?: Pick<CommercialRuntimeConfig, "resendApiKey" | "brevoApiKey" | "emailWebhookUrl">,
+): EmailProviderName {
+  if ((cfg?.resendApiKey ?? process.env.RESEND_API_KEY)?.trim()) return "resend";
+  if ((cfg?.brevoApiKey ?? process.env.BREVO_API_KEY)?.trim()) return "brevo";
+  if ((cfg?.emailWebhookUrl ?? process.env.EMAIL_WEBHOOK_URL)?.trim()) return "webhook";
   return "none";
 }
 
-export function isEmailProviderConfigured(): boolean {
-  return detectConfiguredEmailProvider() !== "none";
+export function isEmailProviderConfigured(
+  cfg?: Pick<CommercialRuntimeConfig, "resendApiKey" | "brevoApiKey" | "emailWebhookUrl">,
+): boolean {
+  return detectConfiguredEmailProvider(cfg) !== "none";
 }
 
-function getSenderAddress(): { name: string; email: string } {
+function getSenderAddress(
+  cfg?: Pick<CommercialRuntimeConfig, "emailFromAddress" | "emailFromName">,
+): { name: string; email: string } {
   const fromEmail =
-    process.env.EMAIL_FROM_ADDRESS?.trim() || "no-reply@wacrm.id";
-  const fromName = process.env.EMAIL_FROM_NAME?.trim() || "WACRM Commercial OS";
+    (cfg?.emailFromAddress || process.env.EMAIL_FROM_ADDRESS)?.trim() || "no-reply@wacrm.id";
+  const fromName =
+    (cfg?.emailFromName || process.env.EMAIL_FROM_NAME)?.trim() || "WACRM Commercial OS";
   return { name: fromName, email: fromEmail };
 }
 
 export async function sendTransactionalEmail(
   input: EmailSendInput,
 ): Promise<EmailSendResult> {
-  const provider = detectConfiguredEmailProvider();
-  const sender = getSenderAddress();
+  const cfg = input.configOverride;
+  const provider = detectConfiguredEmailProvider(cfg);
+  const sender = getSenderAddress(cfg);
 
   if (provider === "none") {
     return {
@@ -56,7 +75,7 @@ export async function sendTransactionalEmail(
 
   try {
     if (provider === "resend") {
-      const apiKey = process.env.RESEND_API_KEY!.trim();
+      const apiKey = (cfg?.resendApiKey || process.env.RESEND_API_KEY || "").trim();
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
@@ -86,7 +105,7 @@ export async function sendTransactionalEmail(
     }
 
     if (provider === "brevo") {
-      const apiKey = process.env.BREVO_API_KEY!.trim();
+      const apiKey = (cfg?.brevoApiKey || process.env.BREVO_API_KEY || "").trim();
       const res = await fetch("https://api.brevo.com/v3/smtp/email", {
         method: "POST",
         headers: {
@@ -117,8 +136,8 @@ export async function sendTransactionalEmail(
     }
 
     // Custom Webhook / Self-hosted SMTP Relay
-    const webhookUrl = process.env.EMAIL_WEBHOOK_URL!.trim();
-    const webhookSecret = process.env.EMAIL_WEBHOOK_SECRET?.trim();
+    const webhookUrl = (cfg?.emailWebhookUrl || process.env.EMAIL_WEBHOOK_URL || "").trim();
+    const webhookSecret = (cfg?.emailWebhookSecret || process.env.EMAIL_WEBHOOK_SECRET || "").trim();
     const res = await fetch(webhookUrl, {
       method: "POST",
       headers: {

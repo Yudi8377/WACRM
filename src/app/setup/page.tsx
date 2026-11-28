@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, Copy, Database, ExternalLink, RefreshCw, ShieldCheck, Terminal, XCircle } from "lucide-react";
+import { CommercialActivationConsole } from "@/components/commercial-activation-console";
 
 interface SystemStatusResponse {
   neon: {
@@ -224,6 +225,9 @@ export default function SetupPage() {
             </li>
           </ol>
         </section>
+
+        {/* Autonomous Commercial Activation Console (Email OTP, Transfer Manual Rp 0, Midtrans/Xendit/Tripay, Cloudflare) */}
+        <CommercialActivationConsole />
 
         {/* Copyable SQL */}
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs">
