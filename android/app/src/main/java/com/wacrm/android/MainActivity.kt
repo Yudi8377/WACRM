@@ -72,6 +72,8 @@ class MainActivity : AppCompatActivity() {
 
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var pendingCameraCaptureUri: Uri? = null
+    private var pendingFileChooserCameraLaunch: Pair<Boolean, Intent?>? = null
+    private var pendingVoiceLang: String? = null
     private var pendingWebPermissionRequest: PermissionRequest? = null
     private var pendingJsPermissionCallback: Boolean = false
     private var printWebView: WebView? = null
@@ -134,6 +136,10 @@ class MainActivity : AppCompatActivity() {
             pendingWebPermissionRequest = null
             val notifyJs = pendingJsPermissionCallback
             pendingJsPermissionCallback = false
+            val fileLaunch = pendingFileChooserCameraLaunch
+            pendingFileChooserCameraLaunch = null
+            val voiceLang = pendingVoiceLang
+            pendingVoiceLang = null
 
             val camGranted = hasCameraPermission()
             val micGranted = hasMicrophonePermission()
@@ -157,7 +163,19 @@ class MainActivity : AppCompatActivity() {
                     req.deny()
                     showOpenPermissionSettingsDialog()
                 }
-            } else if (!camGranted && results.containsKey(Manifest.permission.CAMERA)) {
+            } else if (fileLaunch != null) {
+                launchFileChooserWithCameraState(fileLaunch.first, fileLaunch.second)
+            } else if (voiceLang != null) {
+                if (micGranted) {
+                    launchNativeVoiceIntent(voiceLang)
+                } else {
+                    showOpenPermissionSettingsDialog()
+                    webView.evaluateJavascript(
+                        "window.__wacrmOnVoiceError && window.__wacrmOnVoiceError('permission-denied');",
+                        null
+                    )
+                }
+            } else if (!camGranted && results.containsKey(Manifest.permission.CAMERA) && notifyJs) {
                 showOpenPermissionSettingsDialog()
             }
 
@@ -248,6 +266,7 @@ class MainActivity : AppCompatActivity() {
             webView.restoreState(savedInstanceState)
         } else {
             loadInitialPage()
+            maybeBootstrapHardwarePermissions()
         }
     }
 
@@ -313,7 +332,6 @@ class MainActivity : AppCompatActivity() {
                 val wantsImage = acceptTypes.contains("image") || fileChooserParams?.isCaptureEnabled == true
                 val wantsDirectCapture = fileChooserParams?.isCaptureEnabled == true
 
-                val cameraIntent: Intent? = if (wantsImage) createRearCameraCaptureIntent() else null
                 val galleryIntent = try {
                     fileChooserParams?.createIntent()
                 } catch (_: Exception) {
@@ -323,27 +341,15 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                return try {
-                    if (wantsDirectCapture && cameraIntent != null) {
-                        fileChooserLauncher.launch(cameraIntent)
-                        true
-                    } else if (cameraIntent != null && galleryIntent != null) {
-                        val chooser = Intent.createChooser(galleryIntent, "Pilih Kamera atau Galeri Foto QR")
-                        chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(cameraIntent))
-                        fileChooserLauncher.launch(chooser)
-                        true
-                    } else if (galleryIntent != null) {
-                        fileChooserLauncher.launch(galleryIntent)
-                        true
-                    } else {
-                        this@MainActivity.filePathCallback = null
-                        false
-                    }
-                } catch (_: Exception) {
-                    this@MainActivity.filePathCallback = null
-                    this@MainActivity.pendingCameraCaptureUri = null
-                    false
+                // Android throws SecurityException if Manifest declares CAMERA permission
+                // and MediaStore.ACTION_IMAGE_CAPTURE starts before runtime CAMERA grant.
+                if (wantsImage && !hasCameraPermission()) {
+                    pendingFileChooserCameraLaunch = Pair(wantsDirectCapture, galleryIntent)
+                    mediaPermissionsLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+                    return true
                 }
+
+                return launchFileChooserWithCameraState(wantsDirectCapture, galleryIntent)
             }
 
             override fun onPermissionRequest(request: PermissionRequest?) {
@@ -754,6 +760,110 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    private fun maybeBootstrapHardwarePermissions() {
+        val alreadyBootstrapped = prefs.getBoolean("hardware_permissions_bootstrapped_v531", false)
+        val missing = collectMissingCoreHardwarePermissions()
+        if (alreadyBootstrapped || missing.isEmpty()) return
+
+        prefs.edit().putBoolean("hardware_permissions_bootstrapped_v531", true).apply()
+        AlertDialog.Builder(this)
+            .setTitle("Setup Awal Perangkat WACRM v5.3")
+            .setMessage(
+                "Agar QR Scanner Kamera Belakang, Asisten Suara AI (Mikrofon), dan Notifikasi Order langsung aktif tanpa hambatan, izinkan akses perangkat sekarang."
+            )
+            .setPositiveButton("Izinkan Semua Sekarang") { _, _ ->
+                mediaPermissionsLauncher.launch(missing.toTypedArray())
+            }
+            .setNegativeButton("Nanti", null)
+            .show()
+    }
+
+    private fun collectMissingCoreHardwarePermissions(): MutableList<String> {
+        val needed = mutableListOf<String>()
+        if (!hasCameraPermission()) needed.add(Manifest.permission.CAMERA)
+        if (!hasMicrophonePermission()) needed.add(Manifest.permission.RECORD_AUDIO)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        return needed
+    }
+
+    private fun launchFileChooserWithCameraState(
+        wantsDirectCapture: Boolean,
+        galleryIntent: Intent?
+    ): Boolean {
+        val cameraIntent: Intent? = if (hasCameraPermission()) createRearCameraCaptureIntent() else null
+        return try {
+            if (wantsDirectCapture && cameraIntent != null) {
+                fileChooserLauncher.launch(cameraIntent)
+                true
+            } else if (cameraIntent != null && galleryIntent != null) {
+                val chooser = Intent.createChooser(galleryIntent, "Pilih Kamera atau Galeri Foto QR")
+                chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(cameraIntent))
+                fileChooserLauncher.launch(chooser)
+                true
+            } else if (galleryIntent != null) {
+                fileChooserLauncher.launch(galleryIntent)
+                true
+            } else {
+                filePathCallback?.onReceiveValue(null)
+                filePathCallback = null
+                false
+            }
+        } catch (_: Exception) {
+            filePathCallback?.onReceiveValue(null)
+            filePathCallback = null
+            pendingCameraCaptureUri = null
+            false
+        }
+    }
+
+    fun getHardwarePermissionsJson(): String {
+        val btGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) ==
+                PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+        val notifGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+        return JSONObject().apply {
+            put("camera", hasCameraPermission())
+            put("microphone", hasMicrophonePermission())
+            put("bluetooth", btGranted)
+            put("notifications", notifGranted)
+            put("biometric", isBiometricAuthAvailable())
+            put("appVersion", BuildConfig.VERSION_NAME)
+        }.toString()
+    }
+
+    fun bootstrapAllHardwarePermissionsFromJs() {
+        val needed = collectMissingCoreHardwarePermissions()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
+        if (needed.isEmpty()) {
+            webView.evaluateJavascript(
+                "window.__wacrmOnMediaPermissionsResult && window.__wacrmOnMediaPermissionsResult(true, true);",
+                null
+            )
+            Toast.makeText(this, "Semua izin Kamera, Mikrofon & Bluetooth sudah aktif.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        pendingJsPermissionCallback = true
+        mediaPermissionsLauncher.launch(needed.toTypedArray())
+    }
+
     fun hasCameraPermission(): Boolean =
         ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
@@ -981,6 +1091,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun startVoiceRecognition(lang: String) {
+        if (!hasMicrophonePermission()) {
+            pendingVoiceLang = lang
+            mediaPermissionsLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+            return
+        }
+        launchNativeVoiceIntent(lang)
+    }
+
+    private fun launchNativeVoiceIntent(lang: String) {
         try {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)

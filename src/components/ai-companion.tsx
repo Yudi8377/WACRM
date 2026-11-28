@@ -257,10 +257,21 @@ export function AiCompanion({
       setListening(false);
       if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
         setContinuousMode(false);
-        onToast(
-          "Izin mikrofon belum diberikan. Buka Pengaturan Aplikasi / ikon gembok browser lalu izinkan Mikrofon.",
-          "error",
-        );
+        const bridge = getAndroidBridge() as
+          | { requestCameraAndMicPermissions?: () => void; openAppPermissionSettings?: () => void }
+          | null;
+        if (bridge?.requestCameraAndMicPermissions) {
+          bridge.requestCameraAndMicPermissions();
+          onToast(
+            "Meminta izin Mikrofon Android secara otomatis. Jika tetap ditolak, izinkan Mikrofon di Pengaturan Aplikasi WACRM.",
+            "error",
+          );
+        } else {
+          onToast(
+            "Izin mikrofon ditolak browser. Di Android PWA/Chrome: buka Pengaturan HP → Aplikasi → Google Chrome → Izin → Mikrofon, atau pasang WACRM Commercial Installer (APK/Windows).",
+            "error",
+          );
+        }
       } else if (ev.error === "audio-capture") {
         setContinuousMode(false);
         onToast("Mikrofon tidak terdeteksi atau sedang dipakai aplikasi lain.", "error");

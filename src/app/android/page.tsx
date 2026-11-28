@@ -54,22 +54,32 @@ export default function AndroidPage() {
             <div>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300">
                 <Smartphone className="h-3.5 w-3.5" />
-                Android App v5.0.0 · Starter UMKM Gratis Selamanya · com.wacrm.android
+                Go-Commercial Suite v5.3.1 · Auto-Fix Izin Kamera, Mikrofon, USB &amp; Bluetooth
               </span>
-              <h1 className="mt-2.5 text-2xl font-extrabold sm:text-3xl">Aplikasi Android WACRM v5.0 AI Suite</h1>
+              <h1 className="mt-2.5 text-2xl font-extrabold sm:text-3xl">
+                Pusat Installer Resmi WACRM v5.3.1 (Android APK &amp; Windows Offline Bundle)
+              </h1>
               <p className="mt-1.5 text-sm text-slate-300">
-                Daftar cukup dengan email untuk <strong>Starter UMKM Gratis Selamanya (termasuk POS COD &amp; ERP Gudang)</strong>, atau aktifkan <strong>Trial 14 Hari Growth Pro (QR Scanner Kamera Belakang FIFO)</strong> &amp; <strong>Trial 7 Hari Enterprise AI</strong>. Mendukung <strong>Login Biometrik Sidik Jari/Face ID, Cetak Universal USB-C/Micro-USB OTG, Bluetooth, WiFi, POS QR &amp; AI Sales</strong>.
+                Installer resmi siap go-komersial untuk <strong>Android Native APK v5.3.1</strong> (dengan setup izin otomatis Kamera Belakang QR/FIFO, Mikrofon AI 24/7, Notifikasi, Bluetooth &amp; USB OTG saat pertama dibuka) dan <strong>Bundle Offline Installer Windows 10/11</strong> (Client App + Publisher HQ + Auto-Fix Izin Kamera/Mikrofon otomatis).
               </p>
             </div>
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
             <a
+              href="/downloads/WACRM-v5.3-Commercial-Offline-Installer-Bundle.zip"
+              download
+              className="inline-flex items-center gap-2 rounded-2xl bg-amber-400 px-5 py-3 text-sm font-extrabold text-slate-950 shadow-lg shadow-amber-500/20 hover:bg-amber-300"
+            >
+              <Download className="h-4 w-4" />
+              Unduh Bundle Offline Installer (Windows + Android Auto-Izin)
+            </a>
+            <a
               href="https://github.com/Yudi8377/WACRM/releases/latest/download/wacrm-android.apk"
               className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-emerald-500/20 hover:bg-emerald-400"
             >
               <Download className="h-4 w-4" />
-              Unduh APK Android (v5.0.0)
+              Unduh APK Android Native (v5.3.1)
             </a>
             {deferredPrompt ? (
               <button

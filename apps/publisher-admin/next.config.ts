@@ -27,6 +27,10 @@ const nextConfig: NextConfig = {
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
       { key: "Referrer-Policy", value: "no-referrer" },
+      {
+        key: "Permissions-Policy",
+        value: "camera=(self), microphone=(self), usb=(self), serial=(self), geolocation=()",
+      },
     ];
 
     if (isProd) {

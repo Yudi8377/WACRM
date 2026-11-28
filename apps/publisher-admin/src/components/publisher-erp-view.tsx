@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   Boxes,
   CheckCircle2,
@@ -23,6 +23,7 @@ interface PublisherErpViewProps {
   onMarkInvoicePaid: (invoiceId: string) => void;
   onPayVendorPo: (poId: string) => void;
   onToast: (msg: string, tone?: "success" | "error") => void;
+  externalSubTab?: "billing" | "procurement" | "inventory";
 }
 
 export function PublisherErpView({
@@ -31,8 +32,14 @@ export function PublisherErpView({
   onMarkInvoicePaid,
   onPayVendorPo,
   onToast,
+  externalSubTab,
 }: PublisherErpViewProps) {
-  const [subTab, setSubTab] = useState<"billing" | "procurement" | "inventory">("billing");
+  const [subTab, setSubTab] = useState<"billing" | "procurement" | "inventory">(
+    externalSubTab ?? "billing",
+  );
+  useEffect(() => {
+    if (externalSubTab) setSubTab(externalSubTab);
+  }, [externalSubTab]);
   const [invModal, setInvModal] = useState(false);
   const [poModal, setPoModal] = useState(false);
 

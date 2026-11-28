@@ -141,6 +141,16 @@ class WacrmJsBridge(
     }
 
     @JavascriptInterface
+    fun bootstrapAllHardwarePermissions() {
+        activity.runOnUiThread {
+            activity.bootstrapAllHardwarePermissionsFromJs()
+        }
+    }
+
+    @JavascriptInterface
+    fun getHardwarePermissionsJson(): String = activity.getHardwarePermissionsJson()
+
+    @JavascriptInterface
     fun openAppPermissionSettings() {
         activity.runOnUiThread {
             activity.openAppPermissionSettings()

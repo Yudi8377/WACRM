@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   Briefcase,
   CheckCircle2,
@@ -27,6 +27,7 @@ interface PublisherCrmViewProps {
   onUpdateState: (updater: (prev: PublisherEmsState) => PublisherEmsState) => void;
   onConvertDealWon: (dealId: string) => void;
   onToast: (msg: string, tone?: "success" | "error") => void;
+  externalSubTab?: "pipeline" | "tickets";
 }
 
 const STAGE_META: Record<DealStage, { label: string; color: string }> = {
@@ -44,8 +45,12 @@ export function PublisherCrmView({
   onUpdateState,
   onConvertDealWon,
   onToast,
+  externalSubTab,
 }: PublisherCrmViewProps) {
-  const [subTab, setSubTab] = useState<"pipeline" | "tickets">("pipeline");
+  const [subTab, setSubTab] = useState<"pipeline" | "tickets">(externalSubTab ?? "pipeline");
+  useEffect(() => {
+    if (externalSubTab) setSubTab(externalSubTab);
+  }, [externalSubTab]);
   const [dealModal, setDealModal] = useState(false);
   const [ticketModal, setTicketModal] = useState(false);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   BookOpenCheck,
   CalendarClock,
@@ -33,6 +33,7 @@ interface PublisherAccountingViewProps {
   onUpdateState: (updater: (prev: PublisherEmsState) => PublisherEmsState) => void;
   onRunRevenueRecognition: (amountIdr: number, periodLabel: string) => void;
   onToast: (msg: string, tone?: "success" | "error") => void;
+  externalSubTab?: AccountingTab;
 }
 
 type AccountingTab =
@@ -49,8 +50,12 @@ export function PublisherAccountingView({
   onUpdateState,
   onRunRevenueRecognition,
   onToast,
+  externalSubTab,
 }: PublisherAccountingViewProps) {
-  const [subTab, setSubTab] = useState<AccountingTab>("journals");
+  const [subTab, setSubTab] = useState<AccountingTab>(externalSubTab ?? "journals");
+  useEffect(() => {
+    if (externalSubTab) setSubTab(externalSubTab);
+  }, [externalSubTab]);
   const [selectedAccountCode, setSelectedAccountCode] = useState(state.coa[0]?.code ?? "1101");
   const [journalModal, setJournalModal] = useState(false);
 

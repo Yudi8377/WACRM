@@ -15,8 +15,8 @@ android {
         applicationId = "com.wacrm.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 8
-        versionName = "5.3.0"
+        versionCode = 9
+        versionName = "5.3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WACRM_BASE_URL", "\"$wacrmBaseUrl\"")

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   BookOpen,
   Building2,
@@ -28,12 +28,21 @@ interface MasterDataViewProps {
   state: PublisherEmsState;
   onUpdateState: (updater: (prev: PublisherEmsState) => PublisherEmsState) => void;
   onToast: (msg: string, tone?: "success" | "error") => void;
+  externalSubTab?: MasterSubTab;
 }
 
 type MasterSubTab = "tenants" | "skus" | "resellers" | "vendors" | "employees" | "coa";
 
-export function MasterDataView({ state, onUpdateState, onToast }: MasterDataViewProps) {
-  const [subTab, setSubTab] = useState<MasterSubTab>("tenants");
+export function MasterDataView({
+  state,
+  onUpdateState,
+  onToast,
+  externalSubTab,
+}: MasterDataViewProps) {
+  const [subTab, setSubTab] = useState<MasterSubTab>(externalSubTab ?? "tenants");
+  useEffect(() => {
+    if (externalSubTab) setSubTab(externalSubTab);
+  }, [externalSubTab]);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
 

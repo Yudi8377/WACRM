@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   BookOpenCheck,
+  Bot,
   Boxes,
   Briefcase,
+  ChevronDown,
+  ChevronRight,
   Crown,
   Database,
   Download,
@@ -17,6 +20,7 @@ import {
   RefreshCw,
   Settings,
   TrendingUp,
+  Users,
 } from "lucide-react";
 import {
   buildInitialPublisherState,
@@ -34,12 +38,25 @@ import type {
   BillingCycle,
   EditionId,
   PublisherCompanyProfile,
+  PublisherEmployeeRecord,
   PublisherEmsState,
 } from "@/lib/publisher-types";
 import type {
   CommunityFeedbackItem,
   PublisherIntelligenceReport,
 } from "@/lib/intelligence-types";
+import {
+  buildDefaultPublisherAiAgents,
+  type PublisherAiAgentConfig,
+  type PublisherWebsiteLead,
+} from "@/lib/publisher-ai-agents";
+import {
+  buildDefaultWebsiteLeads,
+  deleteEmployeeInState,
+  insertEmployeeInState,
+  updateEmployeeInState,
+} from "@/lib/publisher-crud";
+import { PUBLISHER_EDITIONS } from "@/lib/license-engine";
 import { OverviewView } from "./overview-view";
 import { UsageVocView } from "./usage-voc-view";
 import { EconomicRadarView } from "./economic-radar-view";
@@ -50,42 +67,177 @@ import { PublisherCrmView } from "./publisher-crm-view";
 import { PublisherErpView } from "./publisher-erp-view";
 import { PublisherAccountingView } from "./publisher-accounting-view";
 import { PublisherSettingsView } from "./publisher-settings-view";
+import { PublisherAiHubView, type AiHubSubModule } from "./publisher-ai-hub-view";
+import { PublisherHrRbacView, type HrSubModule } from "./publisher-hr-rbac-view";
+import { EmsRecordCommandBar } from "./ems-record-command-bar";
 
 type PublisherTabId =
   | "overview"
-  | "forecasting"
-  | "usage_voc"
-  | "economics"
-  | "licenses"
+  | "ai_hub"
   | "master"
+  | "licenses"
   | "crm"
   | "erp"
   | "accounting"
+  | "hr_rbac"
+  | "forecasting"
+  | "usage_voc"
+  | "economics"
   | "settings";
 
-const NAV_ITEMS: Array<{
+interface EmsSubNav {
+  id: string;
+  label: string;
+}
+
+interface EmsNavModule {
   id: PublisherTabId;
+  code: string;
   label: string;
   shortLabel: string;
   icon: typeof LayoutDashboard;
-}> = [
-  { id: "overview", label: "Executive Command", shortLabel: "Overview", icon: LayoutDashboard },
-  { id: "forecasting", label: "Analisa & Forecasting", shortLabel: "Forecast", icon: LineChart },
-  { id: "usage_voc", label: "Analitik & Suara User", shortLabel: "Analitik", icon: PieChart },
-  { id: "economics", label: "Ekonomi & Tren Pasar", shortLabel: "Ekonomi", icon: TrendingUp },
-  { id: "licenses", label: "License Management", shortLabel: "Lisensi", icon: KeyRound },
-  { id: "master", label: "Master Data", shortLabel: "Master", icon: Database },
-  { id: "crm", label: "Publisher CRM B2B", shortLabel: "CRM B2B", icon: Briefcase },
-  { id: "erp", label: "Publisher ERP & Billing", shortLabel: "ERP", icon: Boxes },
-  { id: "accounting", label: "Akuntansi PSAK", shortLabel: "Akuntansi", icon: BookOpenCheck },
-  { id: "settings", label: "Entitas & Keamanan", shortLabel: "Atur", icon: Settings },
+  subModules?: EmsSubNav[];
+}
+
+const EMS_MODULES: EmsNavModule[] = [
+  {
+    id: "overview",
+    code: "M01",
+    label: "Executive Command",
+    shortLabel: "Overview",
+    icon: LayoutDashboard,
+    subModules: [{ id: "kpi", label: "KPI, SWOT & Unit Economics" }],
+  },
+  {
+    id: "ai_hub",
+    code: "M02",
+    label: "Multi-Agent AI (5 Agen)",
+    shortLabel: "AI 5-Agen",
+    icon: Bot,
+    subModules: [
+      { id: "inbox_chat", label: "Inbox Chat & Auto-Reply 24/7" },
+      { id: "website_leads", label: "Lead Website & Follow-Up WA" },
+      { id: "agent_config", label: "Konfigurasi 5 Agen AI" },
+    ],
+  },
+  {
+    id: "master",
+    code: "M03",
+    label: "Master Data (MDM)",
+    shortLabel: "Master",
+    icon: Database,
+    subModules: [
+      { id: "tenants", label: "Master Perusahaan Tenant" },
+      { id: "skus", label: "Master Produk SKU v5.3" },
+      { id: "resellers", label: "Master Reseller Partner" },
+      { id: "vendors", label: "Master Vendor Cloud & HW" },
+      { id: "coa", label: "Master Bagan Akun (COA)" },
+    ],
+  },
+  {
+    id: "licenses",
+    code: "M04",
+    label: "License Management (LMS)",
+    shortLabel: "Lisensi",
+    icon: KeyRound,
+    subModules: [{ id: "registry", label: "Terbit, Audit & Matriks v5.3" }],
+  },
+  {
+    id: "crm",
+    code: "M05",
+    label: "CRM B2B & Pipeline",
+    shortLabel: "CRM B2B",
+    icon: Briefcase,
+    subModules: [
+      { id: "pipeline", label: "Pipeline Deal B2B" },
+      { id: "tickets", label: "Tiket Support SLA Enterprise" },
+    ],
+  },
+  {
+    id: "erp",
+    code: "M06",
+    label: "ERP Billing & Procurement",
+    shortLabel: "ERP",
+    icon: Boxes,
+    subModules: [
+      { id: "billing", label: "Invoice Langganan (AR)" },
+      { id: "procurement", label: "Purchase Order Vendor (AP)" },
+      { id: "inventory", label: "Stok Hardware POS/Printer" },
+    ],
+  },
+  {
+    id: "accounting",
+    code: "M07",
+    label: "Akuntansi Korporat PSAK",
+    shortLabel: "Akuntansi",
+    icon: BookOpenCheck,
+    subModules: [
+      { id: "journals", label: "Jurnal Umum Double-Entry" },
+      { id: "ledger", label: "Buku Besar (General Ledger)" },
+      { id: "trial_balance", label: "Neraca Saldo (Trial Balance)" },
+      { id: "income_statement", label: "Laba Rugi (P&L PSAK)" },
+      { id: "balance_sheet", label: "Neraca (Balance Sheet)" },
+      { id: "cash_flow", label: "Arus Kas (Cash Flow)" },
+      { id: "tax", label: "Pajak PPN 11% & PPh" },
+    ],
+  },
+  {
+    id: "hr_rbac",
+    code: "M08",
+    label: "Human Capital & RBAC",
+    shortLabel: "HR & RBAC",
+    icon: Users,
+    subModules: [
+      { id: "directory_rbac", label: "Direktori Staf & Peran RBAC" },
+      { id: "kpi_commission", label: "Target KPI & Beban Payroll" },
+    ],
+  },
+  {
+    id: "forecasting",
+    code: "M09",
+    label: "AI Revenue Forecasting",
+    shortLabel: "Forecast",
+    icon: LineChart,
+  },
+  {
+    id: "usage_voc",
+    code: "M10",
+    label: "Telemetri & Voice of User",
+    shortLabel: "Analitik",
+    icon: PieChart,
+  },
+  {
+    id: "economics",
+    code: "M11",
+    label: "Radar Ekonomi UMKM",
+    shortLabel: "Ekonomi",
+    icon: TrendingUp,
+  },
+  {
+    id: "settings",
+    code: "M12",
+    label: "Entitas, Integrasi & Installer",
+    shortLabel: "Sistem",
+    icon: Settings,
+  },
 ];
+
+const AI_LEADS_STORAGE_KEY = "wacrm_publisher_ai_leads_v53";
+const AI_AGENTS_STORAGE_KEY = "wacrm_publisher_ai_agents_v53";
 
 export function PublisherEmsApp() {
   const [tab, setTab] = useState<PublisherTabId>("overview");
+  const [activeSub, setActiveSub] = useState<string>("kpi");
+  const [expandedModule, setExpandedModule] = useState<PublisherTabId>("ai_hub");
+
   const [state, setState] = useState<PublisherEmsState>(() => buildInitialPublisherState());
+  const [leads, setLeads] = useState<PublisherWebsiteLead[]>(() => buildDefaultWebsiteLeads());
+  const [aiAgents, setAiAgents] = useState<PublisherAiAgentConfig[]>(() =>
+    buildDefaultPublisherAiAgents(),
+  );
   const [hydrated, setHydrated] = useState(false);
   const [syncingLive, setSyncingLive] = useState(false);
+  const [syncingLeads, setSyncingLeads] = useState(false);
   const [intelligence, setIntelligence] = useState<PublisherIntelligenceReport | null>(null);
   const [loadingIntel, setLoadingIntel] = useState(false);
   const [liveSyncInfo, setLiveSyncInfo] = useState<{ count: number; lastSyncedAt: string | null }>({
@@ -107,6 +259,69 @@ export function PublisherEmsApp() {
     });
   }, []);
 
+  const persistLeads = useCallback((next: PublisherWebsiteLead[]) => {
+    try {
+      window.localStorage.setItem(AI_LEADS_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const persistAgents = useCallback((next: PublisherAiAgentConfig[]) => {
+    try {
+      window.localStorage.setItem(AI_AGENTS_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const selectModuleAndSub = useCallback((modId: PublisherTabId, subId?: string) => {
+    setTab(modId);
+    setExpandedModule(modId);
+    const mod = EMS_MODULES.find((m) => m.id === modId);
+    setActiveSub(subId ?? mod?.subModules?.[0]?.id ?? "main");
+  }, []);
+
+  const syncWebsiteLeads = useCallback(
+    async (silent = false) => {
+      setSyncingLeads(true);
+      try {
+        const res = await fetch("/api/leads", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as { leads?: PublisherWebsiteLead[] };
+        const remoteLeads = data.leads ?? [];
+        if (remoteLeads.length > 0) {
+          setLeads((prev) => {
+            const byId = new Map<string, PublisherWebsiteLead>();
+            for (const r of remoteLeads) byId.set(r.id, r);
+            for (const p of prev) {
+              if (!byId.has(p.id)) byId.set(p.id, p);
+            }
+            const merged = Array.from(byId.values()).sort((a, b) =>
+              b.createdAt.localeCompare(a.createdAt),
+            );
+            persistLeads(merged);
+            return merged;
+          });
+        }
+        if (!silent) {
+          showToast(
+            remoteLeads.length > 0
+              ? `Sinkronisasi Multi-Agent AI sukses: ${remoteLeads.length} lead live dari Website Enterprise!`
+              : "Konektor Lead Website aktif — siap menerima pendaftar otomatis 24/7.",
+          );
+        }
+      } catch {
+        if (!silent) {
+          showToast("Gagal menarik lead live website — menggunakan cache lokal.", "error");
+        }
+      } finally {
+        setSyncingLeads(false);
+      }
+    },
+    [persistLeads, showToast],
+  );
+
   const syncLiveRegistrations = useCallback(
     async (silent = false) => {
       setSyncingLive(true);
@@ -126,7 +341,13 @@ export function PublisherEmsApp() {
             city: string;
             platform: "web" | "android";
             editionId: EditionId;
-            licenseStatus: "free_umkm" | "trial" | "active" | "grace_period" | "expired" | "suspended";
+            licenseStatus:
+              | "free_umkm"
+              | "trial"
+              | "active"
+              | "grace_period"
+              | "expired"
+              | "suspended";
             trialStartedAt: string;
             trialEndsAt: string;
             licenseKey: string | null;
@@ -158,7 +379,9 @@ export function PublisherEmsApp() {
                 code: existing?.code ?? `LIVE-${reg.id.slice(-4).toUpperCase()}`,
                 companyName: reg.businessName || reg.fullName,
                 npwp: existing?.npwp ?? "-",
-                industry: existing?.industry ?? (reg.platform === "android" ? "UMKM · Android APK" : "UMKM · Web SaaS"),
+                industry:
+                  existing?.industry ??
+                  (reg.platform === "android" ? "UMKM · Android APK" : "UMKM · Web SaaS"),
                 picName: reg.fullName,
                 picEmail: reg.email,
                 picWhatsapp: reg.phone || existing?.picWhatsapp || "-",
@@ -187,6 +410,7 @@ export function PublisherEmsApp() {
 
               const hasLic = mergedLicenses.some((l) => l.tenantId === tenantId);
               if (!hasLic) {
+                const spec = PUBLISHER_EDITIONS[reg.editionId];
                 const defaultKey =
                   reg.licenseKey ||
                   (reg.editionId === "starter"
@@ -194,12 +418,6 @@ export function PublisherEmsApp() {
                     : reg.editionId === "pro"
                       ? `TRIAL-PRO-14D-${tenantId.slice(-4).toUpperCase()}`
                       : `TRIAL-ENT-7D-${tenantId.slice(-4).toUpperCase()}`);
-                const defaultNote =
-                  reg.editionId === "starter"
-                    ? `Starter UMKM Gratis Selamanya via ${reg.platform === "android" ? "Android APK" : "Web"}`
-                    : reg.editionId === "pro"
-                      ? `Trial 14 Hari Growth Pro via ${reg.platform === "android" ? "Android APK" : "Web"}`
-                      : `Trial 7 Hari Enterprise AI via ${reg.platform === "android" ? "Android APK" : "Web"}`;
                 mergedLicenses.unshift({
                   id: `lic-live-${tenantId}`,
                   licenseKey: defaultKey,
@@ -208,37 +426,26 @@ export function PublisherEmsApp() {
                   domain: "wacrm-seven-dusky.vercel.app",
                   editionId: reg.editionId,
                   status:
-                    reg.licenseStatus === "active"
+                    reg.licenseStatus === "active" || reg.licenseStatus === "free_umkm"
                       ? "active"
-                      : reg.licenseStatus === "free_umkm"
-                        ? "active"
-                        : "trial",
+                      : "trial",
                   billingCycle:
                     reg.licenseStatus === "active"
                       ? "monthly"
                       : reg.licenseStatus === "free_umkm"
                         ? "perpetual"
                         : "trial",
-                  maxSeats: reg.editionId === "starter" ? 2 : reg.editionId === "pro" ? 10 : 50,
+                  maxSeats: spec.defaultSeats,
                   usedSeats: 1,
-                  maxAiAgents: reg.editionId === "starter" ? 2 : 11,
-                  maxBranches: reg.editionId === "starter" ? 1 : reg.editionId === "pro" ? 5 : 25,
+                  maxAiAgents: spec.maxAiAgents,
+                  maxBranches: spec.maxBranches,
                   monthlyValueIdr:
-                    reg.licenseStatus === "active"
-                      ? reg.editionId === "pro"
-                        ? 890000
-                        : reg.editionId === "enterprise"
-                          ? 2490000
-                          : 0
-                      : 0,
+                    reg.licenseStatus === "active" ? spec.monthlyPriceIdr : 0,
                   issuedAt: reg.trialStartedAt,
                   expiresAt: reg.trialEndsAt,
                   lastHeartbeatAt: reg.createdAt,
-                  entitlements:
-                    reg.editionId === "starter"
-                      ? ["starter_umkm_free_forever", "inbox_wa", "pos_umkm", "master_data"]
-                      : ["inbox_omnichannel", "erp", "pos", "accounting", "ai_agents", "seo_studio"],
-                  notes: defaultNote,
+                  entitlements: [...spec.entitlements],
+                  notes: `${spec.name} via ${reg.platform === "android" ? "Android APK" : "Web"}`,
                 });
               }
             }
@@ -253,8 +460,8 @@ export function PublisherEmsApp() {
         if (!silent) {
           showToast(
             liveList.length > 0
-              ? `Sinkronisasi berhasil: ${liveList.length} pendaftar live dari wacrm-seven-dusky.vercel.app terhubung!`
-              : "Terhubung ke server WACRM — belum ada pendaftar baru sejak terakhir sinkron.",
+              ? `Sinkronisasi berhasil: ${liveList.length} pendaftar live terhubung!`
+              : "Terhubung ke server WACRM — belum ada pendaftar baru.",
           );
         }
       } catch {
@@ -281,7 +488,7 @@ export function PublisherEmsApp() {
         if (payload.report) {
           setIntelligence(payload.report);
           if (!silent) {
-            showToast("Analitik penggunaan, suara user & statistik ekonomi berhasil disinkronkan!");
+            showToast("Analitik penggunaan, suara user & statistik ekonomi disinkronkan!");
           }
         }
       } catch {
@@ -319,9 +526,7 @@ export function PublisherEmsApp() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ feedbackId, actionStatus }),
         });
-        if (res.ok) {
-          showToast(`Status tindak lanjut diperbarui menjadi "${actionStatus}".`);
-        }
+        if (res.ok) showToast(`Status tindak lanjut diperbarui menjadi "${actionStatus}".`);
       } catch {
         showToast("Status tersimpan lokal, gagal sinkron ke Neon.", "error");
       }
@@ -332,11 +537,140 @@ export function PublisherEmsApp() {
   useEffect(() => {
     const loaded = loadPublisherState();
     setState(loaded);
+    try {
+      const savedLeads = window.localStorage.getItem(AI_LEADS_STORAGE_KEY);
+      if (savedLeads) {
+        const parsed = JSON.parse(savedLeads) as PublisherWebsiteLead[];
+        if (Array.isArray(parsed) && parsed.length > 0) setLeads(parsed);
+      }
+      const savedAgents = window.localStorage.getItem(AI_AGENTS_STORAGE_KEY);
+      if (savedAgents) {
+        const parsedA = JSON.parse(savedAgents) as PublisherAiAgentConfig[];
+        if (Array.isArray(parsedA) && parsedA.length > 0) setAiAgents(parsedA);
+      }
+    } catch {
+      // ignore
+    }
     setHydrated(true);
     void syncLiveRegistrations(true);
+    void syncWebsiteLeads(true);
     void syncIntelligenceReport(true);
-  }, [syncLiveRegistrations, syncIntelligenceReport]);
+  }, [syncLiveRegistrations, syncWebsiteLeads, syncIntelligenceReport]);
 
+  // ── MULTI-AGENT AI LEAD HANDLERS ──
+  function handleInsertLead(lead: PublisherWebsiteLead) {
+    setLeads((prev) => {
+      const next = [lead, ...prev];
+      persistLeads(next);
+      return next;
+    });
+    void fetch("/api/leads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fullName: lead.fullName,
+        companyName: lead.companyName,
+        email: lead.email,
+        whatsapp: lead.whatsapp || "081200000000",
+        city: lead.city,
+        industry: lead.industry,
+        teamSize: lead.teamSize,
+        interestedEdition: lead.interestedEdition,
+        source: lead.source,
+        notes: lead.notes,
+      }),
+    }).catch(() => undefined);
+    showToast(`Lead baru "${lead.companyName}" ditambahkan & langsung dianalisis 5 Agen AI.`);
+  }
+
+  function handleUpdateLead(id: string, patch: Partial<PublisherWebsiteLead>) {
+    setLeads((prev) => {
+      const next = prev.map((l) =>
+        l.id === id ? { ...l, ...patch, updatedAt: new Date().toISOString() } : l,
+      );
+      persistLeads(next);
+      return next;
+    });
+    void fetch("/api/leads", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...patch }),
+    }).catch(() => undefined);
+  }
+
+  function handleDeleteLead(id: string) {
+    setLeads((prev) => {
+      const next = prev.filter((l) => l.id !== id);
+      persistLeads(next);
+      return next;
+    });
+    void fetch(`/api/leads?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(
+      () => undefined,
+    );
+    showToast("Lead dihapus dari Multi-Agent AI Hub.");
+  }
+
+  function handleConvertLeadToDeal(lead: PublisherWebsiteLead) {
+    const spec = PUBLISHER_EDITIONS[lead.aiRecommendedEdition];
+    updateState((prev) => ({
+      ...prev,
+      deals: [
+        {
+          id: `deal-ai-${Date.now()}`,
+          code: `DEAL-${String(prev.deals.length + 1).padStart(3, "0")}`,
+          companyName: lead.companyName,
+          contactName: lead.fullName,
+          contactWhatsapp: lead.whatsapp,
+          contactEmail: lead.email,
+          industry: lead.industry,
+          targetEdition: lead.aiRecommendedEdition,
+          billingCycle: "annual",
+          requestedSeats: spec.defaultSeats,
+          dealValueIdr: spec.annualPriceIdr || 2_390_000,
+          probability: Math.min(90, Math.max(40, lead.aiScore)),
+          stage: "proposal",
+          ownerEmployeeId: prev.employees[0]?.id ?? "emp-01",
+          resellerId: null,
+          expectedCloseDate: new Date(Date.now() + 14 * 86400_000).toISOString().slice(0, 10),
+          notes: `Konversi otomatis dari Multi-Agent AI (${lead.registrationCode}) · ${lead.notes}`,
+        },
+        ...prev.deals,
+      ],
+    }));
+    handleUpdateLead(lead.id, { status: "converted", followUpStage: "closed" });
+    showToast(`Lead "${lead.companyName}" berhasil dikonversi ke Pipeline CRM B2B!`);
+    selectModuleAndSub("crm", "pipeline");
+  }
+
+  function handleUpdateAiAgent(
+    id: PublisherAiAgentConfig["id"],
+    patch: Partial<PublisherAiAgentConfig>,
+  ) {
+    setAiAgents((prev) => {
+      const next = prev.map((a) => (a.id === id ? { ...a, ...patch } : a));
+      persistAgents(next);
+      return next;
+    });
+    showToast("Konfigurasi Agen AI diperbarui.");
+  }
+
+  // ── HR & RBAC HANDLERS ──
+  function handleInsertEmployee(emp: Omit<PublisherEmployeeRecord, "id" | "code">) {
+    updateState((prev) => insertEmployeeInState(prev, emp));
+    showToast(`Staf baru "${emp.name}" berhasil ditambahkan (INSERT).`);
+  }
+
+  function handleUpdateEmployee(id: string, patch: Partial<PublisherEmployeeRecord>) {
+    updateState((prev) => updateEmployeeInState(prev, id, patch));
+    showToast("Data staf & RBAC diperbarui (UPDATE).");
+  }
+
+  function handleDeleteEmployee(id: string) {
+    updateState((prev) => deleteEmployeeInState(prev, id));
+    showToast("Data staf dihapus (DELETE).");
+  }
+
+  // ── LICENSE, CRM, ERP, ACCOUNTING HANDLERS ──
   function handleIssueLicense(input: {
     tenantId: string;
     editionId: EditionId;
@@ -393,9 +727,7 @@ export function PublisherEmsApp() {
         invNo = res.invoice.invoiceNumber;
         return res.state;
       });
-      showToast(
-        `Deal Closed Won! Lisensi ${key}, Invoice ${invNo}, dan Jurnal PSAK otomatis terbit.`,
-      );
+      showToast(`Deal Closed Won! Lisensi ${key}, Invoice ${invNo}, & Jurnal PSAK otomatis terbit.`);
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Gagal mengonversi deal.", "error");
     }
@@ -403,12 +735,12 @@ export function PublisherEmsApp() {
 
   function handleMarkInvoicePaid(invoiceId: string) {
     updateState((prev) => markInvoicePaidInState(prev, invoiceId));
-    showToast("Invoice dilunasi — Jurnal Double-Entry PSAK & status lisensi otomatis diperbarui.");
+    showToast("Invoice dilunasi — Jurnal Double-Entry PSAK & lisensi otomatis diperbarui.");
   }
 
   function handlePayVendorPo(poId: string) {
     updateState((prev) => payVendorPoInState(prev, poId));
-    showToast("PO Vendor dibayar — Stok Hardware & Jurnal COGS/PPN Masukan otomatis diposting.");
+    showToast("PO Vendor dibayar — Stok Hardware & Jurnal COGS/PPN otomatis diposting.");
   }
 
   function handleRunRevRec(amountIdr: number, periodLabel: string) {
@@ -429,28 +761,46 @@ export function PublisherEmsApp() {
     if (!window.confirm("Kembalikan seluruh data Publisher HQ ke dataset awal?")) return;
     const fresh = resetPublisherState();
     setState(fresh);
+    const freshLeads = buildDefaultWebsiteLeads();
+    setLeads(freshLeads);
+    persistLeads(freshLeads);
     showToast("Data Publisher HQ direset ke kondisi awal.");
   }
 
+  const currentModuleObj = EMS_MODULES.find((m) => m.id === tab) ?? EMS_MODULES[0];
+  const currentSubObj = currentModuleObj.subModules?.find((s) => s.id === activeSub);
+  const activeAgentsCount = aiAgents.filter((a) => a.isActive).length;
+
   return (
     <div className="flex min-h-screen flex-col bg-slate-950 text-slate-100">
-      {/* Top Executive Header */}
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur">
+      {/* Top Standard Enterprise Header */}
+      <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-950/95 px-4 py-2.5 backdrop-blur">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-emerald-500 text-slate-950 shadow-lg">
             <Crown className="h-5 w-5" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-extrabold tracking-tight text-white">
                 WACRM Publisher HQ
               </span>
               <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-300">
-                v5.3 · Super Admin EMS
+                Standard EMS v5.3.1
               </span>
+              <button
+                type="button"
+                onClick={() => selectModuleAndSub("ai_hub", "inbox_chat")}
+                className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-extrabold text-emerald-300 hover:bg-emerald-500/30"
+              >
+                <Bot className="h-3 w-3" /> {activeAgentsCount} Agen AI Aktif ({leads.length} Lead)
+              </button>
             </div>
             <div className="text-[11px] text-slate-400">
-              {state.profile.companyName} · NPWP {state.profile.npwp}
+              {state.profile.companyName} · NPWP {state.profile.npwp} ·{" "}
+              <span className="text-emerald-400">
+                EMS / {currentModuleObj.code} {currentModuleObj.label}
+                {currentSubObj ? ` / ${currentSubObj.label}` : ""}
+              </span>
             </div>
           </div>
         </div>
@@ -460,72 +810,127 @@ export function PublisherEmsApp() {
             href="/downloads/WACRM-Publisher-HQ-v5.3-Windows-Offline-Installer.zip"
             download
             className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 px-3 py-1.5 text-[11px] font-extrabold text-slate-950 hover:bg-amber-300"
-            title="Unduh Offline Windows Installer (instalasi 100% offline, operasi terhubung online)"
+            title="Unduh Offline Windows Installer (instalasi 100% offline, operasi online)"
           >
             <Download className="h-3.5 w-3.5" />
             Windows Offline Installer
           </a>
+          <button
+            type="button"
+            disabled={syncingLive || syncingLeads}
+            onClick={() => {
+              void syncLiveRegistrations(false);
+              void syncWebsiteLeads(false);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-bold text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-60"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${syncingLive || syncingLeads ? "animate-spin" : ""}`} />
+            Sync Live ({liveSyncInfo.count} Tenant · {leads.length} Lead)
+          </button>
           <a
             href="https://wacrm-seven-dusky.vercel.app"
             target="_blank"
             rel="noreferrer"
-            className="hidden items-center gap-1 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/20 md:inline-flex"
+            className="hidden items-center gap-1 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/20 xl:inline-flex"
           >
-            <ExternalLink className="h-3.5 w-3.5" /> Aplikasi WACRM v5.3
+            <ExternalLink className="h-3.5 w-3.5" /> App Klien
           </a>
-          <button
-            type="button"
-            disabled={syncingLive}
-            onClick={() => void syncLiveRegistrations(false)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-bold text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-60"
-            title="Tarik data pendaftar terbaru dari wacrm-seven-dusky.vercel.app secara real-time"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${syncingLive ? "animate-spin" : ""}`} />
-            {syncingLive
-              ? "Menyinkronkan..."
-              : `Sinkron Pendaftar Live (${liveSyncInfo.count})`}
-          </button>
-          <span className="hidden items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-slate-300 lg:inline-flex">
-            <Lock className="h-3.5 w-3.5 text-emerald-400" />
-            Private Internal App
-          </span>
-          <span className="hidden rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 font-mono text-[11px] font-bold text-emerald-300 sm:inline-block">
-            {hydrated ? `${state.tenants.length} Tenant · ${state.licenses.length} Lisensi` : "Memuat..."}
+          <span className="hidden items-center gap-1 rounded-xl border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-[11px] font-semibold text-slate-300 2xl:inline-flex">
+            <Lock className="h-3 w-3 text-emerald-400" />
+            Internal Private EMS
           </span>
         </div>
       </header>
 
-      {/* Main Shell */}
+      {/* Main Enterprise Shell */}
       <div className="flex flex-1">
-        {/* Desktop Sidebar */}
-        <aside className="hidden w-64 shrink-0 flex-col justify-between border-r border-slate-800 bg-slate-950 p-4 md:flex">
-          <nav className="space-y-1.5">
-            {NAV_ITEMS.map((item) => {
-              const Icon = item.icon;
-              const active = tab === item.id;
+        {/* Hierarchical Standard Enterprise Sidebar (Modules -> Sub-Modules) */}
+        <aside className="hidden w-72 shrink-0 flex-col justify-between border-r border-slate-800 bg-slate-950 p-3.5 md:flex">
+          <div className="space-y-1 overflow-y-auto pr-1">
+            <div className="mb-2 flex items-center justify-between px-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+              <span>Struktur Modul EMS (12 Modul)</span>
+              <span className="text-emerald-400">{hydrated ? "ONLINE" : "..."}</span>
+            </div>
+            {EMS_MODULES.map((mod) => {
+              const Icon = mod.icon;
+              const isActiveMod = tab === mod.id;
+              const isExpanded = expandedModule === mod.id || isActiveMod;
+              const hasSubs = Boolean(mod.subModules && mod.subModules.length > 0);
               return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setTab(item.id)}
-                  className={`flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-xs font-bold transition ${
-                    active
-                      ? "bg-emerald-500 text-slate-950 shadow-sm"
-                      : "text-slate-300 hover:bg-slate-900 hover:text-white"
-                  }`}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span>{item.label}</span>
-                </button>
+                <div key={mod.id} className="space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isActiveMod && hasSubs) {
+                        setExpandedModule(expandedModule === mod.id ? "overview" : mod.id);
+                      } else {
+                        selectModuleAndSub(mod.id);
+                      }
+                    }}
+                    className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs font-bold transition ${
+                      isActiveMod
+                        ? "bg-emerald-500 text-slate-950 shadow-sm"
+                        : "text-slate-300 hover:bg-slate-900 hover:text-white"
+                    }`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">
+                        <span className="mr-1 font-mono text-[10px] opacity-70">{mod.code}</span>
+                        {mod.label}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-1">
+                      {mod.id === "ai_hub" && (
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 font-mono text-[9px] font-extrabold ${
+                            isActiveMod
+                              ? "bg-slate-950/20 text-slate-950"
+                              : "bg-emerald-500/20 text-emerald-300"
+                          }`}
+                        >
+                          {leads.length}
+                        </span>
+                      )}
+                      {hasSubs &&
+                        (isExpanded ? (
+                          <ChevronDown className="h-3.5 w-3.5 opacity-75" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5 opacity-60" />
+                        ))}
+                    </span>
+                  </button>
+
+                  {hasSubs && isExpanded && (
+                    <div className="ml-4 space-y-0.5 border-l border-slate-800 pl-2.5 pt-0.5">
+                      {mod.subModules!.map((sub) => {
+                        const subActive = isActiveMod && activeSub === sub.id;
+                        return (
+                          <button
+                            key={sub.id}
+                            type="button"
+                            onClick={() => selectModuleAndSub(mod.id, sub.id)}
+                            className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-[11px] font-semibold transition ${
+                              subActive
+                                ? "bg-emerald-500/15 text-emerald-300"
+                                : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+                            }`}
+                          >
+                            <span className="truncate">• {sub.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
-          </nav>
+          </div>
 
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-3.5 text-[11px] text-slate-400">
-            <div className="font-bold text-amber-300">Aplikasi Terpisah Penerbit</div>
+          <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/90 p-3 text-[11px] text-slate-400">
+            <div className="font-bold text-amber-300">Standard Enterprise EMS</div>
             <p className="mt-1 leading-relaxed">
-              License Key yang diterbitkan di sini dapat langsung disalin dan diaktifkan pada
-              aplikasi klien <strong>WACRM</strong> (menu <em>Edisi &amp; Lisensi</em>).
+              Seluruh modul dilengkapi navigasi sub-modul, tombol <strong>Insert, Update, Delete, Cetak &amp; CSV</strong>, serta <strong>5 Agen AI</strong> yang terhubung ke Website Enterprise.
             </p>
           </div>
         </aside>
@@ -534,17 +939,192 @@ export function PublisherEmsApp() {
         <main className="min-w-0 flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-8">
           <div className="mx-auto max-w-7xl">
             {tab === "overview" && (
-              <OverviewView
-                state={state}
-                onNavigate={(next) => setTab(next as PublisherTabId)}
-                onQuickCollectOverdue={handleMarkInvoicePaid}
-                onSyncLive={() => {
-                  void syncLiveRegistrations(false);
-                  void syncIntelligenceReport(true);
-                }}
-                syncingLive={syncingLive}
+              <>
+                <EmsRecordCommandBar
+                  target="overview"
+                  moduleTitle="Executive Command Center"
+                  state={state}
+                  onUpdateState={updateState}
+                  onToast={showToast}
+                />
+                <OverviewView
+                  state={state}
+                  onNavigate={(next) => selectModuleAndSub(next as PublisherTabId)}
+                  onQuickCollectOverdue={handleMarkInvoicePaid}
+                  onSyncLive={() => {
+                    void syncLiveRegistrations(false);
+                    void syncWebsiteLeads(false);
+                    void syncIntelligenceReport(true);
+                  }}
+                  syncingLive={syncingLive}
+                />
+              </>
+            )}
+
+            {tab === "ai_hub" && (
+              <PublisherAiHubView
+                profile={state.profile}
+                subModule={
+                  (["inbox_chat", "website_leads", "agent_config"].includes(activeSub)
+                    ? activeSub
+                    : "inbox_chat") as AiHubSubModule
+                }
+                onSelectSubModule={(sub) => setActiveSub(sub)}
+                leads={leads}
+                agents={aiAgents}
+                syncingLeads={syncingLeads}
+                onSyncLeads={() => void syncWebsiteLeads(false)}
+                onInsertLead={handleInsertLead}
+                onUpdateLead={handleUpdateLead}
+                onDeleteLead={handleDeleteLead}
+                onConvertLeadToDeal={handleConvertLeadToDeal}
+                onUpdateAgent={handleUpdateAiAgent}
               />
             )}
+
+            {tab === "master" && (
+              <>
+                <EmsRecordCommandBar
+                  target={activeSub === "skus" ? "master_skus" : "master_tenants"}
+                  moduleTitle={
+                    activeSub === "skus" ? "Master Produk SKU v5.3" : "Master Data Perusahaan Tenant"
+                  }
+                  state={state}
+                  onUpdateState={updateState}
+                  onToast={showToast}
+                />
+                <MasterDataView
+                  state={state}
+                  onUpdateState={updateState}
+                  onToast={showToast}
+                  externalSubTab={
+                    (["tenants", "skus", "resellers", "vendors", "employees", "coa"].includes(
+                      activeSub,
+                    )
+                      ? activeSub
+                      : "tenants") as "tenants" | "skus" | "resellers" | "vendors" | "employees" | "coa"
+                  }
+                />
+              </>
+            )}
+
+            {tab === "licenses" && (
+              <>
+                <EmsRecordCommandBar
+                  target="licenses"
+                  moduleTitle="License Management (LMS)"
+                  state={state}
+                  onUpdateState={updateState}
+                  onToast={showToast}
+                />
+                <LicenseManagerView
+                  state={state}
+                  onIssueLicense={handleIssueLicense}
+                  onMutateLicense={handleMutateLicense}
+                  onToast={showToast}
+                />
+              </>
+            )}
+
+            {tab === "crm" && (
+              <>
+                <EmsRecordCommandBar
+                  target={activeSub === "tickets" ? "crm_tickets" : "crm_deals"}
+                  moduleTitle={
+                    activeSub === "tickets" ? "Tiket Support SLA Enterprise" : "Pipeline Deal B2B CRM"
+                  }
+                  state={state}
+                  onUpdateState={updateState}
+                  onToast={showToast}
+                />
+                <PublisherCrmView
+                  state={state}
+                  onUpdateState={updateState}
+                  onConvertDealWon={handleConvertDealWon}
+                  onToast={showToast}
+                  externalSubTab={activeSub === "tickets" ? "tickets" : "pipeline"}
+                />
+              </>
+            )}
+
+            {tab === "erp" && (
+              <>
+                <EmsRecordCommandBar
+                  target={activeSub === "procurement" ? "erp_pos" : "erp_invoices"}
+                  moduleTitle={
+                    activeSub === "procurement"
+                      ? "Purchase Order Vendor (AP)"
+                      : "Commercial Invoice & Billing (AR)"
+                  }
+                  state={state}
+                  onUpdateState={updateState}
+                  onToast={showToast}
+                />
+                <PublisherErpView
+                  state={state}
+                  onUpdateState={updateState}
+                  onMarkInvoicePaid={handleMarkInvoicePaid}
+                  onPayVendorPo={handlePayVendorPo}
+                  onToast={showToast}
+                  externalSubTab={
+                    (["billing", "procurement", "inventory"].includes(activeSub)
+                      ? activeSub
+                      : "billing") as "billing" | "procurement" | "inventory"
+                  }
+                />
+              </>
+            )}
+
+            {tab === "accounting" && (
+              <>
+                <EmsRecordCommandBar
+                  target="accounting"
+                  moduleTitle="Akuntansi Korporat PSAK 72"
+                  state={state}
+                  onUpdateState={updateState}
+                  onToast={showToast}
+                />
+                <PublisherAccountingView
+                  state={state}
+                  onUpdateState={updateState}
+                  onRunRevenueRecognition={handleRunRevRec}
+                  onToast={showToast}
+                  externalSubTab={
+                    ([
+                      "journals",
+                      "ledger",
+                      "trial_balance",
+                      "income_statement",
+                      "balance_sheet",
+                      "cash_flow",
+                      "tax",
+                    ].includes(activeSub)
+                      ? activeSub
+                      : "journals") as
+                      | "journals"
+                      | "ledger"
+                      | "trial_balance"
+                      | "income_statement"
+                      | "balance_sheet"
+                      | "cash_flow"
+                      | "tax"
+                  }
+                />
+              </>
+            )}
+
+            {tab === "hr_rbac" && (
+              <PublisherHrRbacView
+                profile={state.profile}
+                subModule={activeSub === "kpi_commission" ? "kpi_commission" : "directory_rbac"}
+                onSelectSubModule={(s) => setActiveSub(s)}
+                employees={state.employees}
+                onInsertEmployee={handleInsertEmployee}
+                onUpdateEmployee={handleUpdateEmployee}
+                onDeleteEmployee={handleDeleteEmployee}
+              />
+            )}
+
             {tab === "forecasting" && (
               <ForecastingView
                 report={intelligence}
@@ -552,6 +1132,7 @@ export function PublisherEmsApp() {
                 onRefresh={() => void syncIntelligenceReport(false)}
               />
             )}
+
             {tab === "usage_voc" && (
               <UsageVocView
                 report={intelligence}
@@ -560,6 +1141,7 @@ export function PublisherEmsApp() {
                 onUpdateFeedbackStatus={handleUpdateFeedbackStatus}
               />
             )}
+
             {tab === "economics" && (
               <EconomicRadarView
                 report={intelligence}
@@ -568,46 +1150,7 @@ export function PublisherEmsApp() {
                 onToast={showToast}
               />
             )}
-            {tab === "licenses" && (
-              <LicenseManagerView
-                state={state}
-                onIssueLicense={handleIssueLicense}
-                onMutateLicense={handleMutateLicense}
-                onToast={showToast}
-              />
-            )}
-            {tab === "master" && (
-              <MasterDataView
-                state={state}
-                onUpdateState={updateState}
-                onToast={showToast}
-              />
-            )}
-            {tab === "crm" && (
-              <PublisherCrmView
-                state={state}
-                onUpdateState={updateState}
-                onConvertDealWon={handleConvertDealWon}
-                onToast={showToast}
-              />
-            )}
-            {tab === "erp" && (
-              <PublisherErpView
-                state={state}
-                onUpdateState={updateState}
-                onMarkInvoicePaid={handleMarkInvoicePaid}
-                onPayVendorPo={handlePayVendorPo}
-                onToast={showToast}
-              />
-            )}
-            {tab === "accounting" && (
-              <PublisherAccountingView
-                state={state}
-                onUpdateState={updateState}
-                onRunRevenueRecognition={handleRunRevRec}
-                onToast={showToast}
-              />
-            )}
+
             {tab === "settings" && (
               <PublisherSettingsView
                 state={state}
@@ -621,15 +1164,15 @@ export function PublisherEmsApp() {
 
       {/* Mobile Bottom Nav */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 flex overflow-x-auto border-t border-slate-800 bg-slate-950/95 backdrop-blur md:hidden">
-        {NAV_ITEMS.map((item) => {
+        {EMS_MODULES.map((item) => {
           const Icon = item.icon;
           const active = tab === item.id;
           return (
             <button
               key={item.id}
               type="button"
-              onClick={() => setTab(item.id)}
-              className={`flex min-w-[74px] flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] font-bold ${
+              onClick={() => selectModuleAndSub(item.id)}
+              className={`flex min-w-[72px] flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] font-bold ${
                 active ? "text-emerald-400" : "text-slate-400"
               }`}
             >

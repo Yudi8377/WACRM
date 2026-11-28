@@ -1,14 +1,15 @@
-name: Build WACRM Publisher HQ Windows Offline Installer
+name: Build WACRM Windows Offline Installers
 
 on:
   workflow_dispatch:
   push:
     paths:
       - "apps/publisher-admin/windows-installer/**"
+      - "installers/wacrm-commercial-bundle/**"
       - ".github/workflows/build-publisher-windows-installer.yml"
 
 jobs:
-  build-windows-setup-exe:
+  build-publisher-hq-setup-exe:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -64,3 +65,79 @@ jobs:
           path: |
             apps/publisher-admin/windows-installer/dist/WACRM-Publisher-HQ-v5.3-Setup.exe
             apps/publisher-admin/windows-installer/dist/WACRM-Publisher-HQ.exe
+
+  build-commercial-suite-setup-exe:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compile native WACRM-Suite-Launcher.exe (.NET Framework)
+        shell: pwsh
+        run: |
+          $root = (Resolve-Path "installers\wacrm-commercial-bundle").Path
+          $dist = Join-Path $root "dist"
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          if (-not (Test-Path $csc)) {
+            $csc = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe"
+          }
+          $outExe = Join-Path $dist "WACRM-Suite-Launcher.exe"
+          $icoFile = Join-Path $root "payload\wacrm-commercial.ico"
+          $srcFile = Join-Path $root "payload\WacrmCommercialLauncher.cs"
+
+          $output = & $csc /nologo /target:winexe /optimize+ `
+            "/out:$outExe" `
+            "/win32icon:$icoFile" `
+            /r:System.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll `
+            "$srcFile" 2>&1
+          $output | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::csc.exe failed ($LASTEXITCODE): $($output -join ' | ')"
+            exit $LASTEXITCODE
+          }
+          Get-Item $outExe
+
+      - name: Validate PowerShell permission engine syntax
+        shell: pwsh
+        run: |
+          $scripts = @(
+            "installers\wacrm-commercial-bundle\payload\Fix-WACRM-Hardware-Permissions.ps1",
+            "installers\wacrm-commercial-bundle\payload\Setup-WACRM-Commercial.ps1",
+            "installers\wacrm-commercial-bundle\payload\Uninstall-WACRM-Commercial.ps1"
+          )
+          foreach ($s in $scripts) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $s).Path, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors -and $errors.Count -gt 0) {
+              Write-Host "::error::PowerShell parse error in $s : $($errors[0].Message)"
+              exit 1
+            }
+            Write-Host "Syntax OK -> $s"
+          }
+
+      - name: Build single-file Go-Commercial Windows Setup EXE with Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+          $iss = (Resolve-Path "installers\wacrm-commercial-bundle\WACRM-Commercial-Suite.iss").Path
+          $output = & $iscc "$iss" 2>&1
+          $output | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::ISCC.exe failed ($LASTEXITCODE): $($output -join ' | ')"
+            exit $LASTEXITCODE
+          }
+          Get-ChildItem "installers\wacrm-commercial-bundle\dist"
+
+      - name: Upload WACRM-Commercial-Suite-v5.3.1-Windows-Setup.exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WACRM-Commercial-Suite-v5.3.1-Windows-Setup-EXE
+          path: |
+            installers/wacrm-commercial-bundle/dist/WACRM-Commercial-Suite-v5.3.1-Windows-Setup.exe
+            installers/wacrm-commercial-bundle/dist/WACRM-Suite-Launcher.exe
