@@ -17,14 +17,29 @@ jobs:
       - name: Compile native WACRM-Publisher-HQ.exe launcher (.NET Framework)
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path apps/publisher-admin/windows-installer/dist | Out-Null
+          $root = (Resolve-Path "apps\publisher-admin\windows-installer").Path
+          $dist = Join-Path $root "dist"
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+
           $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-          & $csc /nologo /target:winexe /optimize+ `
-            /out:apps/publisher-admin/windows-installer/dist/WACRM-Publisher-HQ.exe `
-            /win32icon:apps/publisher-admin/windows-installer/payload/wacrm-publisher.ico `
+          if (-not (Test-Path $csc)) {
+            $csc = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe"
+          }
+          $outExe = Join-Path $dist "WACRM-Publisher-HQ.exe"
+          $icoFile = Join-Path $root "payload\wacrm-publisher.ico"
+          $srcFile = Join-Path $root "payload\WacrmPublisherLauncher.cs"
+
+          $output = & $csc /nologo /target:winexe /optimize+ `
+            "/out:$outExe" `
+            "/win32icon:$icoFile" `
             /r:System.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll `
-            apps/publisher-admin/windows-installer/payload/WacrmPublisherLauncher.cs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            "$srcFile" 2>&1
+          $output | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::csc.exe failed ($LASTEXITCODE): $($output -join ' | ')"
+            exit $LASTEXITCODE
+          }
+          Get-Item $outExe
 
       - name: Build single-file offline Setup EXE with Inno Setup
         shell: pwsh
@@ -33,9 +48,14 @@ jobs:
           if (-not (Test-Path $iscc)) {
             choco install innosetup -y --no-progress
           }
-          & $iscc apps/publisher-admin/windows-installer/WACRM-Publisher-HQ.iss
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Get-ChildItem apps/publisher-admin/windows-installer/dist
+          $iss = (Resolve-Path "apps\publisher-admin\windows-installer\WACRM-Publisher-HQ.iss").Path
+          $output = & $iscc "$iss" 2>&1
+          $output | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::ISCC.exe failed ($LASTEXITCODE): $($output -join ' | ')"
+            exit $LASTEXITCODE
+          }
+          Get-ChildItem "apps\publisher-admin\windows-installer\dist"
 
       - name: Upload WACRM-Publisher-HQ-v5.3-Setup.exe artifact
         uses: actions/upload-artifact@v4

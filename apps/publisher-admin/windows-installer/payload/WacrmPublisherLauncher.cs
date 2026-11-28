@@ -82,7 +82,7 @@ namespace WacrmPublisherHq
             {
                 try
                 {
-                    ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | (SecurityProtocolType)3072;
+                    ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | (SecurityProtocolType)768 | SecurityProtocolType.Tls;
                     var req = (HttpWebRequest)WebRequest.Create(url.TrimEnd('/') + "/api/health");
                     req.Method = "GET";
                     req.Timeout = 5500;
@@ -103,10 +103,10 @@ namespace WacrmPublisherHq
                 var choice = MessageBox.Show(
                     appLabel + " beroperasi secara ONLINE untuk menyinkronkan lisensi, tenant & data keuangan secara real-time.\n\n" +
                     "Koneksi internet ke " + url + " belum terdeteksi.\n\n" +
-                    "• Klik RETRY (Coba Lagi) setelah internet aktif\n" +
-                    "• Klik IGNORE (Abaikan) untuk tetap membuka jendela aplikasi\n" +
-                    "• Klik ABORT (Batal) untuk keluar",
-                    appLabel + " — Pemeriksaan Koneksi Online",
+                    "- Klik RETRY (Coba Lagi) setelah internet aktif\n" +
+                    "- Klik IGNORE (Abaikan) untuk tetap membuka jendela aplikasi\n" +
+                    "- Klik ABORT (Batal) untuk keluar",
+                    appLabel + " - Pemeriksaan Koneksi Online",
                     MessageBoxButtons.AbortRetryIgnore,
                     MessageBoxIcon.Warning
                 );
