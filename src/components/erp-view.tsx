@@ -47,6 +47,7 @@ interface ErpViewProps {
   suppliers: ErpSupplierRecord[];
   movements: ErpStockMovementRecord[];
   onOpenQrGenerator?: (sku?: string) => void;
+  onOpenEditions?: () => void;
   onRefresh: () => Promise<void>;
   onToast: (message: string, tone?: "ok" | "error") => void;
 }
@@ -62,6 +63,7 @@ export function ErpView({
   suppliers,
   movements,
   onOpenQrGenerator,
+  onOpenEditions,
   onRefresh,
   onToast,
 }: ErpViewProps) {
@@ -678,6 +680,7 @@ export function ErpView({
         businessName={storeProfile.businessName}
         products={products}
         orders={orders}
+        onOpenEditions={onOpenEditions}
         onToast={onToast}
       />
 

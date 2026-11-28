@@ -10,6 +10,7 @@ import {
   Boxes,
   Briefcase,
   CloudCheck,
+  Compass,
   Database,
   FileText,
   Inbox,
@@ -68,6 +69,7 @@ import { PosView } from "@/components/pos-view";
 import { ErpView } from "@/components/erp-view";
 import { AccountingView } from "@/components/accounting-view";
 import { HrdPayrollView } from "@/components/hrd-payroll-view";
+import { EnterpriseMarketingStrategyView } from "@/components/enterprise-marketing-strategy-view";
 import { MasterDataView } from "@/components/master-data-view";
 import { SeoGrowthView } from "@/components/seo-growth-view";
 import { EditionsView } from "@/components/editions-view";
@@ -97,6 +99,7 @@ const NAV_ITEMS: Array<{
   { id: "erp", label: "ERP & Gudang", shortLabel: "ERP", icon: Boxes, group: "core" },
   { id: "accounting", label: "Akuntansi", shortLabel: "Akuntansi", icon: BookOpenCheck, group: "core" },
   { id: "hrd_payroll", label: "HRD & Payroll", shortLabel: "HRD", icon: Briefcase, group: "core" },
+  { id: "marketing_strategy", label: "Strategi Marketing AI", shortLabel: "Strategi", icon: Compass, group: "core" },
   { id: "ai", label: "Multi-Agent AI", shortLabel: "AI 9x", icon: Bot, group: "core" },
   { id: "forecast", label: "Tren Minat & AI Produk", shortLabel: "Forecast", icon: LineChart, group: "core" },
   { id: "seo_growth", label: "SEO & Growth AI", shortLabel: "SEO AI", icon: TrendingUp, group: "core" },
@@ -979,6 +982,7 @@ export function WorkspaceApp({
                     storeProfile={storeProfile}
                     onUpdateStoreProfile={handleSaveStoreProfile}
                     products={snapshot.products}
+                    onOpenEditions={() => setTab("editions")}
                     onRefresh={refresh}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
@@ -1034,6 +1038,7 @@ export function WorkspaceApp({
                     onClearHighlight={() => setHighlightOrderId(null)}
                     initialScannedSku={pendingPosSku}
                     onClearScannedSku={() => setPendingPosSku(null)}
+                    onOpenEditions={() => setTab("editions")}
                     onRefresh={refresh}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
@@ -1091,11 +1096,17 @@ export function WorkspaceApp({
               {tab === "forecast" && (
                 <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
                   <MarketForecastView
+                    tenantId={adapter.tenantId}
                     editionId={editionId}
                     products={snapshot.products}
                     orders={snapshot.orders}
                     conversations={snapshot.conversations}
                     storeProfile={storeProfile}
+                    onCreateProduct={async (input) => {
+                      await adapter.createProduct(input);
+                      await refresh();
+                    }}
+                    onOpenMarketingStrategy={() => setTab("marketing_strategy")}
                     onOpenEditions={() => setTab("editions")}
                     onNotify={(msg) => showToast(msg, "success")}
                   />
@@ -1123,6 +1134,7 @@ export function WorkspaceApp({
                         );
                       }
                     }}
+                    onOpenEditions={() => setTab("editions")}
                     onRefresh={refresh}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
@@ -1138,6 +1150,7 @@ export function WorkspaceApp({
                     orders={snapshot.orders}
                     products={snapshot.products}
                     report={snapshot.financialReport}
+                    onOpenEditions={() => setTab("editions")}
                     onRefresh={refresh}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />
@@ -1158,6 +1171,22 @@ export function WorkspaceApp({
                       });
                       await refresh();
                     }}
+                    onOpenEditions={() => setTab("editions")}
+                    onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
+                  />
+                </div>
+              )}
+              {tab === "marketing_strategy" && (
+                <div className="flex-1 overflow-y-auto bg-slate-950 text-slate-100">
+                  <EnterpriseMarketingStrategyView
+                    tenantId={adapter.tenantId}
+                    editionId={editionId}
+                    storeProfile={storeProfile}
+                    products={snapshot.products}
+                    orders={snapshot.orders}
+                    contacts={snapshot.contacts}
+                    conversations={snapshot.conversations}
+                    report={snapshot.financialReport}
                     onOpenEditions={() => setTab("editions")}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />

@@ -16,6 +16,7 @@ import {
   Factory,
   Globe2,
   Layers,
+  Lock,
   Plus,
   Receipt,
   RefreshCw,
@@ -89,11 +90,106 @@ function SovereignBadge({
   );
 }
 
+function SovereignLockedUpgradeCard({
+  editionId,
+  suiteTitle,
+  subtitle,
+  lockedCapabilities,
+  onOpenEditions,
+}: {
+  editionId?: AppEditionId;
+  suiteTitle: string;
+  subtitle: string;
+  lockedCapabilities: string[];
+  onOpenEditions?: () => void;
+}) {
+  return (
+    <section className="rounded-3xl border border-amber-500/35 bg-gradient-to-br from-slate-950 via-amber-950/20 to-slate-950 p-5 text-slate-100 shadow-xl md:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-500/15 px-3 py-1 text-[11px] font-extrabold text-amber-200">
+          <Lock className="h-3.5 w-3.5 text-amber-400" />
+          EKSKLUSIF SOVEREIGN CORPORATE · TERKUNCI DI EDISI {(editionId || "starter").toUpperCase()}
+        </div>
+        <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-bold text-amber-300">
+          License Key Sovereign Diperlukan
+        </span>
+      </div>
+
+      <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="max-w-3xl space-y-2">
+          <h3 className="flex items-center gap-2 text-lg font-extrabold text-white">
+            <Crown className="h-5 w-5 text-amber-400" />
+            {suiteTitle}
+          </h3>
+          <p className="text-xs leading-relaxed text-slate-300">{subtitle}</p>
+          <div className="grid gap-1.5 pt-1 text-[11px] text-amber-100/90 sm:grid-cols-2">
+            {lockedCapabilities.map((cap) => (
+              <div
+                key={cap}
+                className="flex items-start gap-1.5 rounded-xl border border-amber-500/20 bg-slate-900/80 px-2.5 py-1.5"
+              >
+                <Lock className="mt-0.5 h-3 w-3 shrink-0 text-amber-400" />
+                <span>{cap}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="shrink-0">
+          {onOpenEditions ? (
+            <button
+              type="button"
+              onClick={onOpenEditions}
+              className="inline-flex items-center gap-2 rounded-xl bg-amber-400 px-4 py-2.5 text-xs font-extrabold text-slate-950 shadow-lg hover:bg-amber-300"
+            >
+              <Crown className="h-4 w-4" /> Upgrade ke Sovereign Corporate
+            </button>
+          ) : (
+            <div className="rounded-xl border border-amber-400/35 bg-amber-500/10 px-4 py-2.5 text-xs font-bold text-amber-200">
+              Buka Menu Edisi &amp; Lisensi → Sovereign Corporate
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // ============================================================================
 // 1. SOVEREIGN CORPORATE ACCOUNTING SUITE (#3)
 // ============================================================================
 
-export function SovereignAccountingSuite({
+export function SovereignAccountingSuite(props: {
+  editionId?: AppEditionId;
+  businessName: string;
+  summary: FinancialReportSummary;
+  orders: PosOrderRecord[];
+  products: ErpProductRecord[];
+  entries: AccountingEntryRecord[];
+  onOpenEditions?: () => void;
+  onToast?: (msg: string, tone?: "ok" | "error") => void;
+}) {
+  if (props.editionId !== "sovereign") {
+    return (
+      <SovereignLockedUpgradeCard
+        editionId={props.editionId}
+        suiteTitle="Suite Akuntansi Korporat PSAK, SPT Pajak & Rasio Keuangan"
+        subtitle="Edisi Enterprise AI Suite hanya mencakup Pembukuan & Akuntansi Operasional (Jurnal Harian, Buku Kas & Laba Rugi Ringkas). Aktifkan Sovereign Corporate untuk membuka standar pelaporan korporasi & perpajakan lengkap:"
+        lockedCapabilities={[
+          "Neraca Balance Sheet Seimbang Otomatis (Aset = Liabilitas + Ekuitas)",
+          "Neraca Saldo COA 4-Digit & Laporan Arus Kas PSAK",
+          "Kalkulator SPT Pajak Lengkap: PPN 11%, PPh Final 0,5%, PPh Badan 31E, PPh 21/23/4(2)",
+          "5 Rasio Keuangan Eksekutif (Current Ratio, GPM, NPM, ROE, DER) & Aging Piutang",
+          "Cetak Audit PSAK A4/F4 & Ekspor Pembukuan Multi-Sheet Excel ke Desktop",
+        ]}
+        onOpenEditions={props.onOpenEditions}
+      />
+    );
+  }
+  return <SovereignAccountingSuiteInner {...props} />;
+}
+
+function SovereignAccountingSuiteInner({
   editionId,
   businessName,
   summary,
@@ -108,6 +204,7 @@ export function SovereignAccountingSuite({
   orders: PosOrderRecord[];
   products: ErpProductRecord[];
   entries: AccountingEntryRecord[];
+  onOpenEditions?: () => void;
   onToast?: (msg: string, tone?: "ok" | "error") => void;
 }) {
   const [subTab, setSubTab] = useState<
@@ -675,7 +772,34 @@ export function SovereignAccountingSuite({
 // 2. SOVEREIGN CORPORATE ERP SUITE (#6)
 // ============================================================================
 
-export function SovereignErpSuite({
+export function SovereignErpSuite(props: {
+  editionId?: AppEditionId;
+  businessName: string;
+  products: ErpProductRecord[];
+  orders: PosOrderRecord[];
+  onOpenEditions?: () => void;
+  onToast?: (msg: string, tone?: "ok" | "error") => void;
+}) {
+  if (props.editionId !== "sovereign") {
+    return (
+      <SovereignLockedUpgradeCard
+        editionId={props.editionId}
+        suiteTitle="Suite ERP & Gudang Korporat (ABC/MRP, Multi-Gudang, PO/GRN, BOM & Vendor SLA)"
+        subtitle="Edisi Starter/Pro/Enterprise menyediakan ERP Gudang Operasional (Produk, Stok Real-Time, Mutasi & Supplier). Upgrade ke Sovereign Corporate untuk manajemen rantai pasok korporasi penuh:"
+        lockedCapabilities={[
+          "Klasifikasi Inventori ABC + Perhitungan MRP (Reorder Point & EOQ Otomatis)",
+          "Transfer Stok Multi-Gudang & Kontrol Penerimaan Purchase Order (PO/GRN)",
+          "Bill of Materials (BOM) Produksi & Kalkulator HPP Batch Otomatis",
+          "Audit Stock Opname Fisik vs Sistem + Scorecard Vendor SLA & Cetak Laporan ERP",
+        ]}
+        onOpenEditions={props.onOpenEditions}
+      />
+    );
+  }
+  return <SovereignErpSuiteInner {...props} />;
+}
+
+function SovereignErpSuiteInner({
   editionId,
   businessName,
   products,
@@ -686,6 +810,7 @@ export function SovereignErpSuite({
   businessName: string;
   products: ErpProductRecord[];
   orders: PosOrderRecord[];
+  onOpenEditions?: () => void;
   onToast?: (msg: string, tone?: "ok" | "error") => void;
 }) {
   const [erpSubTab, setErpSubTab] = useState<
@@ -1499,7 +1624,34 @@ export function SovereignErpSuite({
 // 3. SOVEREIGN CORPORATE CRM SUITE (#7)
 // ============================================================================
 
-export function SovereignCrmSuite({
+export function SovereignCrmSuite(props: {
+  editionId?: AppEditionId;
+  businessName: string;
+  contacts: ContactRecord[];
+  orders: PosOrderRecord[];
+  onOpenEditions?: () => void;
+  onToast?: (msg: string, tone?: "ok" | "error") => void;
+}) {
+  if (props.editionId !== "sovereign") {
+    return (
+      <SovereignLockedUpgradeCard
+        editionId={props.editionId}
+        suiteTitle="Suite CRM Korporat: B2B Deal Pipeline Kanban & Segmentasi RFM/CLV"
+        subtitle="Buka pengelolaan kontrak grosir/B2B bernilai tinggi, weighted pipeline forecasting, serta skor Customer Lifetime Value (CLV) & retensi RFM secara otomatis pada edisi Sovereign Corporate:"
+        lockedCapabilities={[
+          "Pipeline Deal B2B Multi-Tahap (Prospek → Proposal → Negosiasi → Menang)",
+          "Perhitungan Weighted Pipeline Revenue & Probabilitas Closing Real-Time",
+          "Segmentasi RFM Otomatis (Champion, Loyal, Potensial, Berisiko Churn) + CLV",
+          "Ekspor Laporan Intelijen Pelanggan & B2B ke Excel/PDF Desktop",
+        ]}
+        onOpenEditions={props.onOpenEditions}
+      />
+    );
+  }
+  return <SovereignCrmSuiteInner {...props} />;
+}
+
+function SovereignCrmSuiteInner({
   editionId,
   businessName,
   contacts,
@@ -1510,6 +1662,7 @@ export function SovereignCrmSuite({
   businessName: string;
   contacts: ContactRecord[];
   orders: PosOrderRecord[];
+  onOpenEditions?: () => void;
   onToast?: (msg: string, tone?: "ok" | "error") => void;
 }) {
   const [crmSubTab, setCrmSubTab] = useState<"pipeline" | "rfm_clv">("pipeline");
@@ -1827,7 +1980,33 @@ export function SovereignCrmSuite({
 // 4. SOVEREIGN CORPORATE POS SUITE (#8)
 // ============================================================================
 
-export function SovereignPosSuite({
+export function SovereignPosSuite(props: {
+  editionId?: AppEditionId;
+  businessName: string;
+  orders: PosOrderRecord[];
+  onOpenEditions?: () => void;
+  onToast?: (msg: string, tone?: "ok" | "error") => void;
+}) {
+  if (props.editionId !== "sovereign") {
+    return (
+      <SovereignLockedUpgradeCard
+        editionId={props.editionId}
+        suiteTitle="Suite POS Korporat: Rekonsiliasi Shift Laci Kas, Split Bill & VIP Loyalty Tier"
+        subtitle="Sempurnakan kontrol kasir multi-shift dan program loyalitas pelanggan VIP (Silver/Gold/Platinum) dengan audit tutup kasir otomatis di Sovereign Corporate:"
+        lockedCapabilities={[
+          "Rekonsiliasi Laci Kas Shift (Modal Awal, Tunai Aktual, & Deteksi Selisih Real-Time)",
+          "Kalkulator Split-Bill Multi-Pembayaran (Tunai + QRIS / Transfer)",
+          "Program Diskon VIP Loyalty Tier (Silver 3%, Gold 7%, Platinum 12%)",
+          "Cetak & Ekspor Berita Acara Tutup Shift Kasir ke Desktop",
+        ]}
+        onOpenEditions={props.onOpenEditions}
+      />
+    );
+  }
+  return <SovereignPosSuiteInner {...props} />;
+}
+
+function SovereignPosSuiteInner({
   editionId,
   businessName,
   orders,
@@ -1836,6 +2015,7 @@ export function SovereignPosSuite({
   editionId?: AppEditionId;
   businessName: string;
   orders: PosOrderRecord[];
+  onOpenEditions?: () => void;
   onToast?: (msg: string, tone?: "ok" | "error") => void;
 }) {
   const [cashierName, setCashierName] = useState("Kepala Kasir Shift Pagi");
@@ -2096,13 +2276,39 @@ export function SovereignPosSuite({
 // 5. SOVEREIGN CORPORATE HIGH-LEVEL SEO SUITE (#9)
 // ============================================================================
 
-export function SovereignSeoSuite({
+export function SovereignSeoSuite(props: {
+  editionId?: AppEditionId;
+  businessName: string;
+  onOpenEditions?: () => void;
+  onToast?: (msg: string, tone?: "ok" | "error") => void;
+}) {
+  if (props.editionId !== "sovereign") {
+    return (
+      <SovereignLockedUpgradeCard
+        editionId={props.editionId}
+        suiteTitle="Suite SEO Korporat: Technical SEO Audit Score & JSON-LD Schema Generator"
+        subtitle="Audit teknis SEO mendalam (skor 0–100), deteksi kepadatan keyword, optimasi Google Business Profile lokal, & generator JSON-LD LocalBusiness/Product siap pasang tersedia eksklusif di Sovereign Corporate:"
+        lockedCapabilities={[
+          "Skor Audit SEO Teknis Otomatis (Title, Meta Description, Keyword & Local Intent)",
+          "Generator JSON-LD Schema LocalBusiness + WhatsApp ContactPoint Siap Salin",
+          "Rekomendasi Perbaikan Teknis Prioritas untuk Dominasi Pencarian Google",
+          "Ekspor Laporan Audit SEO Korporat ke Excel/PDF",
+        ]}
+        onOpenEditions={props.onOpenEditions}
+      />
+    );
+  }
+  return <SovereignSeoSuiteInner {...props} />;
+}
+
+function SovereignSeoSuiteInner({
   editionId,
   businessName,
   onToast,
 }: {
   editionId?: AppEditionId;
   businessName: string;
+  onOpenEditions?: () => void;
   onToast?: (msg: string, tone?: "ok" | "error") => void;
 }) {
   const [domainUrl, setDomainUrl] = useState("https://tokoanda.co.id");

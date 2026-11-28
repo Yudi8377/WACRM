@@ -14,6 +14,7 @@ export type WorkspaceTabId =
   | "erp"
   | "accounting"
   | "hrd_payroll"
+  | "marketing_strategy"
   | "ai"
   | "forecast"
   | "seo_growth"
@@ -50,6 +51,7 @@ export const TAB_REQUIRED_FEATURE: Partial<Record<WorkspaceTabId, EditionFeature
   erp: "erp_warehouse",
   accounting: "double_entry_accounting",
   hrd_payroll: "hrd_payroll_corporate",
+  marketing_strategy: "enterprise_marketing_strategy",
   forecast: "ai_product_recommender",
   seo_growth: "seo_growth_ai",
   templates: "zero_click_ai",
@@ -120,6 +122,11 @@ export interface EditionMatrixCapabilities {
   whiteLabelStore: boolean;
   superAdminAnalytics: boolean;
   buyerInterestForecast: boolean;
+  hrdPayrollCorporate: boolean;
+  sovereignCorporateAccounting: boolean;
+  sovereignCorporateErp: boolean;
+  sovereignCorporateCrmPosSeo: boolean;
+  enterpriseMarketingStrategy: boolean;
   customBrandedApk: boolean;
   dedicatedDbSla: boolean;
   allowedAiAgents: AiAgentKey[];
@@ -162,6 +169,11 @@ export function getEditionMatrixCapabilities(
     whiteLabelStore: editionHasFeature(editionId, "white_label_store"),
     superAdminAnalytics: editionHasFeature(editionId, "super_admin_analytics"),
     buyerInterestForecast: editionHasFeature(editionId, "buyer_interest_forecast"),
+    hrdPayrollCorporate: editionHasFeature(editionId, "hrd_payroll_corporate"),
+    sovereignCorporateAccounting: editionHasFeature(editionId, "sovereign_corporate_accounting"),
+    sovereignCorporateErp: editionHasFeature(editionId, "sovereign_corporate_erp"),
+    sovereignCorporateCrmPosSeo: editionHasFeature(editionId, "sovereign_corporate_crm_pos_seo"),
+    enterpriseMarketingStrategy: editionHasFeature(editionId, "enterprise_marketing_strategy"),
     customBrandedApk: editionHasFeature(editionId, "custom_branded_apk"),
     dedicatedDbSla: editionHasFeature(editionId, "dedicated_db_sla"),
     allowedAiAgents: EDITION_ALLOWED_AI_AGENT_KEYS[editionId],

@@ -33,8 +33,35 @@ export interface HrdAttendanceRecord {
   employeeId: string;
   date: string;
   status: AttendanceCode;
+  checkInTime?: string;
+  checkOutTime?: string;
   overtimeHours: number;
   notes: string;
+}
+
+export interface HrdPayrollAdjustment {
+  id: string;
+  employeeId: string;
+  type: "earning" | "deduction";
+  category: "THR / Bonus Khusus" | "Komisi Penjualan" | "Reimbursement" | "Kasbon / Pinjaman" | "Potongan Keterlambatan";
+  amountIdr: number;
+  notes: string;
+  createdAt: string;
+}
+
+export interface HrdKpiEvaluation {
+  id: string;
+  employeeId: string;
+  periodLabel: string; // e.g. "Q4 2026"
+  targetOutputScore: number; // weight 40%
+  disciplineScore: number; // weight 20%
+  qualityScore: number; // weight 20%
+  collaborationScore: number; // weight 20%
+  weightedScore: number; // 0-100
+  managerNotes: string;
+  nextOkrTarget: string;
+  recommendedAction: string;
+  updatedAt: string;
 }
 
 export interface HrdLeaveRequest {
@@ -72,6 +99,8 @@ export interface HrdPayrollLineItem {
   bpjsJhtEmployeeIdr: number;
   bpjsJpEmployeeIdr: number;
   alfaDeductionIdr: number;
+  extraEarningsIdr: number;
+  extraDeductionsIdr: number;
   terCategory: "A" | "B" | "C";
   terRatePct: number;
   pph21MonthlyIdr: number;
@@ -99,7 +128,24 @@ export interface HrdModuleState {
   attendance: HrdAttendanceRecord[];
   leaveRequests: HrdLeaveRequest[];
   bonusByEmployeeId: Record<string, number>;
+  adjustments: HrdPayrollAdjustment[];
+  kpiEvaluations: HrdKpiEvaluation[];
   lastPostedPeriod: string | null;
+}
+
+export function computeWeightedKpiScore(scores: {
+  targetOutputScore: number;
+  disciplineScore: number;
+  qualityScore: number;
+  collaborationScore: number;
+}): number {
+  const clamp = (v: number) => Math.max(0, Math.min(100, Number(v) || 0));
+  return Math.round(
+    clamp(scores.targetOutputScore) * 0.4 +
+      clamp(scores.disciplineScore) * 0.2 +
+      clamp(scores.qualityScore) * 0.2 +
+      clamp(scores.collaborationScore) * 0.2,
+  );
 }
 
 /**
@@ -186,13 +232,21 @@ export function calculateEmployeePayroll(input: {
   overtimeHours: number;
   alfaDays: number;
   bonusIdr: number;
+  extraEarningsIdr?: number;
+  extraDeductionsIdr?: number;
 }): HrdPayrollLineItem {
   const { employee, periodLabel, overtimeHours, alfaDays, bonusIdr } = input;
   const fixedWage = Math.max(0, employee.baseSalaryIdr) + Math.max(0, employee.positionAllowanceIdr);
   const overtimePayIdr = computeIndonesianOvertimePay(fixedWage, overtimeHours);
   const cleanBonus = Math.max(0, bonusIdr);
+  const extraEarningsIdr = Math.max(0, input.extraEarningsIdr ?? 0);
+  const extraDeductionsIdr = Math.max(0, input.extraDeductionsIdr ?? 0);
   const grossIncomeIdr =
-    fixedWage + Math.max(0, employee.mealTransportAllowanceIdr) + overtimePayIdr + cleanBonus;
+    fixedWage +
+    Math.max(0, employee.mealTransportAllowanceIdr) +
+    overtimePayIdr +
+    cleanBonus +
+    extraEarningsIdr;
 
   // BPJS Kesehatan (4% Company / 1% Employee, capped at Rp 12.000.000)
   const kesBasis = Math.min(fixedWage, BPJS_KES_CAP_IDR);
@@ -231,7 +285,8 @@ export function calculateEmployeePayroll(input: {
     bpjsJhtEmployeeIdr +
     bpjsJpEmployeeIdr +
     pph21MonthlyIdr +
-    alfaDeductionIdr;
+    alfaDeductionIdr +
+    extraDeductionsIdr;
 
   const netTakeHomePayIdr = Math.max(0, grossIncomeIdr - totalDeductionsIdr);
   const totalCompanyCostIdr = grossIncomeIdr + totalCompanyBpjsIdr;
@@ -257,6 +312,8 @@ export function calculateEmployeePayroll(input: {
     bpjsJhtEmployeeIdr,
     bpjsJpEmployeeIdr,
     alfaDeductionIdr,
+    extraEarningsIdr,
+    extraDeductionsIdr,
     terCategory,
     terRatePct,
     pph21MonthlyIdr,
@@ -271,17 +328,27 @@ export function buildMonthlyPayrollSummary(
   periodLabel: string,
 ): HrdPayrollSummary {
   const activeEmployees = state.employees.filter((e) => e.isActive);
+  const adjustments = state.adjustments ?? [];
   const lines = activeEmployees.map((emp) => {
     const empAtt = state.attendance.filter((a) => a.employeeId === emp.id);
     const overtimeHours = empAtt.reduce((s, a) => s + (a.overtimeHours || 0), 0);
     const alfaDays = empAtt.filter((a) => a.status === "alfa").length;
     const bonusIdr = state.bonusByEmployeeId[emp.id] ?? 0;
+    const empAdj = adjustments.filter((a) => a.employeeId === emp.id);
+    const extraEarningsIdr = empAdj
+      .filter((a) => a.type === "earning")
+      .reduce((s, a) => s + Math.max(0, a.amountIdr), 0);
+    const extraDeductionsIdr = empAdj
+      .filter((a) => a.type === "deduction")
+      .reduce((s, a) => s + Math.max(0, a.amountIdr), 0);
     return calculateEmployeePayroll({
       employee: emp,
       periodLabel,
       overtimeHours,
       alfaDays,
       bonusIdr,
+      extraEarningsIdr,
+      extraDeductionsIdr,
     });
   });
 
@@ -422,6 +489,47 @@ export function getDefaultHrdState(): HrdModuleState {
     bonusByEmployeeId: {
       "emp-2": 750_000,
     },
+    adjustments: [
+      {
+        id: "adj-1",
+        employeeId: "emp-2",
+        type: "earning",
+        category: "Komisi Penjualan",
+        amountIdr: 350_000,
+        notes: "Insentif pencapaian target omzet WhatsApp & Reels",
+        createdAt: today,
+      },
+    ],
+    kpiEvaluations: [
+      {
+        id: "kpi-1",
+        employeeId: "emp-1",
+        periodLabel: "Q4 2026",
+        targetOutputScore: 96,
+        disciplineScore: 95,
+        qualityScore: 94,
+        collaborationScore: 90,
+        weightedScore: 94,
+        managerNotes: "Closing laporan PSAK & pajak tepat waktu dengan akurasi 100%.",
+        nextOkrTarget: "Otomasi rekonsiliasi COD & pajak PPN < 24 jam.",
+        recommendedAction: "Layak Bonus Kinerja 1,5x & Kandidat Promosi",
+        updatedAt: today,
+      },
+      {
+        id: "kpi-2",
+        employeeId: "emp-2",
+        periodLabel: "Q4 2026",
+        targetOutputScore: 92,
+        disciplineScore: 88,
+        qualityScore: 91,
+        collaborationScore: 93,
+        weightedScore: 91,
+        managerNotes: "Konversi chat WA & repeat order naik +28% bulan ini.",
+        nextOkrTarget: "Capai target bundling minimal 45 paket/bulan.",
+        recommendedAction: "Bonus Komisi Penjualan & Pelatihan Lead CRM",
+        updatedAt: today,
+      },
+    ],
     lastPostedPeriod: null,
   };
 }
@@ -440,6 +548,8 @@ export function loadHrdState(tenantId: string): HrdModuleState {
       attendance: Array.isArray(parsed.attendance) ? parsed.attendance : def.attendance,
       leaveRequests: Array.isArray(parsed.leaveRequests) ? parsed.leaveRequests : def.leaveRequests,
       bonusByEmployeeId: parsed.bonusByEmployeeId ?? def.bonusByEmployeeId,
+      adjustments: Array.isArray(parsed.adjustments) ? parsed.adjustments : def.adjustments,
+      kpiEvaluations: Array.isArray(parsed.kpiEvaluations) ? parsed.kpiEvaluations : def.kpiEvaluations,
       lastPostedPeriod: parsed.lastPostedPeriod ?? null,
     };
   } catch {
@@ -504,6 +614,7 @@ export function renderPayslipPrintHtml(
               <tr><td>Tunjangan Makan &amp; Transport</td><td class="right">${escHtml(formatIdr(line.mealTransportAllowanceIdr))}</td></tr>
               <tr><td>Upah Lembur (${line.overtimeHours} jam · PP 35/2021)</td><td class="right">${escHtml(formatIdr(line.overtimePayIdr))}</td></tr>
               <tr><td>Bonus / Komisi Kinerja (KPI ${emp.kpiScore})</td><td class="right">${escHtml(formatIdr(line.bonusIdr))}</td></tr>
+              ${line.extraEarningsIdr > 0 ? `<tr><td>Tunjangan / Insentif Tambahan</td><td class="right">${escHtml(formatIdr(line.extraEarningsIdr))}</td></tr>` : ""}
               <tr style="background:#f0fdf4;"><td><strong>TOTAL PENGHASILAN BRUTO</strong></td><td class="right"><strong>${escHtml(formatIdr(line.grossIncomeIdr))}</strong></td></tr>
             </tbody>
           </table>
@@ -517,6 +628,7 @@ export function renderPayslipPrintHtml(
               <tr><td>BPJS Jaminan Pensiun JP (1%)</td><td class="right">${escHtml(formatIdr(line.bpjsJpEmployeeIdr))}</td></tr>
               <tr><td>PPh Pasal 21 TER (${line.terCategory} · ${line.terRatePct}%)</td><td class="right">${escHtml(formatIdr(line.pph21MonthlyIdr))}</td></tr>
               <tr><td>Potongan Alfa (${line.alfaDays} hari)</td><td class="right">${escHtml(formatIdr(line.alfaDeductionIdr))}</td></tr>
+              ${line.extraDeductionsIdr > 0 ? `<tr><td>Potongan Kasbon / Penyesuaian Lain</td><td class="right">${escHtml(formatIdr(line.extraDeductionsIdr))}</td></tr>` : ""}
               <tr style="background:#fff1f2;"><td><strong>TOTAL POTONGAN</strong></td><td class="right"><strong>${escHtml(formatIdr(line.totalDeductionsIdr))}</strong></td></tr>
             </tbody>
           </table>
@@ -575,5 +687,212 @@ export function renderPayrollSummaryPrintHtml(
     <p class="muted" style="margin-top:10px;">
       Total Iuran BPJS Ditanggung Perusahaan (Kesehatan 4%, JHT 3,7%, JKK 0,24%, JKM 0,30%, JP 2%): <strong>${escHtml(formatIdr(summary.totalCompanyBpjsIdr))}</strong> · Total Biaya Payroll Korporasi (Bruto + BPJS Perusahaan): <strong>${escHtml(formatIdr(summary.totalCompanyCostIdr))}</strong>.
     </p>
+  `;
+}
+
+/**
+ * Generates SPT Masa PPh Pasal 21 & BPJS Company/Employee Register for PDF/Print.
+ */
+export function renderSptPph21RegisterPrintHtml(
+  summary: HrdPayrollSummary,
+  storeProfile: StoreBusinessProfile,
+): string {
+  const rows = summary.lines
+    .map(
+      (l, i) => `<tr>
+        <td>${i + 1}</td>
+        <td><strong>${escHtml(l.employee.fullName)}</strong><br/><span class="muted">NPWP: ${escHtml(l.employee.npwp || "-")}</span></td>
+        <td class="center">${escHtml(l.employee.ptkpStatus)} / TER ${l.terCategory} (${l.terRatePct}%)</td>
+        <td class="right">${escHtml(formatIdr(l.grossIncomeIdr))}</td>
+        <td class="right">${escHtml(formatIdr(l.totalCompanyBpjsIdr))}</td>
+        <td class="right">${escHtml(formatIdr(l.bpjsKesEmployeeIdr + l.bpjsJhtEmployeeIdr + l.bpjsJpEmployeeIdr))}</td>
+        <td class="right"><strong>${escHtml(formatIdr(l.pph21MonthlyIdr))}</strong></td>
+      </tr>`,
+    )
+    .join("");
+  return `
+    <div style="border-bottom:2px solid #b45309;padding-bottom:10px;margin-bottom:14px;">
+      <h1 style="margin:0;color:#0f172a;font-size:19px;">${escHtml(storeProfile.businessName)}</h1>
+      <div style="font-size:13px;font-weight:800;color:#b45309;">Daftar Bukti Potong SPT Masa PPh Pasal 21 (TER PP 58/2023) &amp; Iuran BPJS — ${escHtml(summary.periodLabel)}</div>
+      <div class="muted">NPWP Perusahaan: ${escHtml(storeProfile.taxId || "-")} · Dicetak: ${escHtml(new Date().toLocaleString("id-ID"))}</div>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Wajib Pajak / NPWP</th><th class="center">PTKP &amp; Tarif TER</th><th class="right">Bruto</th><th class="right">BPJS Corp.</th><th class="right">BPJS Kary.</th><th class="right">PPh 21 Dipotong</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr style="background:#fef3c7;font-weight:800;">
+          <td colspan="3">TOTAL SETORAN PAJAK &amp; BPJS</td>
+          <td class="right">${escHtml(formatIdr(summary.totalGrossIdr))}</td>
+          <td class="right">${escHtml(formatIdr(summary.totalCompanyBpjsIdr))}</td>
+          <td class="right">${escHtml(formatIdr(summary.totalEmployeeBpjsIdr))}</td>
+          <td class="right">${escHtml(formatIdr(summary.totalPph21Idr))}</td>
+        </tr>
+      </tfoot>
+    </table>
+  `;
+}
+
+/**
+ * Generates printable Employee Directory & Compensation Structure (Database Karyawan).
+ */
+export function renderHrdEmployeesPrintHtml(
+  employees: HrdEmployeeRecord[],
+  storeProfile: StoreBusinessProfile,
+): string {
+  const rows = employees
+    .map(
+      (e, i) => `<tr>
+        <td>${i + 1}</td>
+        <td><strong>${escHtml(e.nik)}</strong><br/>${escHtml(e.fullName)}</td>
+        <td>${escHtml(e.position)}<br/><span class="muted">${escHtml(e.department)} · ${escHtml(e.branchName)}</span></td>
+        <td class="center">${escHtml(e.employmentStatus)}<br/><span class="muted">${e.isActive ? "Aktif" : "Nonaktif"}</span></td>
+        <td class="center">${escHtml(e.ptkpStatus)}</td>
+        <td class="right">${escHtml(formatIdr(e.baseSalaryIdr + e.positionAllowanceIdr + e.mealTransportAllowanceIdr))}</td>
+        <td>${escHtml(e.bankName)} ${escHtml(e.bankAccount)}</td>
+      </tr>`,
+    )
+    .join("");
+  return `
+    <div style="border-bottom:2px solid #059669;padding-bottom:10px;margin-bottom:14px;">
+      <h1 style="margin:0;color:#0f172a;font-size:19px;">${escHtml(storeProfile.businessName)}</h1>
+      <div style="font-size:13px;font-weight:800;color:#059669;">Database Induk Karyawan &amp; Struktur Remunerasi (${employees.length} Personel)</div>
+      <div class="muted">Dicetak: ${escHtml(new Date().toLocaleString("id-ID"))}</div>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>NIK &amp; Nama</th><th>Jabatan &amp; Dept</th><th class="center">Status</th><th class="center">PTKP</th><th class="right">Total Upah Tetap</th><th>Rekening Gaji</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+/**
+ * Generates printable Attendance & PP 35/2021 Overtime Report (Absensi & Lembur).
+ */
+export function renderHrdAttendancePrintHtml(
+  attendance: HrdAttendanceRecord[],
+  employees: HrdEmployeeRecord[],
+  storeProfile: StoreBusinessProfile,
+): string {
+  const empMap = new Map(employees.map((e) => [e.id, e]));
+  const rows = attendance
+    .map((a, i) => {
+      const emp = empMap.get(a.employeeId);
+      const fixedWage = emp ? emp.baseSalaryIdr + emp.positionAllowanceIdr : 0;
+      const otPay = computeIndonesianOvertimePay(fixedWage, a.overtimeHours);
+      return `<tr>
+        <td>${i + 1}</td>
+        <td>${escHtml(a.date)}</td>
+        <td><strong>${escHtml(emp?.fullName || a.employeeId)}</strong><br/><span class="muted">${escHtml(emp?.nik || "-")}</span></td>
+        <td class="center"><strong>${escHtml(a.status.toUpperCase())}</strong></td>
+        <td class="center">${escHtml(a.checkInTime || "08:30")} – ${escHtml(a.checkOutTime || "17:30")}</td>
+        <td class="center">${a.overtimeHours} jam</td>
+        <td class="right">${escHtml(formatIdr(otPay))}</td>
+        <td>${escHtml(a.notes)}</td>
+      </tr>`;
+    })
+    .join("");
+  return `
+    <div style="border-bottom:2px solid #0284c7;padding-bottom:10px;margin-bottom:14px;">
+      <h1 style="margin:0;color:#0f172a;font-size:19px;">${escHtml(storeProfile.businessName)}</h1>
+      <div style="font-size:13px;font-weight:800;color:#0284c7;">Laporan Rekap Absensi &amp; Perhitungan Upah Lembur (PP 35/2021 — 1/173)</div>
+      <div class="muted">Total ${attendance.length} Catatan · Dicetak: ${escHtml(new Date().toLocaleString("id-ID"))}</div>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Tanggal</th><th>Karyawan</th><th class="center">Status</th><th class="center">Jam Kerja</th><th class="center">Lembur</th><th class="right">Upah Lembur</th><th>Catatan</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+/**
+ * Generates printable Leave Requests & Annual Leave Quota Balance Report (Cuti & Izin).
+ */
+export function renderHrdLeavesPrintHtml(
+  leaves: HrdLeaveRequest[],
+  employees: HrdEmployeeRecord[],
+  storeProfile: StoreBusinessProfile,
+): string {
+  const leaveRows = leaves
+    .map(
+      (l, i) => `<tr>
+        <td>${i + 1}</td>
+        <td><strong>${escHtml(l.employeeName)}</strong></td>
+        <td>${escHtml(l.leaveType)}</td>
+        <td class="center">${escHtml(l.startDate)} s.d. ${escHtml(l.endDate)} (${l.days} hr)</td>
+        <td>${escHtml(l.reason)}</td>
+        <td class="center"><strong>${escHtml(l.status.toUpperCase())}</strong></td>
+      </tr>`,
+    )
+    .join("");
+  const quotaRows = employees
+    .map(
+      (e) => `<tr>
+        <td>${escHtml(e.nik)}</td>
+        <td><strong>${escHtml(e.fullName)}</strong></td>
+        <td class="center">${e.annualLeaveQuota} hari</td>
+        <td class="center">${e.annualLeaveUsed} hari</td>
+        <td class="center"><strong>${Math.max(0, e.annualLeaveQuota - e.annualLeaveUsed)} hari</strong></td>
+      </tr>`,
+    )
+    .join("");
+  return `
+    <div style="border-bottom:2px solid #7c3aed;padding-bottom:10px;margin-bottom:14px;">
+      <h1 style="margin:0;color:#0f172a;font-size:19px;">${escHtml(storeProfile.businessName)}</h1>
+      <div style="font-size:13px;font-weight:800;color:#7c3aed;">Laporan Pengajuan Cuti, Izin &amp; Saldo Kuota Tahunan Karyawan</div>
+      <div class="muted">Dicetak: ${escHtml(new Date().toLocaleString("id-ID"))}</div>
+    </div>
+    <h3>1. Riwayat Pengajuan Cuti &amp; Izin (${leaves.length})</h3>
+    <table>
+      <thead><tr><th>#</th><th>Karyawan</th><th>Jenis</th><th class="center">Periode &amp; Durasi</th><th>Alasan</th><th class="center">Status</th></tr></thead>
+      <tbody>${leaveRows}</tbody>
+    </table>
+    <h3 style="margin-top:14px;">2. Saldo Kuota Cuti Tahunan</h3>
+    <table>
+      <thead><tr><th>NIK</th><th>Nama Karyawan</th><th class="center">Kuota/Thn</th><th class="center">Terpakai</th><th class="center">Sisa Saldo</th></tr></thead>
+      <tbody>${quotaRows}</tbody>
+    </table>
+  `;
+}
+
+/**
+ * Generates printable Multi-Dimensional KPI & OKR Appraisal Report (KPI & Evaluasi Kinerja).
+ */
+export function renderHrdKpiPrintHtml(
+  evaluations: HrdKpiEvaluation[],
+  employees: HrdEmployeeRecord[],
+  storeProfile: StoreBusinessProfile,
+): string {
+  const empMap = new Map(employees.map((e) => [e.id, e]));
+  const rows = evaluations
+    .map((ev, i) => {
+      const emp = empMap.get(ev.employeeId);
+      const grade =
+        ev.weightedScore >= 90
+          ? "A (Istimewa)"
+          : ev.weightedScore >= 80
+            ? "B (Sangat Baik)"
+            : ev.weightedScore >= 70
+              ? "C (Baik)"
+              : "D (Coaching)";
+      return `<tr>
+        <td>${i + 1}</td>
+        <td><strong>${escHtml(emp?.fullName || ev.employeeId)}</strong><br/><span class="muted">${escHtml(emp?.position || "-")} · ${escHtml(ev.periodLabel)}</span></td>
+        <td class="center">${ev.targetOutputScore} / ${ev.disciplineScore} / ${ev.qualityScore} / ${ev.collaborationScore}</td>
+        <td class="center"><strong>${ev.weightedScore}/100</strong><br/><span class="muted">${grade}</span></td>
+        <td>${escHtml(ev.managerNotes)}<br/><span class="muted">OKR: ${escHtml(ev.nextOkrTarget)}</span></td>
+        <td><strong>${escHtml(ev.recommendedAction)}</strong></td>
+      </tr>`;
+    })
+    .join("");
+  return `
+    <div style="border-bottom:2px solid #059669;padding-bottom:10px;margin-bottom:14px;">
+      <h1 style="margin:0;color:#0f172a;font-size:19px;">${escHtml(storeProfile.businessName)}</h1>
+      <div style="font-size:13px;font-weight:800;color:#059669;">Laporan Evaluasi KPI Multi-Dimensi &amp; Penilaian Kinerja Karyawan</div>
+      <div class="muted">Bobot Penilaian: Target Output 40% · Disiplin 20% · Kualitas 20% · Kolaborasi 20% · Dicetak: ${escHtml(new Date().toLocaleString("id-ID"))}</div>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Karyawan &amp; Periode</th><th class="center">T/D/K/C</th><th class="center">Skor &amp; Grade</th><th>Review Manajer &amp; Target OKR</th><th>Rekomendasi HRD</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
   `;
 }

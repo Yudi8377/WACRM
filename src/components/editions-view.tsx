@@ -517,6 +517,39 @@ export function EditionsView({
         })}
       </div>
 
+      {/* Commercial Positioning Ladder across 4 Editions */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-5">
+        <h3 className="text-sm font-bold text-white">
+          Strategi Diferensiasi 4 Edisi WACRM (Panduan Upgrade Bisnis)
+        </h3>
+        <div className="mt-3 grid gap-3 text-xs md:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/90 p-3.5">
+            <div className="font-extrabold text-slate-200">1. Starter UMKM · Gratis</div>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Mulai digitalisasi toko tanpa biaya: Inbox 2 kanal, POS COD, Label QR, Master Data, &amp; ERP Gudang dasar (2 agen, 300 kontak).
+            </p>
+          </div>
+          <div className="rounded-xl border border-cyan-500/30 bg-cyan-950/20 p-3.5">
+            <div className="font-extrabold text-cyan-200">2. Growth Pro · Scale-Up</div>
+            <p className="mt-1 text-[11px] text-slate-300">
+              Membuka <strong>AI Auto-Reply Zero-Click 24/7</strong>, <strong>Scanner QR Kamera FIFO Anti-Basi</strong>, <strong>SEO Growth AI 6 Kanal</strong>, &amp; <strong>100% White-Label</strong>.
+            </p>
+          </div>
+          <div className="rounded-xl border border-violet-500/35 bg-violet-950/20 p-3.5">
+            <div className="font-extrabold text-violet-200">3. Enterprise AI Suite · Otomasi 9 Agen</div>
+            <p className="mt-1 text-[11px] text-slate-300">
+              Membuka <strong>9 Agen AI Penuh</strong>, <strong>Otak AI Self-Learning Saran Produk &amp; Auto-Bundling</strong>, <strong>Suara AI 24/7</strong>, <strong>Fraud Sentinel</strong>, &amp; <strong>Pembukuan Operasional</strong> (Jurnal Harian, Kas &amp; Laba Rugi Ringkas).
+            </p>
+          </div>
+          <div className="rounded-xl border border-amber-500/40 bg-amber-950/25 p-3.5">
+            <div className="font-extrabold text-amber-200">4. Sovereign Corporate · Full OS</div>
+            <p className="mt-1 text-[11px] text-amber-100/90">
+              Eksklusif membuka <strong>Strategi Marketing Enterprise 5-Agen AI</strong>, <strong>Akuntansi PSAK &amp; SPT Pajak Lengkap</strong>, <strong>ERP Korporat (ABC/MRP/BOM/Opname)</strong>, <strong>HRD &amp; Payroll PPh 21 TER</strong>, <strong>Forecast 90h</strong>, &amp; <strong>Dedicated DB</strong>.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Feature Comparison Matrix */}
       <div className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/90 p-5">
         <h3 className="text-sm font-bold text-white">

@@ -57,6 +57,7 @@ interface PosViewProps {
   onClearHighlight?: () => void;
   initialScannedSku?: string | null;
   onClearScannedSku?: () => void;
+  onOpenEditions?: () => void;
   onRefresh: () => Promise<void>;
   onToast: (message: string, tone?: "ok" | "error") => void;
 }
@@ -78,6 +79,7 @@ export function PosView({
   onClearHighlight,
   initialScannedSku,
   onClearScannedSku,
+  onOpenEditions,
   onRefresh,
   onToast,
 }: PosViewProps) {
@@ -1287,6 +1289,7 @@ export function PosView({
         editionId={editionId}
         businessName={storeProfile.businessName}
         orders={orders}
+        onOpenEditions={onOpenEditions}
         onToast={onToast}
       />
     </div>

@@ -41,6 +41,7 @@ interface SeoGrowthViewProps {
   storeProfile: StoreBusinessProfile;
   onUpdateStoreProfile?: (next: StoreBusinessProfile) => void;
   products: ErpProductRecord[];
+  onOpenEditions?: () => void;
   onRefresh: () => Promise<void>;
   onToast: (message: string, tone?: "ok" | "error") => void;
 }
@@ -62,6 +63,7 @@ export function SeoGrowthView({
   storeProfile,
   onUpdateStoreProfile,
   products,
+  onOpenEditions,
   onRefresh,
   onToast,
 }: SeoGrowthViewProps) {
@@ -859,6 +861,7 @@ export function SeoGrowthView({
       <SovereignSeoSuite
         editionId={editionId}
         businessName={storeProfile.businessName}
+        onOpenEditions={onOpenEditions}
         onToast={onToast}
       />
     </div>

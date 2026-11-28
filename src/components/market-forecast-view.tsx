@@ -4,15 +4,21 @@ import { useMemo, useState } from "react";
 import {
   ArrowUpRight,
   Bot,
+  BrainCircuit,
+  CheckCircle2,
+  Copy,
   Crown,
   Flame,
   LineChart,
   Lock,
   Package,
   Printer,
+  RefreshCw,
+  Rocket,
   Sparkles,
   Target,
   TrendingUp,
+  X,
 } from "lucide-react";
 import { ReportExportHub } from "@/components/report-export-hub";
 import { UniversalPrintPanel } from "@/components/universal-print-panel";
@@ -26,8 +32,14 @@ import {
 } from "@/lib/crm-types";
 import { editionHasFeature } from "@/lib/editions";
 import {
+  buildSmartAutoBundlePlan,
   buildSovereignBuyerInterestForecast,
   buildWinningProductRecommendations,
+  loadAutonomousMarketBrain,
+  runAutonomousKnowledgeUpgrade,
+  saveAutonomousMarketBrain,
+  type AutonomousMarketBrainState,
+  type WinningProductRecommendation,
 } from "@/lib/market-forecasting";
 import {
   buildEscPosTextReport,
@@ -35,26 +47,67 @@ import {
 } from "@/lib/printer";
 
 interface MarketForecastViewProps {
+  tenantId?: string;
   editionId: AppEditionId;
   products: ErpProductRecord[];
   orders: PosOrderRecord[];
   conversations: ConversationRecord[];
   storeProfile: StoreBusinessProfile;
+  onCreateProduct?: (input: {
+    sku: string;
+    name: string;
+    category: string;
+    unit: string;
+    unitPrice: number;
+    costPrice: number;
+    stockQty: number;
+    minStock: number;
+    description: string;
+  }) => Promise<void>;
+  onOpenMarketingStrategy?: () => void;
   onOpenEditions: () => void;
   onNotify: (msg: string) => void;
 }
 
 export function MarketForecastView({
+  tenantId = "default",
   editionId,
   products,
   orders,
   conversations,
   storeProfile,
+  onCreateProduct,
+  onOpenMarketingStrategy,
   onOpenEditions,
   onNotify,
 }: MarketForecastViewProps) {
   const [horizonDays, setHorizonDays] = useState<30 | 60 | 90>(90);
   const hasSovereignForecast = editionHasFeature(editionId, "buyer_interest_forecast");
+
+  // Autonomous Self-Learning Knowledge Brain (v5.3)
+  const [brain, setBrain] = useState<AutonomousMarketBrainState>(() =>
+    loadAutonomousMarketBrain(tenantId),
+  );
+  const [userSignalInput, setUserSignalInput] = useState("");
+  const [upgradingBrain, setUpgradingBrain] = useState(false);
+
+  // Interactive AI Auto-Execution Approval Modal State (Auto-Bundling 3-in-1 OR New Market SKU)
+  const [approvalTarget, setApprovalTarget] = useState<WinningProductRecommendation | null>(null);
+  const [heroProductId, setHeroProductId] = useState<string>("");
+  const [comp1Id, setComp1Id] = useState<string>("");
+  const [comp2Id, setComp2Id] = useState<string>("");
+  const [bundleDiscountPct, setBundleDiscountPct] = useState(12);
+  const [customSku, setCustomSku] = useState("");
+  const [customName, setCustomName] = useState("");
+  const [customCostPrice, setCustomCostPrice] = useState(0);
+  const [customSellPrice, setCustomSellPrice] = useState(0);
+  const [customInitStock, setCustomInitStock] = useState(15);
+  const [executingApproval, setExecutingApproval] = useState(false);
+  const [lastExecutedCopy, setLastExecutedCopy] = useState<{
+    sku: string;
+    name: string;
+    promoCopy: string;
+  } | null>(null);
 
   const productIntel = useMemo(
     () =>
@@ -63,9 +116,134 @@ export function MarketForecastView({
         orders,
         conversations,
         storeName: storeProfile.businessName,
+        brain,
       }),
-    [products, orders, conversations, storeProfile.businessName],
+    [products, orders, conversations, storeProfile.businessName, brain],
   );
+
+  const liveBundlePlan = useMemo(
+    () =>
+      buildSmartAutoBundlePlan({
+        products,
+        orders,
+        storeName: storeProfile.businessName,
+        heroProductId: heroProductId || undefined,
+        companionIds: [comp1Id, comp2Id].filter(Boolean),
+        discountPct: bundleDiscountPct,
+      }),
+    [products, orders, storeProfile.businessName, heroProductId, comp1Id, comp2Id, bundleDiscountPct],
+  );
+
+  function handleUpgradeAutonomousBrain() {
+    setUpgradingBrain(true);
+    const upgraded = runAutonomousKnowledgeUpgrade({
+      currentBrain: brain,
+      products,
+      orders,
+      conversations,
+      newUserSignal: userSignalInput,
+    });
+    setBrain(upgraded);
+    saveAutonomousMarketBrain(tenantId, upgraded);
+    setUserSignalInput("");
+    setUpgradingBrain(false);
+    onNotify(
+      `Pengetahuan AI Otonom berhasil ditingkatkan ke Generasi #${upgraded.generation} — seluruh saran produk diperbarui!`,
+    );
+  }
+
+  function openApprovalWizard(item: WinningProductRecommendation) {
+    setApprovalTarget(item);
+    setLastExecutedCopy(null);
+    if (item.autoExecutionSpec?.actionType === "auto_bundle_3in1") {
+      const initialPlan = buildSmartAutoBundlePlan({
+        products,
+        orders,
+        storeName: storeProfile.businessName,
+        discountPct: 12,
+      });
+      setHeroProductId(initialPlan?.heroProduct.id ?? products[0]?.id ?? "");
+      setComp1Id(initialPlan?.companionProducts[0]?.id ?? "");
+      setComp2Id(initialPlan?.companionProducts[1]?.id ?? "");
+      setBundleDiscountPct(12);
+      setCustomSku(initialPlan?.suggestedSku ?? item.autoExecutionSpec.suggestedSku);
+      setCustomName(initialPlan?.suggestedBundleName ?? item.productName);
+      setCustomInitStock(initialPlan?.suggestedInitialStock ?? 15);
+    } else if (item.autoExecutionSpec) {
+      setCustomSku(item.autoExecutionSpec.suggestedSku);
+      setCustomName(item.productName);
+      setCustomCostPrice(item.autoExecutionSpec.suggestedCostPriceIdr);
+      setCustomSellPrice(item.autoExecutionSpec.suggestedSellPriceIdr);
+      setCustomInitStock(item.autoExecutionSpec.suggestedInitialStock);
+    }
+  }
+
+  async function handleConfirmAutoExecution() {
+    if (!approvalTarget || !approvalTarget.autoExecutionSpec) return;
+    setExecutingApproval(true);
+    try {
+      const isBundle = approvalTarget.autoExecutionSpec.actionType === "auto_bundle_3in1";
+      const finalSku =
+        (isBundle ? customSku || liveBundlePlan?.suggestedSku : customSku) ||
+        approvalTarget.autoExecutionSpec.suggestedSku;
+      const finalName =
+        (isBundle ? customName || liveBundlePlan?.suggestedBundleName : customName) ||
+        approvalTarget.productName;
+      const finalCost = isBundle
+        ? liveBundlePlan?.bundleCostPriceIdr ?? approvalTarget.autoExecutionSpec.suggestedCostPriceIdr
+        : Math.max(0, customCostPrice);
+      const finalSell = isBundle
+        ? liveBundlePlan?.bundleSellPriceIdr ?? approvalTarget.autoExecutionSpec.suggestedSellPriceIdr
+        : Math.max(1000, customSellPrice);
+      const finalPromoCopy = isBundle
+        ? liveBundlePlan?.whatsappBroadcastCopy ?? approvalTarget.autoExecutionSpec.launchPromoCopy
+        : approvalTarget.autoExecutionSpec.launchPromoCopy;
+
+      if (onCreateProduct) {
+        await onCreateProduct({
+          sku: finalSku.trim().toUpperCase(),
+          name: finalName.trim(),
+          category: approvalTarget.category,
+          unit: approvalTarget.autoExecutionSpec.suggestedUnit || "paket",
+          unitPrice: finalSell,
+          costPrice: finalCost,
+          stockQty: Math.max(1, customInitStock),
+          minStock: Math.max(3, Math.floor(customInitStock * 0.25)),
+          description: isBundle && liveBundlePlan
+            ? `Bundling Otomatis AI: ${liveBundlePlan.heroProduct.name} + ${liveBundlePlan.companionProducts.map((c) => c.name).join(" + ")}`
+            : approvalTarget.aiReason,
+        });
+      }
+
+      // Record autonomous learning feedback from user approval!
+      const nextBrain: AutonomousMarketBrainState = {
+        ...brain,
+        generation: brain.generation + 1,
+        approvedExecutionsCount: brain.approvedExecutionsCount + 1,
+        lastUpgradedAt: new Date().toISOString(),
+        learnedPatterns: [
+          {
+            id: `pat-exec-${Date.now()}`,
+            source: "approved_execution" as const,
+            insight: `[Gen #${brain.generation + 1} · Disetujui Owner] SKU "${finalName}" (${finalSku}) resmi diluncurkan di harga ${formatIdr(finalSell)} — AI memantau konversi & repeat ordernya.`,
+            confidencePct: 99,
+            learnedAt: new Date().toISOString(),
+          },
+          ...brain.learnedPatterns,
+        ].slice(0, 14),
+      };
+      setBrain(nextBrain);
+      saveAutonomousMarketBrain(tenantId, nextBrain);
+      setLastExecutedCopy({ sku: finalSku, name: finalName, promoCopy: finalPromoCopy });
+      onNotify(
+        `Berhasil dieksekusi! SKU "${finalName}" (${finalSku}) otomatis masuk ke Master Data, POS & ERP Gudang!`,
+      );
+    } catch {
+      onNotify("Gagal mengeksekusi pembuatan SKU otomatis. Coba ubah kode SKU jika sudah dipakai.");
+    } finally {
+      setExecutingApproval(false);
+    }
+  }
 
   const sovereignForecast = useMemo(
     () =>
@@ -127,50 +305,143 @@ export function MarketForecastView({
           </div>
         </div>
 
-        {/* Winning Products in Catalog */}
-        <div className="mt-5">
-          <h3 className="flex items-center gap-2 text-sm font-extrabold text-white">
-            <Flame className="h-4 w-4 text-amber-400" />
-            Peringkat Produk Katalog Paling Berpotensi Laku Keras
-          </h3>
-          <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {productIntel.topCatalogWinners.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-2xl border border-slate-800 bg-slate-950/90 p-4 text-xs"
+        {/* AUTONOMOUS SELF-LEARNING KNOWLEDGE UPGRADE PANEL (v5.3) */}
+        <div className="mt-4 rounded-2xl border border-cyan-500/35 bg-slate-950/90 p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <BrainCircuit className="h-4 w-4 text-cyan-400" />
+              <span className="text-xs font-extrabold text-cyan-200">
+                Otak Pengetahuan AI Otonom — Generasi #{brain.generation} ({brain.learnedPatterns.length} Pola Pasar Dipelajari · {brain.approvedExecutionsCount} Aksi Disetujui)
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {onOpenMarketingStrategy && (
+                <button
+                  type="button"
+                  onClick={onOpenMarketingStrategy}
+                  className="inline-flex items-center gap-1 rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-1.5 text-[11px] font-extrabold text-amber-200 hover:bg-amber-500/25"
+                >
+                  <Crown className="h-3.5 w-3.5" /> Strategi Marketing Enterprise AI
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={upgradingBrain}
+                onClick={handleUpgradeAutonomousBrain}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-500 px-3 py-1.5 text-[11px] font-extrabold text-slate-950 hover:bg-cyan-400 disabled:opacity-60"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-300">
-                    Skor Peluang {item.opportunityScore}/100
-                  </span>
-                  <span className="font-mono text-[10px] font-bold text-amber-300">
-                    Margin {item.estimatedMarginPct}%
-                  </span>
-                </div>
-                <div className="mt-2 font-extrabold text-white">{item.productName}</div>
-                <div className="mt-0.5 text-[11px] text-cyan-300">
-                  {formatIdr(item.targetPriceIdr)} · {item.bestChannel}
-                </div>
-                <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{item.aiReason}</p>
-                <div className="mt-2.5 rounded-xl border border-violet-500/25 bg-violet-500/10 p-2.5 text-[11px] text-violet-200">
-                  <strong>Saran Aksi AI:</strong> {item.recommendedAction}
-                </div>
+                <RefreshCw className={`h-3.5 w-3.5 ${upgradingBrain ? "animate-spin" : ""}`} />
+                Upgrade Pengetahuan AI Otonom Sekarang
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              value={userSignalInput}
+              onChange={(e) => setUserSignalInput(e.target.value)}
+              placeholder="Opsional: ajari AI sinyal pasar terbaru (mis. 'Pembeli cari hampers <200rb' atau 'Kompetitor naik harga kopi 10%')..."
+              className="flex-1 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs text-white placeholder:text-slate-500 outline-none focus:border-cyan-500"
+            />
+            <button
+              type="button"
+              onClick={handleUpgradeAutonomousBrain}
+              className="rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-3.5 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-500/25"
+            >
+              + Latih &amp; Perbarui Saran AI
+            </button>
+          </div>
+
+          <div className="grid gap-1.5 md:grid-cols-2">
+            {brain.learnedPatterns.slice(0, 4).map((pat) => (
+              <div
+                key={pat.id}
+                className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-[11px] text-slate-300"
+              >
+                <span className="font-bold text-emerald-300">{pat.confidencePct}% yakin · </span>
+                {pat.insight}
               </div>
             ))}
           </div>
         </div>
 
-        {/* New Market Opportunities + Bundling Ideas */}
+        {/* Winning Products in Catalog (100% Product-Specific Non-Generic AI Actions) */}
+        <div className="mt-5">
+          <h3 className="flex items-center gap-2 text-sm font-extrabold text-white">
+            <Flame className="h-4 w-4 text-amber-400" />
+            Peringkat Produk Katalog Paling Berpotensi Laku Keras (Analisis Khusus Per Produk)
+          </h3>
+          <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {productIntel.topCatalogWinners.map((item) => (
+              <div
+                key={item.id}
+                className="flex flex-col justify-between rounded-2xl border border-slate-800 bg-slate-950/90 p-4 text-xs"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-300">
+                      Skor Peluang {item.opportunityScore}/100
+                    </span>
+                    <span className="font-mono text-[10px] font-bold text-amber-300">
+                      Margin {item.estimatedMarginPct}% {item.unitProfitIdr ? `(+${formatIdr(item.unitProfitIdr)})` : ""}
+                    </span>
+                  </div>
+                  <div className="mt-2 font-extrabold text-white">{item.productName}</div>
+                  <div className="mt-0.5 text-[11px] text-cyan-300">
+                    {formatIdr(item.targetPriceIdr)} · {item.bestChannel}
+                  </div>
+                  {item.knowledgeTag && (
+                    <div className="mt-1 inline-block rounded-md bg-slate-900 px-2 py-0.5 text-[10px] text-slate-400">
+                      {item.knowledgeTag} · Est. stok ±{item.stockDaysCover ?? 30} hari
+                    </div>
+                  )}
+                  <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{item.aiReason}</p>
+                  <div className="mt-2.5 rounded-xl border border-violet-500/30 bg-violet-500/10 p-2.5 text-[11px] text-violet-100">
+                    <strong className="text-violet-300">Saran Aksi Khusus AI:</strong>{" "}
+                    {item.recommendedAction}
+                  </div>
+                  {item.tacticalSteps && item.tacticalSteps.length > 0 && (
+                    <ul className="mt-2 space-y-1 text-[10px] text-slate-300">
+                      {item.tacticalSteps.map((step, sIdx) => (
+                        <li key={sIdx} className="flex gap-1.5">
+                          <span className="font-bold text-emerald-400">{sIdx + 1}.</span>
+                          <span>{step}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                {item.promoCopyHook && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(item.promoCopyHook || "");
+                      onNotify(`Hook promo khusus "${item.productName}" disalin ke clipboard!`);
+                    }}
+                    className="mt-3 inline-flex items-center justify-center gap-1 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-[10px] font-bold text-cyan-200 hover:border-cyan-500/50 hover:text-white"
+                  >
+                    <Copy className="h-3 w-3" /> Salin Hook Promosi Produk Ini
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* New Market Opportunities (Clickable Auto-Execution with User Approval!) + Bundling Ideas */}
         <div className="mt-5 grid gap-4 lg:grid-cols-12">
           <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-4 lg:col-span-7">
             <h4 className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-300">
               <Sparkles className="h-4 w-4" /> Rekomendasi Produk Baru Laku di Pasar Nasional (Belum Ada di Katalog)
             </h4>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Klik tombol aksi hijau di bawah setiap rekomendasi — AI menyiapkan langkah kerja, kalkulasi harga/margin, SKU, &amp; naskah promo lalu mengeksekusinya otomatis setelah Anda menyetujuinya.
+            </p>
             <div className="mt-3 space-y-2.5">
               {productIntel.newMarketWinners.map((m) => (
                 <div
                   key={m.id}
-                  className="rounded-xl border border-slate-800 bg-slate-900/90 p-3 text-xs"
+                  className="rounded-xl border border-slate-800 bg-slate-900/90 p-3.5 text-xs space-y-2"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-extrabold text-white">{m.productName}</span>
@@ -178,8 +449,17 @@ export function MarketForecastView({
                       Target {formatIdr(m.targetPriceIdr)} · Margin {m.estimatedMarginPct}%
                     </span>
                   </div>
-                  <p className="mt-1 text-[11px] text-slate-400">{m.aiReason}</p>
-                  <p className="mt-1 text-[11px] font-semibold text-emerald-300">→ {m.recommendedAction}</p>
+                  <p className="text-[11px] text-slate-400">{m.aiReason}</p>
+                  <button
+                    type="button"
+                    onClick={() => openApprovalWizard(m)}
+                    className="flex w-full items-center justify-between gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-left text-[11px] font-extrabold text-emerald-200 transition hover:bg-emerald-500 hover:text-slate-950"
+                  >
+                    <span>→ {m.recommendedAction}</span>
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-slate-950/40 px-2 py-0.5 text-[10px]">
+                      <Rocket className="h-3 w-3" /> Jalankan Otomatis
+                    </span>
+                  </button>
                 </div>
               ))}
             </div>
@@ -619,6 +899,271 @@ export function MarketForecastView({
           })}
         />
       </div>
+
+      {/* AI AUTO-EXECUTION & SMART AUTO-BUNDLING APPROVAL MODAL (v5.3) */}
+      {approvalTarget && approvalTarget.autoExecutionSpec && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 p-4 backdrop-blur-sm">
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-emerald-500/40 bg-slate-900 p-5 text-xs text-slate-100 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3">
+              <div>
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-300">
+                  <Rocket className="h-3 w-3" /> Eksekusi Otomatis AI (Memerlukan Persetujuan Anda)
+                </div>
+                <h3 className="mt-1.5 text-base font-extrabold text-white">
+                  {approvalTarget.autoExecutionSpec.actionType === "auto_bundle_3in1"
+                    ? "AI Smart Auto-Bundling 3-in-1 (1 Hero + 2 Pendamping Stok Berlebih)"
+                    : `Peluncuran Otomatis: ${approvalTarget.productName}`}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setApprovalTarget(null)}
+                className="rounded-lg bg-slate-800 p-1.5 text-slate-300 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {lastExecutedCopy ? (
+              <div className="space-y-3 rounded-2xl border border-emerald-500/40 bg-emerald-950/25 p-4">
+                <div className="flex items-center gap-2 text-sm font-extrabold text-emerald-300">
+                  <CheckCircle2 className="h-5 w-5" />
+                  Berhasil! SKU {lastExecutedCopy.sku} — {lastExecutedCopy.name} sudah aktif di Master Data, POS &amp; ERP!
+                </div>
+                <div className="rounded-xl border border-slate-700 bg-slate-950 p-3">
+                  <div className="mb-1 text-[10px] font-bold uppercase text-cyan-300">
+                    Naskah Broadcast WhatsApp / Promo Siap Kirim (Otomatis Disusun AI):
+                  </div>
+                  <pre className="whitespace-pre-wrap font-sans text-[11px] leading-relaxed text-slate-200">
+                    {lastExecutedCopy.promoCopy}
+                  </pre>
+                </div>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(lastExecutedCopy.promoCopy);
+                      onNotify("Naskah promo WhatsApp disalin ke clipboard!");
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-500 px-4 py-2 font-extrabold text-slate-950 hover:bg-cyan-400"
+                  >
+                    <Copy className="h-3.5 w-3.5" /> Salin Naskah Broadcast WA
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setApprovalTarget(null)}
+                    className="rounded-xl border border-slate-700 px-4 py-2 font-bold text-slate-200"
+                  >
+                    Selesai
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {approvalTarget.autoExecutionSpec.actionType === "auto_bundle_3in1" && liveBundlePlan ? (
+                  <div className="space-y-3">
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <label className="space-y-1">
+                        <span className="text-[10px] font-bold text-amber-300">
+                          1. Produk Terlaris (Hero)
+                        </span>
+                        <select
+                          value={heroProductId || liveBundlePlan.heroProduct.id}
+                          onChange={(e) => setHeroProductId(e.target.value)}
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2.5 py-2 text-white"
+                        >
+                          {products.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({formatIdr(p.unitPrice)})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-[10px] font-bold text-cyan-300">
+                          2. Pendamping Stok Berlebih #1
+                        </span>
+                        <select
+                          value={comp1Id || liveBundlePlan.companionProducts[0]?.id || ""}
+                          onChange={(e) => setComp1Id(e.target.value)}
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2.5 py-2 text-white"
+                        >
+                          <option value="">-- Otomatis AI --</option>
+                          {products.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} (Stok {p.stockQty})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-[10px] font-bold text-cyan-300">
+                          3. Pendamping Stok Berlebih #2
+                        </span>
+                        <select
+                          value={comp2Id || liveBundlePlan.companionProducts[1]?.id || ""}
+                          onChange={(e) => setComp2Id(e.target.value)}
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-2.5 py-2 text-white"
+                        >
+                          <option value="">-- Otomatis AI --</option>
+                          {products.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} (Stok {p.stockQty})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="grid gap-2 sm:grid-cols-4">
+                      <label className="space-y-1 sm:col-span-2">
+                        <span className="text-[10px] text-slate-400">Nama SKU Bundling</span>
+                        <input
+                          value={customName}
+                          onChange={(e) => setCustomName(e.target.value)}
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-[10px] text-slate-400">Kode SKU</span>
+                        <input
+                          value={customSku}
+                          onChange={(e) => setCustomSku(e.target.value)}
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-amber-300"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-[10px] text-slate-400">Diskon Bundling (%)</span>
+                        <input
+                          type="number"
+                          min={5}
+                          max={35}
+                          value={bundleDiscountPct}
+                          onChange={(e) => setBundleDiscountPct(Math.max(5, Math.min(35, Number(e.target.value) || 10)))}
+                          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-emerald-300"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 rounded-2xl border border-emerald-500/30 bg-slate-950 p-3 sm:grid-cols-4">
+                      <div>
+                        <div className="text-[10px] text-slate-400">Harga Normal Gabungan</div>
+                        <div className="font-mono font-bold text-slate-300 line-through">
+                          {formatIdr(liveBundlePlan.normalTotalPriceIdr)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-400">Harga Bundling AI</div>
+                        <div className="font-mono text-sm font-extrabold text-emerald-300">
+                          {formatIdr(liveBundlePlan.bundleSellPriceIdr)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-400">HPP Gabungan</div>
+                        <div className="font-mono font-bold text-amber-300">
+                          {formatIdr(liveBundlePlan.bundleCostPriceIdr)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-slate-400">Laba Bersih / Paket</div>
+                        <div className="font-mono font-extrabold text-cyan-300">
+                          +{formatIdr(liveBundlePlan.projectedProfitPerBundleIdr)} ({liveBundlePlan.projectedMarginPct}%)
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="space-y-1">
+                      <span className="text-[10px] text-slate-400">Nama Produk Baru</span>
+                      <input
+                        value={customName}
+                        onChange={(e) => setCustomName(e.target.value)}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[10px] text-slate-400">Kode SKU</span>
+                      <input
+                        value={customSku}
+                        onChange={(e) => setCustomSku(e.target.value)}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-amber-300"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[10px] text-slate-400">Estimasi HPP / Modal (Rp)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={customCostPrice}
+                        onChange={(e) => setCustomCostPrice(Math.max(0, Number(e.target.value) || 0))}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-white"
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-[10px] text-slate-400">Harga Jual Rekomendasi (Rp)</span>
+                      <input
+                        type="number"
+                        min={1000}
+                        value={customSellPrice}
+                        onChange={(e) => setCustomSellPrice(Math.max(1000, Number(e.target.value) || 0))}
+                        className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-emerald-300"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                <label className="block space-y-1">
+                  <span className="text-[10px] text-slate-400">Stok Awal Siap Jual (Paket/Unit)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={500}
+                    value={customInitStock}
+                    onChange={(e) => setCustomInitStock(Math.max(1, Number(e.target.value) || 10))}
+                    className="w-36 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-white"
+                  />
+                </label>
+
+                <div className="rounded-2xl border border-cyan-500/30 bg-slate-950 p-3.5 space-y-1.5">
+                  <div className="text-[11px] font-extrabold text-cyan-300">
+                    Langkah Kerja Otomatis AI Setelah Anda Menyetujui:
+                  </div>
+                  {(approvalTarget.autoExecutionSpec.actionType === "auto_bundle_3in1" && liveBundlePlan
+                    ? liveBundlePlan.automationSteps
+                    : approvalTarget.autoExecutionSpec.executionSteps
+                  ).map((step, i) => (
+                    <div key={i} className="text-[11px] text-slate-300">
+                      ✓ {step}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap justify-end gap-2 border-t border-slate-800 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setApprovalTarget(null)}
+                    className="rounded-xl border border-slate-700 px-4 py-2 text-slate-300"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    disabled={executingApproval}
+                    onClick={() => void handleConfirmAutoExecution()}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-5 py-2 font-extrabold text-slate-950 hover:bg-emerald-400 disabled:opacity-60"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    {executingApproval
+                      ? "AI Sedang Mengeksekusi..."
+                      : "Setujui & Jalankan Otomatis Sekarang"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

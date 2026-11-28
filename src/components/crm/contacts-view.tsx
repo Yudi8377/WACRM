@@ -405,6 +405,7 @@ export function ContactsView({
           businessName={businessName}
           contacts={contacts}
           orders={orders}
+          onOpenEditions={onUpgradeRequest}
           onToast={(msg, tone) => onToast(msg, tone === "error" ? "error" : "success")}
         />
       </div>

@@ -17,6 +17,10 @@ export type EditionFeatureKey =
   | "super_admin_analytics"
   | "buyer_interest_forecast"
   | "hrd_payroll_corporate"
+  | "sovereign_corporate_accounting"
+  | "sovereign_corporate_erp"
+  | "sovereign_corporate_crm_pos_seo"
+  | "enterprise_marketing_strategy"
   | "custom_branded_apk"
   | "dedicated_db_sla";
 
@@ -110,7 +114,7 @@ export const APP_EDITIONS: AppEditionDefinition[] = [
   {
     id: "enterprise",
     name: "Enterprise AI Suite",
-    tagline: "Trial gratis 7 hari! Seluruh 9 Agen AI Otonom, Saran Produk Terlaris AI, QR FIFO, Pemandu Suara 24/7 & Akuntansi.",
+    tagline: "Trial gratis 7 hari! Seluruh 9 Agen AI Otonom, Saran Produk Terlaris AI + Auto-Bundling, Suara AI 24/7 & Pembukuan Operasional.",
     badge: "Trial 7 Hari · Rekomendasi",
     trialDays: 7,
     monthlyPriceIdr: 699_000,
@@ -141,17 +145,17 @@ export const APP_EDITIONS: AppEditionDefinition[] = [
     ],
     highlights: [
       "Trial Gratis 7 Hari Penuh (otomatis kembali ke Starter UMKM Gratis setelah 7 hari tanpa key)",
-      "Multi-Agent AI Saran Produk Paling Laku & Peluang Pasar + Flash Sale Anti-Basi FIFO",
-      "Scanner QR Kamera Belakang HP terhubung Master Data, Gudang FIFO, POS & Akuntansi Double-Entry",
+      "Otak AI Self-Learning Otonom: Saran Produk Spesifik Anti-Generik + Auto-Bundling 3-in-1 Persetujuan User",
+      "Pembukuan & Akuntansi Operasional: Buku Kas, Jurnal Harian & Laba Rugi Ringkas (Suite PSAK/SPT Pajak di Sovereign)",
       "Seluruh 9 Multi-Agent AI Otonom + Pemandu Suara AI 24/7 Ramah & Hangat",
-      "Akuntansi Double-Entry Neraca & Laba Rugi + Jurnal COD & Persediaan Otomatis",
-      "Fraud Sentinel (Anti-Injection) & Self-Healing Guardian + Login Biometrik",
+      "Scanner QR Kamera Belakang HP → Gudang FIFO Anti-Basi, POS & Jurnal Penjualan Otomatis",
+      "Fraud Sentinel (Anti-Injection) & Self-Healing Guardian + Dashboard Super Admin & SWOT",
     ],
   },
   {
     id: "sovereign",
     name: "Sovereign Corporate",
-    tagline: "Infrastruktur privat, Menu Tren Minat Pembeli & Forecasting 90 Hari, Custom Domain & APK Branded (License Key Resmi).",
+    tagline: "Full Corporate OS: Strategi Marketing Enterprise 5-Agen AI, Akuntansi PSAK & SPT Pajak, ERP Korporat, HRD Payroll & Dedicated DB.",
     badge: "Korporasi · License Key",
     trialDays: 0,
     monthlyPriceIdr: 1_950_000,
@@ -180,13 +184,18 @@ export const APP_EDITIONS: AppEditionDefinition[] = [
       "super_admin_analytics",
       "buyer_interest_forecast",
       "hrd_payroll_corporate",
+      "sovereign_corporate_accounting",
+      "sovereign_corporate_erp",
+      "sovereign_corporate_crm_pos_seo",
+      "enterprise_marketing_strategy",
       "custom_branded_apk",
       "dedicated_db_sla",
     ],
     highlights: [
-      "EKSKLUSIF: Modul HRD & Payroll Korporat (Karyawan, Absensi, Lembur PP 35/2021, BPJS Kes/TK, PPh 21 TER 2024 & Slip Gaji PDF)",
-      "EKSKLUSIF: Akuntansi PSAK & SPT Pajak Lengkap (PPN 11%, PPh Final 0,5%, PPh Badan 31E, PPh 21/23/4(2), Rasio Keuangan & Ekuitas)",
-      "EKSKLUSIF: ERP & Gudang Korporat Penuh (ABC/MRP ROP-EOQ, Multi-Gudang, PO/GRN, BOM Produksi HPP, Stock Opname & Vendor SLA)",
+      "EKSKLUSIF: Strategi Marketing Enterprise (5 Multi-Agent AI: Data, SWOT/Persona, Forecaster ROAS 90h, Roadmap & Skrip)",
+      "EKSKLUSIF: Akuntansi Korporat PSAK & SPT Pajak Lengkap (Neraca, COA 4-Digit, Arus Kas, PPN/PPh Badan/21/23/4(2), Rasio & Audit Ekspor)",
+      "EKSKLUSIF: HRD & Payroll Korporat CRUD + Print (Karyawan, Absensi, Lembur PP 35/2021, Cuti, KPI, BPJS, PPh 21 TER & Slip Gaji)",
+      "EKSKLUSIF: ERP Korporat (ABC/MRP ROP-EOQ, Multi-Gudang, PO/GRN, BOM HPP, Stock Opname, Vendor SLA) + CRM/POS/SEO Korporat",
       "EKSKLUSIF: Tren Minat Pembeli & Forecasting 30–90 Hari, Custom Branded APK Biometrik & Dedicated Neon DB SLA 99.95%",
     ],
   },
@@ -194,21 +203,25 @@ export const APP_EDITIONS: AppEditionDefinition[] = [
 
 export const EDITION_FEATURE_LABELS: Record<EditionFeatureKey, string> = {
   omnichannel_inbox: "Inbox Omnichannel (WA, IG, Messenger, TikTok, YT)",
-  zero_click_ai: "AI Auto-Reply 24/7 Otomatis Tanpa Klik + Eskalasi Admin",
+  zero_click_ai: "AI Auto-Reply 24/7 Otomatis Tanpa Klik + Template Siap Kirim",
   master_data: "Menu Master Data Lengkap (6 Modul) + Cetak & Ekspor PDF/Excel",
   universal_printing_usb_edc: "Cetak Universal: USB-C/Micro-USB OTG, Bluetooth, WiFi, Inkjet/LaserJet & EDC",
   pos_qr_shipping_label: "POS Auto-Invoice, Kustomisasi Layout Faktur, COD Marketplace, Lacak Kiriman & Label QR",
-  erp_warehouse: "ERP Gudang, Supplier, Mutasi Stok, BOM, Stock Opname & Vendor SLA",
-  qr_camera_fifo_scanner: "Scanner QR Kamera Belakang HP → Master Data, Gudang FIFO Anti-Basi & Keuangan",
-  double_entry_accounting: "Akuntansi Double-Entry PSAK, SPT Pajak (PPN/PPh), Neraca & Rasio Keuangan",
+  erp_warehouse: "ERP Gudang Operasional (Produk, Stok Real-Time, Mutasi Keluar-Masuk & Supplier)",
+  qr_camera_fifo_scanner: "Scanner QR Kamera Belakang HP → Master Data, Gudang FIFO Anti-Basi & POS",
+  double_entry_accounting: "Pembukuan & Akuntansi Operasional (Jurnal Harian, Buku Kas, Piutang COD & Laba Rugi Ringkas)",
   seo_growth_ai: "Multi-Agent SEO & Omnichannel Growth AI (6 Kanal)",
   voice_companion_24_7: "24/7 AI Personal Companion Suara & Teks (Memori Kontinu)",
   fraud_sentinel_healing: "Fraud Sentinel (Anti-Injection) & Self-Healing Guardian",
-  ai_product_recommender: "Multi-Agent AI Saran Produk Paling Laku & Analisis Pasar",
+  ai_product_recommender: "AI Self-Learning Otonom: Saran Produk Paling Laku & Auto-Bundling 3-in-1 Persetujuan User",
   white_label_store: "100% White-Label Identitas Toko pada Seluruh Dokumen",
   super_admin_analytics: "Dashboard Super Admin, Analitik SWOT & Auto-Perbaikan",
   buyer_interest_forecast: "Menu Tren Minat Pembeli & Forecasting Permintaan 30–90 Hari (Sovereign)",
-  hrd_payroll_corporate: "Modul HRD & Payroll Korporat: Karyawan, Absensi, Lembur, BPJS, PPh 21 TER & Slip Gaji (Sovereign)",
+  hrd_payroll_corporate: "Modul HRD & Payroll Korporat CRUD + Cetak: Karyawan, Absensi, Lembur, Cuti, KPI, BPJS & PPh 21 TER (Sovereign)",
+  sovereign_corporate_accounting: "Akuntansi Korporat PSAK Penuh: Neraca, COA 4-Digit, Arus Kas, SPT Pajak (PPN/PPh Badan/21/23/4(2)), Rasio & Audit CSV/Excel (Sovereign)",
+  sovereign_corporate_erp: "ERP Korporat: ABC/MRP ROP-EOQ, Multi-Gudang Transfer, PO/GRN, BOM HPP, Stock Opname & Vendor SLA (Sovereign)",
+  sovereign_corporate_crm_pos_seo: "Suite Korporat CRM Pipeline/RFM, POS Shift & VIP Loyalty Tier, serta Audit Teknis SEO & JSON-LD (Sovereign)",
+  enterprise_marketing_strategy: "Strategi Pemasaran Enterprise — 5 Multi-Agent AI (Data, SWOT/Persona, Budget & ROAS 90h, Blueprint & Eksekusi Kampanye) (Sovereign)",
   custom_branded_apk: "Custom Branded Android APK & Custom Domain",
   dedicated_db_sla: "Dedicated Neon Database & SLA Korporasi 99.95%",
 };
