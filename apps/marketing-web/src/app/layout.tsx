@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "WACRM Enterprise v5.3.1 — Platform WhatsApp CRM, ERP, POS, HRD & Akuntansi PSAK 72",
+  title: "WACRM Enterprise v5.3.2 — Split Index · CRM AI, ERP, POS & Akuntansi PSAK 72",
   description:
-    "Platform Enterprise terpadu karya PT WACRM Digital Nusantara: 11 Agen AI WhatsApp CRM, ERP Multi-Gudang FIFO, Kasir POS QR/Barcode, HRD Payroll & Akuntansi PSAK 72. Tersedia Edisi Starter UMKM Gratis Selamanya.",
+    "Platform Enterprise terpadu PT WACRM Digital Nusantara dengan pengalaman Split Index: 11 Agen AI WhatsApp CRM, ERP Multi-Gudang FIFO, Kasir POS QR/Barcode, HRD Payroll & Akuntansi PSAK 72. Mulai gratis untuk UMKM.",
   robots: { index: true, follow: true },
   openGraph: {
     title: "WACRM Enterprise — CRM AI, ERP, POS & Akuntansi PSAK 72 Terpadu",
@@ -21,7 +21,18 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="id">
-      <body className="min-h-screen bg-[#030712] text-slate-100 antialiased">{children}</body>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link
+          href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body className="min-h-screen bg-[#F5F2EB] text-[#141311] antialiased selection:bg-[#141311] selection:text-[#F5F2EB]">
+        {children}
+      </body>
     </html>
   );
 }

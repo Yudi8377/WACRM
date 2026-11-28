@@ -124,8 +124,22 @@ describe("WACRM v5.3.1 Go-Commercial 8-Gate Enterprise Certification Suite", () 
     expect(manifest).toContain("android.permission.POST_NOTIFICATIONS");
 
     const gradle = fs.readFileSync(path.join(REPO_ROOT, "android/app/build.gradle.kts"), "utf8");
-    expect(gradle).toContain('versionName = "5.3.1"');
-    expect(gradle).toContain("versionCode = 9");
+    expect(gradle).toContain('versionName = "5.3.2"');
+    expect(gradle).toContain("versionCode = 10");
+    expect(gradle).toContain("enableV1Signing = true");
+    expect(gradle).toContain("enableV2Signing = true");
+    expect(gradle).toContain("enableV3Signing = true");
+
+    const wf = fs.readFileSync(
+      path.join(REPO_ROOT, ".github/workflows/android-release.yml"),
+      "utf8",
+    );
+    expect(wf).toContain("apksigner");
+    expect(wf).toContain("zipalign");
+    expect(wf).toContain("assembleRelease");
+    expect(fs.existsSync(path.join(REPO_ROOT, "src/app/api/download/android-apk/route.ts"))).toBe(
+      true,
+    );
 
     const mainAct = fs.readFileSync(
       path.join(REPO_ROOT, "android/app/src/main/java/com/wacrm/android/MainActivity.kt"),

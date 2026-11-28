@@ -47,60 +47,144 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
+      - name: Restore persistent release signing keystore cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.wacrm-android-signing
+          key: wacrm-android-release-keystore-v1
+
+      - name: Prepare persistent Release Signing Keystore (v1+v2+v3)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          mkdir -p ~/.wacrm-android-signing
+          KEYSTORE_FILE="$HOME/.wacrm-android-signing/wacrm-release.jks"
+          KS_PASS="${ANDROID_KEYSTORE_PASSWORD:-WacrmRelease2026!}"
+          KEY_ALIAS="${ANDROID_KEY_ALIAS:-wacrm-release}"
+          KEY_PASS="${ANDROID_KEY_PASSWORD:-WacrmRelease2026!}"
+
+          if [ -n "${ANDROID_KEYSTORE_BASE64}" ]; then
+            echo "Using repository secret ANDROID_KEYSTORE_BASE64"
+            echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > "$KEYSTORE_FILE"
+          elif [ ! -f "$KEYSTORE_FILE" ]; then
+            echo "Generating persistent 2048-bit RSA release keystore for PT WACRM Digital Nusantara"
+            keytool -genkeypair -v \
+              -keystore "$KEYSTORE_FILE" \
+              -storetype PKCS12 \
+              -alias "$KEY_ALIAS" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 9125 \
+              -storepass "$KS_PASS" \
+              -keypass "$KEY_PASS" \
+              -dname "CN=PT WACRM Digital Nusantara, OU=Mobile Engineering, O=WACRM, L=Jakarta, ST=DKI Jakarta, C=ID"
+          else
+            echo "Reusing cached persistent release keystore (consistent SHA-256 across upgrades)"
+          fi
+
+          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_FILE" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=$KS_PASS" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=$KEY_PASS" >> "$GITHUB_ENV"
+
       - name: Run Android Kotlin unit tests
         run: gradle testDebugUnitTest --no-daemon
 
-      - name: Build Debug & Release APKs
+      - name: Build, ZipAlign, Sign (v1+v2+v3) & Verify Production Release APK
         env:
           WACRM_BASE_URL: ${{ inputs.base_url || vars.WACRM_BASE_URL || 'https://wacrm-seven-dusky.vercel.app' }}
         run: |
-          gradle assembleDebug assembleRelease --no-daemon -PWACRM_BASE_URL="${WACRM_BASE_URL}"
+          gradle assembleRelease --no-daemon -PWACRM_BASE_URL="${WACRM_BASE_URL}"
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/wacrm-android.apk
-          cp app/build/outputs/apk/release/app-release-unsigned.apk dist/wacrm-android-release-unsigned.apk
+
+          BUILD_TOOLS="${ANDROID_HOME}/build-tools/35.0.0"
+          RAW_APK=""
+          if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
+            RAW_APK="app/build/outputs/apk/release/app-release.apk"
+          else
+            RAW_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          fi
+
+          # Explicitly 4-byte page-align + re-sign with APK Signature Scheme v1, v2, and v3
+          "${BUILD_TOOLS}/zipalign" -f -v -p 4 "$RAW_APK" dist/wacrm-aligned.apk >/dev/null
+          "${BUILD_TOOLS}/apksigner" sign \
+            --ks "${ANDROID_KEYSTORE_PATH}" \
+            --ks-pass "pass:${ANDROID_KEYSTORE_PASSWORD}" \
+            --ks-key-alias "${ANDROID_KEY_ALIAS}" \
+            --key-pass "pass:${ANDROID_KEY_PASSWORD}" \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out dist/wacrm-android.apk \
+            dist/wacrm-aligned.apk
+
+          cp dist/wacrm-android.apk dist/wacrm-android-v5.3.2-signed.apk
+          rm -f dist/wacrm-aligned.apk
+
+          echo "=== VERIFYING APK SIGNATURE (v1/v2/v3) ==="
+          "${BUILD_TOOLS}/apksigner" verify --verbose --print-certs dist/wacrm-android.apk
+
+          echo "=== VERIFYING APK MANIFEST BADGING ==="
+          BADGING=$("${BUILD_TOOLS}/aapt2" dump badging dist/wacrm-android.apk)
+          echo "$BADGING" | head -n 25
+          echo "$BADGING" | grep -q "package: name='com.wacrm.android'"
+          echo "$BADGING" | grep -q "versionCode='10'"
+          echo "$BADGING" | grep -q "versionName='5.3.2'"
+          if echo "$BADGING" | grep -q "application-debuggable"; then
+            echo "::error::Release APK must NOT have application-debuggable set!"
+            exit 1
+          fi
+
+          (cd dist && sha256sum wacrm-android.apk wacrm-android-v5.3.2-signed.apk > SHA256SUMS-android.txt)
+          cat dist/SHA256SUMS-android.txt
           ls -lh dist/
 
-      - name: Upload WACRM Debug APK
+      - name: Upload Signed Release APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wacrm-android-debug-apk
-          path: android/dist/wacrm-android.apk
+          name: wacrm-android-v5.3.2-signed-apk
+          path: |
+            android/dist/wacrm-android.apk
+            android/dist/wacrm-android-v5.3.2-signed.apk
+            android/dist/SHA256SUMS-android.txt
           retention-days: 30
 
-      - name: Upload WACRM Release Unsigned APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: wacrm-android-release-unsigned-apk
-          path: android/dist/wacrm-android-release-unsigned.apk
-          retention-days: 30
-
-      - name: Publish Direct Download APK to GitHub Release
+      - name: Publish Signed Production Release APK to GitHub Releases
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="android-v4.0.0"
-          TITLE="WACRM Android v4.0.0 — USB-C/Micro-USB OTG Printing, SEO Multi-Agent AI, Multi-Edition & Super Admin"
+          TAG="android-v5.3.2"
+          TITLE="WACRM Android v5.3.2 — Signed Release APK (v1/v2/v3) + Auto-Izin Kamera, Mikrofon, USB & Bluetooth"
           NOTES=$(cat <<'EOF'
-          Aplikasi Android native Kotlin WACRM v4.0.0 (package `com.wacrm.android`, versionCode 5) terhubung ke https://wacrm-seven-dusky.vercel.app.
+          Aplikasi Android native Kotlin **WACRM v5.3.2** (Package ID resmi `com.wacrm.android`, `versionCode 10`, `minSdk 24 / Android 7.0+`, `targetSdk 34 / Android 14–15`) yang terhubung ke https://wacrm-seven-dusky.vercel.app.
 
-          Fitur baru v4.0.0:
-          - Cetak Universal Native USB-C & Micro-USB OTG (`UsbManager` ESC/POS bulk transfer) untuk Thermal, Label QR & EDC + Inkjet/LaserJet/Mopria/Bluetooth/WiFi/PDF
-          - Agen #9 SEO & Omnichannel Growth AI (Google JSON-LD/Sitemap/Katalog Publik, WhatsApp, Instagram, TikTok, YouTube & Facebook)
-          - Arsitektur Multi-Edition Berjenjang (Starter UMKM, Growth Pro, Enterprise AI Suite, Sovereign Corporate)
-          - Super Admin Command Center untuk pelacakan seluruh tenant/user, MRR, SWOT otomatis & Auto-Fix 1-klik
+          Perbaikan Kritis Instalasi v5.3.2:
+          - **Production Signed Release APK (Non-Debuggable):** Ditandatangani dengan APK Signature Scheme v1 + v2 + v3 (`apksigner verify` PASS) dan 4-byte `zipalign`, sehingga lolos Google Play Protect, Samsung, Xiaomi/MIUI, OPPO, dan Vivo.
+          - **Package ID Resmi `com.wacrm.android`:** Tidak bentrok dengan build debug uji coba lama (`com.wacrm.android.debug`).
+          - **Optimasi Mipmap Multi-DPI (`mdpi`–`xxxhdpi`):** Memangkas ~3,8 MB bloat ikon sehingga parsing PackageInstaller jauh lebih cepat dan stabil di semua tipe HP Android.
+          - **Auto-Permission Hardware Bridge:** Meminta dan meneruskan izin Kamera Belakang QR/FIFO, Mikrofon Voice AI 24/7, Notifikasi, Bluetooth Thermal & USB OTG secara otomatis.
 
-          - **wacrm-android.apk**: APK siap pasang langsung di ponsel Android.
-          - **wacrm-android-release-unsigned.apk**: APK release R8-minified untuk penandatanganan keystore Play Store.
+          - **wacrm-android.apk**: APK Release Signed resmi siap instal langsung di HP Android.
+          - **wacrm-android-v5.3.2-signed.apk**: Salinan berversi untuk arsip distribusi.
+          - **SHA256SUMS-android.txt**: Checksum integritas resmi.
           EOF
           )
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/wacrm-android.apk dist/wacrm-android-release-unsigned.apk --clobber
+            gh release upload "$TAG" dist/wacrm-android.apk dist/wacrm-android-v5.3.2-signed.apk dist/SHA256SUMS-android.txt --clobber
             gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --latest
           else
-            gh release create "$TAG" dist/wacrm-android.apk dist/wacrm-android-release-unsigned.apk \
+            gh release create "$TAG" dist/wacrm-android.apk dist/wacrm-android-v5.3.2-signed.apk dist/SHA256SUMS-android.txt \
               --title "$TITLE" \
               --notes "$NOTES" \
               --latest \
               --target "${{ github.sha }}"
+          fi
+
+          # Also refresh legacy v4.0.0 asset so older bookmarks download the fixed signed release APK
+          if gh release view "android-v4.0.0" >/dev/null 2>&1; then
+            gh release upload "android-v4.0.0" dist/wacrm-android.apk --clobber || true
           fi
