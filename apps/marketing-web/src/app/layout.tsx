@@ -6,16 +6,16 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
-  themeColor: "#F5F2EB",
+  themeColor: "#00A885",
 };
 
 export const metadata: Metadata = {
-  title: "WACRM Enterprise v5.3.2 — Split Index · CRM AI, ERP, POS & Akuntansi PSAK 72",
+  title: "WACRM Enterprise v5.3.2 — Platform CRM AI, ERP Gudang, POS & Akuntansi PSAK 72",
   description:
-    "Platform Enterprise terpadu PT WACRM Digital Nusantara dengan pengalaman adaptif Split Index: 11 Agen AI WhatsApp CRM, ERP Multi-Gudang FIFO, Kasir POS QR/Barcode, HRD Payroll & Akuntansi PSAK 72. Mulai gratis untuk UMKM.",
+    "Platform bisnis terpadu PT WACRM Digital Nusantara: 11 Agen AI WhatsApp CRM 24/7, ERP Multi-Cabang FIFO, Kasir POS QR/Barcode, HRD Payroll & Akuntansi PSAK 72. Responsif di HP Android, Tablet & Desktop.",
   robots: { index: true, follow: true },
   openGraph: {
-    title: "WACRM Enterprise — CRM AI, ERP, POS & Akuntansi PSAK 72 Terpadu",
+    title: "WACRM Enterprise — Otomasi CRM AI, ERP, POS & Akuntansi PSAK 72",
     description:
       "Satukan penjualan WhatsApp, stok multi-cabang, kasir POS, dan laporan keuangan PSAK 72 dalam satu platform Enterprise Indonesia.",
     type: "website",
@@ -34,11 +34,11 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
-          href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=Raleway:wght@400;500;600;700;800&display=swap"
           rel="stylesheet"
         />
       </head>
-      <body className="min-h-screen overflow-x-clip bg-[#F5F2EB] text-[#141311] antialiased selection:bg-[#141311] selection:text-[#F5F2EB]">
+      <body className="min-h-screen overflow-x-clip bg-white text-[#444444] antialiased selection:bg-[#00A885] selection:text-white">
         {children}
       </body>
     </html>

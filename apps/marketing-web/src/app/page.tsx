@@ -1,36 +1,142 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ArrowUpRight, Check, ChevronRight, Lock, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowRight,
+  Bot,
+  Calculator,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Cpu,
+  Globe,
+  Layers,
+  Lock,
+  Mail,
+  MapPin,
+  Menu,
+  Phone,
+  Plus,
+  Quote,
+  ShieldCheck,
+  Smartphone,
+  Sparkles,
+  X,
+} from "lucide-react";
 import {
   COMMERCIAL_EDITIONS,
   formatIdr,
   type CommercialEditionId,
 } from "@/lib/enterprise-catalog";
-import {
-  SPLIT_INDEX_ITEMS,
-  type SplitNavSection,
-} from "@/lib/split-index-items";
+import { SPLIT_INDEX_ITEMS } from "@/lib/split-index-items";
 import { RegistrationPortal } from "@/components/registration-portal";
 import { LiveAiChatWidget } from "@/components/live-ai-chat-widget";
 
-const NAV_TABS: { id: SplitNavSection; label: string }[] = [
-  { id: "index", label: "Index" },
-  { id: "about", label: "Tentang" },
-  { id: "pricing", label: "Harga" },
-  { id: "register", label: "Daftar" },
+const HERO_SLIDES = [
+  {
+    eyebrow: "Selamat Datang di WACRM",
+    title: "Otomasi Bisnis Anda Setiap Saat",
+    subtitle: "— Satukan CRM AI, ERP Gudang, Kasir POS & Akuntansi PSAK 72 —",
+    image: "/images/split-01-crm.jpg",
+    primaryCta: "Daftar Gratis",
+    secondaryCta: "Jelajahi Modul",
+  },
+  {
+    eyebrow: "11 Agen AI Otonom · 24/7",
+    title: "Ubah Chat WhatsApp Jadi Penjualan",
+    subtitle: "— Respon 3,2 Detik · Skoring Prospek BANT · Follow-Up H+0 s/d H+7 —",
+    image: "/images/split-02-erp.jpg",
+    primaryCta: "Aktifkan AI CRM",
+    secondaryCta: "Hitung ROI",
+  },
+  {
+    eyebrow: "Multi-Cabang & Standar PSAK 72",
+    title: "Kendali Penuh Dari HP & Desktop",
+    subtitle: "— Stok FIFO Real-Time · Kasir QR · Laporan Neraca & PPN 11% Otomatis —",
+    image: "/images/split-03-finance.jpg",
+    primaryCta: "Lihat 4 Edisi",
+    secondaryCta: "Daftar Akses Privat",
+  },
 ];
 
-export default function SplitIndexEnterprisePage() {
-  const [section, setSection] = useState<SplitNavSection>("index");
-  const [activeIndexId, setActiveIndexId] = useState<string>(SPLIT_INDEX_ITEMS[0].id);
-  const [selectedEdition, setSelectedEdition] = useState<CommercialEditionId>("enterprise");
-  const [hoveredEditionId, setHoveredEditionId] = useState<CommercialEditionId>("enterprise");
+const BUSINESS_SLIDES = [
+  {
+    image: "/images/split-01-crm.jpg",
+    tag: "CRM AI · 24/7",
+    caption: "11 Agen AI WhatsApp melayani prospek & follow-up otomatis",
+  },
+  {
+    image: "/images/split-02-erp.jpg",
+    tag: "ERP · FIFO",
+    caption: "Kontrol stok multi-gudang, batch FIFO & Purchase Order",
+  },
+  {
+    image: "/images/split-05-pos.jpg",
+    tag: "POS · QR",
+    caption: "Kasir cepat scan QR/Barcode & cetak struk Bluetooth/USB",
+  },
+  {
+    image: "/images/split-03-finance.jpg",
+    tag: "PSAK 72",
+    caption: "Jurnal double-entry otomatis, Neraca, Laba Rugi & PPN 11%",
+  },
+];
 
-  // Compact ROI calculator inside the "Tentang" editorial panel
+const TESTIMONIALS = [
+  {
+    initials: "HS",
+    name: "Hendra Setiawan",
+    company: "Distribusi Multi-Cabang · Surabaya",
+    quote:
+      "Sebelumnya chat prospek sering terlewat dan stok 6 gudang tidak pernah sinkron. Setelah beralih ke WACRM, balasan WhatsApp ditangani AI 24/7 dan laporan Neraca PSAK langsung jadi otomatis.",
+  },
+  {
+    initials: "RN",
+    name: "Rina Nugraha",
+    company: "Jaringan Retail & F&B · Bandung",
+    quote:
+      "Kasir cabang cukup pakai HP Android untuk scan QR dan cetak struk Bluetooth. Dari kantor pusat saya bisa memantau omzet, HPP FIFO, dan penggajian staf secara real-time.",
+  },
+];
+
+const TRUST_BADGES = [
+  { title: "PSAK 72", sub: "Akuntansi Balance" },
+  { title: "AES-256-GCM", sub: "Enkripsi Data" },
+  { title: "TLS 1.3", sub: "Keamanan Koneksi" },
+  { title: "PostgreSQL RLS", sub: "Isolasi Multi-Tenant" },
+  { title: "Android v5.3.2", sub: "Signed Release APK" },
+  { title: "Windows .EXE", sub: "Offline Installer" },
+];
+
+const NAV_LINKS = [
+  { href: "#beranda", label: "Beranda" },
+  { href: "#keunggulan", label: "Keunggulan" },
+  { href: "#produk", label: "Modul" },
+  { href: "#harga", label: "Harga" },
+  { href: "#roi", label: "ROI" },
+  { href: "#testimoni", label: "Testimoni" },
+];
+
+export default function MadeCorporateEnterprisePage() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [heroIdx, setHeroIdx] = useState(0);
+  const [bizIdx, setBizIdx] = useState(0);
+  const [productPage, setProductPage] = useState<0 | 1>(0);
+  const [inspectModuleId, setInspectModuleId] = useState<string | null>(null);
+  const [selectedEdition, setSelectedEdition] = useState<CommercialEditionId>("enterprise");
+
+  // ROI Calculator state
   const [branches, setBranches] = useState(4);
   const [staffCount, setStaffCount] = useState(14);
   const [dailyChats, setDailyChats] = useState(180);
+
+  // Auto-advance hero slide gently every 6.5s
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setHeroIdx((prev) => (prev + 1) % HERO_SLIDES.length);
+    }, 6500);
+    return () => window.clearInterval(id);
+  }, []);
 
   const roiCalc = useMemo(() => {
     const legacySoftwareCost = branches * 450_000 + staffCount * 85_000;
@@ -63,669 +169,518 @@ export default function SplitIndexEnterprisePage() {
     };
   }, [branches, staffCount, dailyChats]);
 
-  const activeItem =
-    SPLIT_INDEX_ITEMS.find((i) => i.id === activeIndexId) ?? SPLIT_INDEX_ITEMS[0];
-  const hoveredEdition =
-    COMMERCIAL_EDITIONS.find((e) => e.id === hoveredEditionId) ?? COMMERCIAL_EDITIONS[2];
+  const currentHero = HERO_SLIDES[heroIdx];
+  const currentBiz = BUSINESS_SLIDES[bizIdx];
+  const visibleModules =
+    productPage === 0 ? SPLIT_INDEX_ITEMS.slice(0, 4) : SPLIT_INDEX_ITEMS.slice(4, 8);
+  const inspectedModule = SPLIT_INDEX_ITEMS.find((m) => m.id === inspectModuleId) ?? null;
 
-  const canvasImage =
-    section === "about"
-      ? "/images/split-06-hrd.jpg"
-      : section === "register"
-        ? "/images/split-04-register.jpg"
-        : section === "pricing"
-          ? hoveredEdition.id === "sovereign"
-            ? "/images/split-03-finance.jpg"
-            : hoveredEdition.id === "enterprise"
-              ? "/images/split-01-crm.jpg"
-              : hoveredEdition.id === "pro"
-                ? "/images/split-02-erp.jpg"
-                : "/images/split-05-pos.jpg"
-          : activeItem.image;
-
-  function openRegistration(ed?: CommercialEditionId) {
+  function scrollToRegister(ed?: CommercialEditionId) {
     if (ed) setSelectedEdition(ed);
-    setSection("register");
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
-  }
-
-  function switchTab(next: SplitNavSection) {
-    setSection(next);
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
-      window.scrollTo({ top: 0, behavior: "smooth" });
+    setMobileMenuOpen(false);
+    setInspectModuleId(null);
+    const el = document.getElementById("daftar");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-[#F5F2EB] lg:h-screen lg:flex-row lg:overflow-hidden">
+    <div className="min-h-screen w-full bg-white text-[#444444]">
       {/* =====================================================================
-          LEFT COLUMN (DESKTOP 50% SPLIT PANEL) / MAIN ADAPTIVE FLOW (MOBILE & TABLET)
+          1. TOP UTILITY BAR (Desktop lg+) + STICKY WHITE NAVBAR
           ===================================================================== */}
-      <section className="paper-grain flex w-full flex-1 flex-col justify-between bg-[#F5F2EB] lg:h-screen lg:w-1/2 lg:flex-none lg:border-r lg:border-[#141311]/15">
-        {/* ADAPTIVE STICKY HEADER — Zero overflow on 320px–360px Android, 1-row on Tablet & Desktop */}
-        <header className="sticky top-0 z-30 border-b border-[#141311]/12 bg-[#F5F2EB]/95 backdrop-blur-md lg:static lg:bg-transparent lg:backdrop-blur-none">
-          {/* Top Brand Bar */}
-          <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-8 sm:py-4 lg:px-10 lg:py-5">
+      <div className="hidden border-b border-zinc-200 bg-[#F5F5F5] text-xs text-[#666666] lg:block">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-2">
+          <div className="flex items-center gap-5">
+            <span className="inline-flex items-center gap-1.5">
+              <Phone className="h-3.5 w-3.5 text-[#00A885]" />
+              Konsultan AI 24/7 Aktif
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Mail className="h-3.5 w-3.5 text-[#00A885]" />
+              enterprise@wacrm.id
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="inline-flex items-center gap-1 font-semibold text-[#00A885]">
+              <Lock className="h-3.5 w-3.5" /> Akses Aplikasi Privat Terlindungi
+            </span>
+            <span className="text-[#888888]">WACRM Commercial OS v5.3.2</span>
+          </div>
+        </div>
+      </div>
+
+      <header className="sticky top-0 z-40 border-b border-zinc-200/80 bg-white/95 shadow-xs backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
+          {/* Brand Logo */}
+          <a href="#beranda" className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-[#00A885] font-heading text-base font-extrabold text-white shadow-xs">
+              W
+            </span>
+            <div className="leading-tight">
+              <div className="font-heading text-lg font-extrabold tracking-tight text-[#222222]">
+                WACRM<span className="text-[#00A885]">.</span>
+              </div>
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-[#797979]">
+                Enterprise v5.3.2
+              </div>
+            </div>
+          </a>
+
+          {/* Desktop Navigation */}
+          <nav aria-label="Navigasi utama" className="hidden items-center gap-6 lg:flex">
+            {NAV_LINKS.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                className="font-heading text-xs font-bold uppercase tracking-wider text-[#444444] transition hover:text-[#00A885]"
+              >
+                {link.label}
+              </a>
+            ))}
             <button
               type="button"
-              onClick={() => switchTab("index")}
-              className="flex min-w-0 items-baseline gap-2 text-left md:block"
+              onClick={() => scrollToRegister(selectedEdition)}
+              className="rounded bg-[#00A885] px-4 py-2.5 font-heading text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#008C6F]"
             >
-              <div className="font-editorial text-xl font-semibold tracking-tight text-[#141311]">
-                WACRM<span className="italic text-[#0F5132]">.</span>
-              </div>
-              <div className="font-mono-meta whitespace-nowrap text-[10px] uppercase tracking-[0.16em] text-[#6C675E]">
-                <span className="sm:hidden">v5.3.2</span>
-                <span className="hidden sm:inline">Commercial OS · v5.3.2</span>
-              </div>
+              Daftar Gratis
             </button>
+          </nav>
 
-            {/* Tablet & Desktop Horizontal Nav (md+) */}
-            <nav aria-label="Navigasi utama" className="hidden items-center gap-5 md:flex lg:gap-6">
-              {NAV_TABS.map((nav) => {
-                const active = section === nav.id;
-                return (
-                  <button
-                    key={nav.id}
-                    type="button"
-                    onClick={() => switchTab(nav.id)}
-                    className={`font-mono-meta relative whitespace-nowrap pb-1 text-[11px] uppercase tracking-[0.16em] transition ${
-                      active ? "font-medium text-[#141311]" : "text-[#6C675E] hover:text-[#141311]"
-                    }`}
-                  >
-                    {nav.label}
-                    {active && (
-                      <span className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-[#141311]" />
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-
-            {/* Mobile Quick Register CTA (< md) */}
+          {/* Mobile & Tablet Action + Hamburger */}
+          <div className="flex items-center gap-2 lg:hidden">
             <button
               type="button"
-              onClick={() => openRegistration(selectedEdition)}
-              className="font-mono-meta inline-flex shrink-0 items-center gap-1 whitespace-nowrap bg-[#141311] px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest text-[#F5F2EB] transition active:scale-95 md:hidden"
+              onClick={() => scrollToRegister(selectedEdition)}
+              className="rounded bg-[#00A885] px-3.5 py-2 font-heading text-[11px] font-bold uppercase tracking-wider text-white transition active:scale-95"
             >
-              Daftar <ArrowUpRight className="h-3 w-3" />
+              Daftar
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((v) => !v)}
+              aria-label={mobileMenuOpen ? "Tutup menu navigasi" : "Buka menu navigasi"}
+              aria-expanded={mobileMenuOpen}
+              className="flex h-10 w-10 items-center justify-center rounded border border-zinc-200 bg-white text-[#222222] transition hover:border-[#00A885] hover:text-[#00A885]"
+            >
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
           </div>
+        </div>
 
-          {/* Mobile 4-Column Full-Width Segmented Tab Bar (< md) — Touch-friendly 42px height, zero cutoff */}
+        {/* Clean Mobile Slide-Down Drawer */}
+        {mobileMenuOpen && (
           <nav
-            aria-label="Navigasi mobile"
-            className="grid grid-cols-4 border-t border-[#141311]/10 md:hidden"
+            aria-label="Menu mobile"
+            className="made-fade-in border-t border-zinc-200 bg-white px-4 pb-4 pt-2 shadow-lg lg:hidden"
           >
-            {NAV_TABS.map((nav) => {
-              const active = section === nav.id;
-              return (
-                <button
-                  key={nav.id}
-                  type="button"
-                  onClick={() => switchTab(nav.id)}
-                  className={`font-mono-meta relative py-2.5 text-center text-[11px] uppercase tracking-[0.12em] transition ${
-                    active
-                      ? "bg-[#141311]/[0.04] font-semibold text-[#141311]"
-                      : "text-[#6C675E] active:bg-[#141311]/[0.05]"
-                  }`}
+            <div className="flex flex-col divide-y divide-zinc-100">
+              {NAV_LINKS.map((link) => (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="py-3 font-heading text-xs font-bold uppercase tracking-wider text-[#333333] hover:text-[#00A885]"
                 >
-                  {nav.label}
-                  {active && (
-                    <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-[#141311]" />
-                  )}
-                </button>
-              );
-            })}
+                  {link.label}
+                </a>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => scrollToRegister(selectedEdition)}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded bg-[#00A885] px-4 py-3 font-heading text-xs font-bold uppercase tracking-widest text-white"
+            >
+              Daftar &amp; Buka Akses Privat <ArrowRight className="h-4 w-4" />
+            </button>
           </nav>
-        </header>
-
-        {/* ===================================================================
-            MOBILE & TABLET ABOVE-THE-FOLD VISUAL SHOWCASE (< lg ONLY)
-            Ensures Android phones & tablets immediately see the rich editorial
-            visual hero, active module preview, metrics & CTA on first paint!
-            =================================================================== */}
-        <div className="relative z-10 px-4 pt-4 sm:px-8 sm:pt-6 lg:hidden">
-          {section === "index" && (
-            <div className="relative overflow-hidden border border-[#141311]/15 bg-[#111110] text-[#F5F2EB] shadow-md">
-              {/* Background Architectural Image */}
-              <div className="absolute inset-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  key={`mobile-${activeItem.image}`}
-                  src={activeItem.image}
-                  alt={activeItem.title}
-                  className="h-full w-full object-cover opacity-75 transition-all duration-500"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0D0D0C] via-[#0D0D0C]/70 to-[#0D0D0C]/40" />
-              </div>
-
-              {/* Hero Overlay Content */}
-              <div
-                key={`mobile-content-${activeItem.id}`}
-                className="split-panel-enter relative z-10 flex flex-col justify-between gap-4 p-4 sm:p-6 md:grid md:grid-cols-12 md:items-end md:gap-5"
-              >
-                <div className="space-y-2.5 md:col-span-6">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-mono-meta border border-[#F5F2EB]/25 bg-[#141311]/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-emerald-300 backdrop-blur">
-                      {activeItem.num} / 08 · {activeItem.category}
-                    </span>
-                    <span className="font-mono-meta inline-flex items-center gap-1 text-[10px] uppercase tracking-widest text-[#F5F2EB]/75">
-                      <Lock className="h-3 w-3 text-emerald-300" /> Akses Privat
-                    </span>
-                  </div>
-
-                  <h1 className="font-editorial text-2xl font-normal leading-tight text-[#F5F2EB] sm:text-3xl">
-                    {activeItem.title}
-                  </h1>
-                  <p className="text-xs leading-relaxed text-[#F5F2EB]/85 sm:text-sm">
-                    {activeItem.summary}
-                  </p>
-
-                  <div className="flex flex-wrap gap-1.5 pt-0.5">
-                    {activeItem.highlights.map((h) => (
-                      <span
-                        key={h}
-                        className="font-mono-meta border border-[#F5F2EB]/20 bg-[#141311]/60 px-2 py-0.5 text-[10px] text-[#F5F2EB]/90"
-                      >
-                        {h}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Metrics & CTA Column */}
-                <div className="space-y-3 md:col-span-6">
-                  <div className="grid grid-cols-3 gap-2">
-                    {activeItem.metrics.map((m) => (
-                      <div
-                        key={m.label}
-                        className="border border-[#F5F2EB]/20 bg-[#141311]/75 p-2.5 backdrop-blur-md"
-                      >
-                        <div className="font-mono-meta truncate text-[9px] uppercase tracking-wider text-[#F5F2EB]/65">
-                          {m.label}
-                        </div>
-                        <div className="font-editorial mt-0.5 whitespace-nowrap text-base font-medium text-[#F5F2EB] sm:text-lg">
-                          {m.value}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (activeItem.suggestedEdition) {
-                        setSelectedEdition(activeItem.suggestedEdition);
-                      }
-                      switchTab(activeItem.actionTarget);
-                    }}
-                    className="font-mono-meta inline-flex w-full items-center justify-center gap-1.5 border border-[#F5F2EB] bg-[#F5F2EB] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-widest text-[#141311] transition hover:bg-transparent hover:text-[#F5F2EB]"
-                  >
-                    {activeItem.actionLabel} <ArrowUpRight className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {section === "about" && (
-            <div className="relative overflow-hidden border border-[#141311]/15 bg-[#111110] p-5 text-[#F5F2EB] sm:p-6">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/images/split-06-hrd.jpg"
-                alt="PT WACRM Digital Nusantara"
-                className="absolute inset-0 h-full w-full object-cover opacity-55"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0D0D0C] via-[#0D0D0C]/70 to-[#0D0D0C]/45" />
-              <div className="relative z-10 space-y-2">
-                <span className="font-mono-meta text-[10px] uppercase tracking-[0.2em] text-emerald-300">
-                  Profil &amp; ROI Enterprise
-                </span>
-                <p className="font-editorial text-xl italic leading-snug sm:text-2xl">
-                  &ldquo;Pertumbuhan bisnis skala enterprise lahir dari data yang bersih, respon
-                  yang seketika, dan pembukuan yang selalu seimbang.&rdquo;
-                </p>
-              </div>
-            </div>
-          )}
-
-          {section === "register" && (
-            <div className="relative overflow-hidden border border-[#141311]/15 bg-[#111110] p-5 text-[#F5F2EB] sm:p-6">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/images/split-04-register.jpg"
-                alt="Onboarding Privat WACRM"
-                className="absolute inset-0 h-full w-full object-cover opacity-50"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0D0D0C] via-[#0D0D0C]/75 to-[#0D0D0C]/45" />
-              <div className="relative z-10 space-y-3">
-                <span className="font-mono-meta text-[10px] uppercase tracking-[0.2em] text-emerald-300">
-                  Onboarding Privat Terverifikasi
-                </span>
-                <div className="grid grid-cols-2 gap-2.5 text-[11px]">
-                  <div className="border border-[#F5F2EB]/20 bg-[#141311]/70 p-3 backdrop-blur">
-                    <div className="font-mono-meta text-[9px] uppercase tracking-widest text-emerald-300">
-                      Langkah 01
-                    </div>
-                    <div className="mt-1 leading-snug text-[#F5F2EB]">
-                      Isi data bisnis &amp; pilih edisi
-                    </div>
-                  </div>
-                  <div className="border border-[#F5F2EB]/20 bg-[#141311]/70 p-3 backdrop-blur">
-                    <div className="font-mono-meta text-[9px] uppercase tracking-widest text-emerald-300">
-                      Langkah 02
-                    </div>
-                    <div className="mt-1 leading-snug text-[#F5F2EB]">
-                      Akses privat terbuka &amp; lanjut ke Publisher HQ
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ===================================================================
-            SWAPPABLE MAIN CONTENT PANEL
-            =================================================================== */}
-        <div className="editorial-scroll relative z-10 flex-1 px-4 py-6 sm:px-8 sm:py-8 lg:overflow-y-auto lg:px-10 lg:py-9">
-          {/* TAB 1: SIGNATURE 01–08 SPLIT INDEX (100% Untruncated Mobile/Tablet + Desktop Wipe) */}
-          {section === "index" && (
-            <div className="split-panel-enter flex h-full flex-col justify-between">
-              <div>
-                <div className="mb-3.5 flex items-center justify-between gap-2">
-                  <span className="font-mono-meta whitespace-nowrap text-[10px] uppercase tracking-[0.18em] text-[#6C675E]">
-                    <span className="sm:hidden">Ekosistem 2026</span>
-                    <span className="hidden sm:inline">Ekosistem Enterprise — 2024 / 2026</span>
-                  </span>
-                  <span className="font-mono-meta hidden items-center gap-1 whitespace-nowrap text-[10px] uppercase tracking-widest text-[#0F5132] lg:inline-flex">
-                    <Lock className="h-3 w-3" /> Akses Privat
-                  </span>
-                  <span className="font-mono-meta whitespace-nowrap text-[10px] uppercase tracking-widest text-[#0F5132] lg:hidden">
-                    Ketuk Modul
-                  </span>
-                </div>
-
-                {/* Responsive Grid: 1 col on Android Phone, 2 cols on Tablet, 1 clean list on Desktop Split */}
-                <ul className="grid grid-cols-1 border-t border-[#141311]/15 md:grid-cols-2 md:gap-x-5 lg:grid-cols-1 lg:gap-x-0">
-                  {SPLIT_INDEX_ITEMS.map((item) => {
-                    const active = activeItem.id === item.id;
-                    return (
-                      <li key={item.id} className="border-b border-[#141311]/15">
-                        <button
-                          type="button"
-                          data-active={active}
-                          onMouseEnter={() => setActiveIndexId(item.id)}
-                          onFocus={() => setActiveIndexId(item.id)}
-                          onClick={() => {
-                            const isDesktop =
-                              typeof window !== "undefined" && window.innerWidth >= 1024;
-                            setActiveIndexId(item.id);
-                            if (item.suggestedEdition) {
-                              setSelectedEdition(item.suggestedEdition);
-                            }
-                            if (isDesktop && item.actionTarget !== "index") {
-                              setSection(item.actionTarget);
-                            } else if (!isDesktop) {
-                              window.scrollTo({ top: 0, behavior: "smooth" });
-                            }
-                          }}
-                          className="split-wipe-row flex w-full items-center justify-between gap-3 px-3 py-3.5 text-left lg:items-baseline lg:px-2.5 lg:py-4"
-                        >
-                          <div className="flex min-w-0 items-start gap-3.5 lg:items-baseline lg:gap-4">
-                            <span className="font-mono-meta split-row-muted mt-1 shrink-0 text-[11px] tracking-widest text-[#6C675E] lg:mt-0">
-                              {item.num}
-                            </span>
-                            <div className="min-w-0">
-                              <div className="font-editorial text-lg font-normal leading-snug tracking-tight sm:text-xl lg:text-xl xl:text-2xl">
-                                {item.title}
-                              </div>
-                              {/* Category displayed underneath on Android/Tablet so title NEVER truncates */}
-                              <div className="font-mono-meta split-row-muted mt-0.5 text-[10px] uppercase tracking-[0.14em] text-[#6C675E] lg:hidden">
-                                {item.category}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Category aligned right on Desktop; compact chevron indicator on Mobile/Tablet */}
-                          <span className="font-mono-meta split-row-muted hidden shrink-0 text-[10px] uppercase tracking-[0.14em] text-[#6C675E] lg:inline">
-                            {item.category}
-                          </span>
-                          <ChevronRight className="split-row-muted h-4 w-4 shrink-0 text-[#6C675E] lg:hidden" />
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-
-              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 pt-2">
-                <div className="font-mono-meta text-[10px] uppercase tracking-[0.16em] text-[#6C675E]">
-                  8 Modul Inti · Cloud &amp; Native Android/Windows
-                </div>
-                <button
-                  type="button"
-                  onClick={() => openRegistration("enterprise")}
-                  className="font-mono-meta inline-flex items-center gap-1 border-b border-[#141311] pb-0.5 text-[11px] font-medium uppercase tracking-widest text-[#141311] transition hover:border-[#0F5132] hover:text-[#0F5132]"
-                >
-                  Daftar Akses Privat <ArrowUpRight className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: TENTANG STUDIO + INTERACTIVE ROI SIMULATOR */}
-          {section === "about" && (
-            <div className="split-panel-enter space-y-6 md:grid md:grid-cols-12 md:gap-7 md:space-y-0 lg:block lg:space-y-7">
-              <div className="space-y-5 md:col-span-6 lg:col-span-12">
-                <div className="space-y-3">
-                  <div className="font-mono-meta text-[10px] uppercase tracking-[0.2em] text-[#6C675E]">
-                    Tentang PT WACRM Digital Nusantara
-                  </div>
-                  <h1 className="font-editorial text-2xl font-normal leading-[1.18] tracking-tight text-[#141311] sm:text-3xl lg:text-4xl">
-                    Kami menyatukan kerumitan operasional menjadi{" "}
-                    <em className="italic text-[#0F5132]">satu kendali presisi</em>.
-                  </h1>
-                  <p className="text-sm leading-relaxed text-[#524E47]">
-                    WACRM Commercial OS v5.3.2 dirancang khusus untuk realitas bisnis Indonesia —
-                    menghubungkan percakapan pertama di WhatsApp, 11 Agen AI otonom, gudang FIFO
-                    multi-cabang, kasir POS hardware-ready, HRD Payroll, hingga laporan Neraca PSAK
-                    72 dalam satu arsitektur terenkripsi AES-256-GCM.
-                  </p>
-                </div>
-
-                {/* Signature 3-Column Editorial Stats */}
-                <div className="grid grid-cols-3 gap-3 border-y border-[#141311]/15 py-4 sm:gap-4 sm:py-5">
-                  <div>
-                    <div className="font-editorial text-2xl text-[#141311] sm:text-3xl">11+</div>
-                    <div className="font-mono-meta mt-1 text-[9px] uppercase tracking-wider text-[#6C675E] sm:text-[10px]">
-                      Agen AI 24/7
-                    </div>
-                  </div>
-                  <div>
-                    <div className="font-editorial text-2xl text-[#141311] sm:text-3xl">100%</div>
-                    <div className="font-mono-meta mt-1 text-[9px] uppercase tracking-wider text-[#6C675E] sm:text-[10px]">
-                      Balance PSAK
-                    </div>
-                  </div>
-                  <div>
-                    <div className="font-editorial text-2xl text-[#0F5132] sm:text-3xl">Rp 0</div>
-                    <div className="font-mono-meta mt-1 text-[9px] uppercase tracking-wider text-[#6C675E] sm:text-[10px]">
-                      Starter UMKM
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Editorial ROI Simulator */}
-              <div className="space-y-4 border border-[#141311]/15 bg-[#ECE7DC]/70 p-4 sm:p-5 md:col-span-6 lg:col-span-12">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-mono-meta text-[10px] uppercase tracking-widest text-[#141311]">
-                    Simulasi ROI Operasional
-                  </span>
-                  <span className="font-mono-meta inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-[#0F5132]">
-                    <Sparkles className="h-3 w-3" /> {roiCalc.recName}
-                  </span>
-                </div>
-
-                <div className="space-y-3.5 text-xs">
-                  <div>
-                    <div className="mb-1.5 flex justify-between">
-                      <span className="text-[#524E47]">Jumlah Cabang / Gudang</span>
-                      <span className="font-mono-meta font-medium">{branches} Cabang</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={1}
-                      max={30}
-                      value={branches}
-                      onChange={(e) => setBranches(Number(e.target.value))}
-                      className="h-2 w-full accent-[#141311]"
-                    />
-                  </div>
-                  <div>
-                    <div className="mb-1.5 flex justify-between">
-                      <span className="text-[#524E47]">Staf Operasional &amp; Sales</span>
-                      <span className="font-mono-meta font-medium">{staffCount} Staf</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={1}
-                      max={80}
-                      value={staffCount}
-                      onChange={(e) => setStaffCount(Number(e.target.value))}
-                      className="h-2 w-full accent-[#141311]"
-                    />
-                  </div>
-                  <div>
-                    <div className="mb-1.5 flex justify-between">
-                      <span className="text-[#524E47]">Chat Prospek WA / Hari</span>
-                      <span className="font-mono-meta font-medium">{dailyChats} Chat/Hari</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={20}
-                      max={800}
-                      step={10}
-                      value={dailyChats}
-                      onChange={(e) => setDailyChats(Number(e.target.value))}
-                      className="h-2 w-full accent-[#141311]"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-3 border-t border-[#141311]/15 pt-4 sm:flex-row sm:items-end sm:justify-between">
-                  <div>
-                    <div className="font-mono-meta text-[10px] uppercase tracking-wider text-[#6C675E]">
-                      Estimasi Efisiensi &amp; Omzet / Bulan
-                    </div>
-                    <div className="font-editorial text-2xl font-semibold text-[#0F5132]">
-                      {formatIdr(roiCalc.monthlyImpact)}
-                    </div>
-                    <div className="font-mono-meta text-[10px] text-[#6C675E]">
-                      {roiCalc.savedHours} jam/bln · {formatIdr(roiCalc.annualImpact)}/thn
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => openRegistration(roiCalc.rec)}
-                    className="split-wipe-btn font-mono-meta w-full px-4 py-2.5 text-center text-[10px] uppercase tracking-widest sm:w-auto sm:py-2"
-                  >
-                    Aktifkan {roiCalc.recName} →
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: 4 COMMERCIAL EDITIONS (1 col Mobile, 2x2 Grid Tablet, Editorial List Desktop) */}
-          {section === "pricing" && (
-            <div className="split-panel-enter space-y-5">
-              <div>
-                <div className="font-mono-meta text-[10px] uppercase tracking-[0.2em] text-[#6C675E]">
-                  Skema Lisensi Komersial — v5.3.2
-                </div>
-                <h1 className="font-editorial mt-1.5 text-2xl font-normal text-[#141311] sm:text-3xl">
-                  Empat jenjang transparan,{" "}
-                  <em className="italic text-[#0F5132]">mulai gratis</em>.
-                </h1>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-1 lg:gap-0 lg:border-t lg:border-[#141311]/15">
-                {COMMERCIAL_EDITIONS.map((ed, idx) => {
-                  const active = hoveredEditionId === ed.id;
-                  return (
-                    <div
-                      key={ed.id}
-                      onMouseEnter={() => setHoveredEditionId(ed.id)}
-                      className={`flex flex-col justify-between border border-[#141311]/15 p-4 transition lg:border-x-0 lg:border-t-0 lg:px-3 lg:py-4 ${
-                        active ? "bg-[#ECE7DC]/80" : "bg-[#F5F2EB] hover:bg-[#ECE7DC]/40"
-                      }`}
-                    >
-                      <div>
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-mono-meta text-[11px] text-[#6C675E]">
-                                0{idx + 1}
-                              </span>
-                              <h2 className="font-editorial text-xl text-[#141311]">{ed.name}</h2>
-                              <span className="font-mono-meta whitespace-nowrap border border-[#141311]/20 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[#0F5132]">
-                                {ed.badge}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap items-baseline gap-2 sm:block sm:shrink-0 sm:text-right">
-                            <div className="font-mono-meta text-base font-semibold text-[#141311] sm:text-sm">
-                              {ed.monthlyPriceLabel}
-                              {ed.monthlyValueIdr > 0 && (
-                                <span className="text-[10px] font-normal text-[#6C675E]">/bln</span>
-                              )}
-                            </div>
-                            <div className="font-mono-meta text-[10px] text-[#6C675E] lg:hidden">
-                              {ed.annualPriceLabel}
-                            </div>
-                          </div>
-                        </div>
-
-                        <p className="mt-2 text-xs leading-relaxed text-[#524E47] lg:pl-7">
-                          {ed.tagline}
-                        </p>
-
-                        {/* Show full feature checklist directly on Mobile & Tablet (shown on Right Canvas on Desktop) */}
-                        <ul className="mt-3 space-y-1.5 border-t border-[#141311]/10 pt-3 text-xs text-[#2E2C28] lg:hidden">
-                          {ed.features.slice(0, 4).map((feat) => (
-                            <li key={feat} className="flex items-start gap-2">
-                              <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#0F5132]" />
-                              <span>{feat}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      <div className="mt-4 flex flex-col gap-2.5 pt-2 sm:flex-row sm:items-center sm:justify-between lg:mt-3 lg:pl-7 lg:pt-0">
-                        <div className="font-mono-meta text-[10px] text-[#6C675E]">
-                          {ed.metrics.seats} · {ed.metrics.branches} · {ed.metrics.aiAgents}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => openRegistration(ed.id)}
-                          className="split-wipe-btn font-mono-meta w-full px-3.5 py-2 text-center text-[10px] uppercase tracking-widest sm:w-auto sm:py-1.5"
-                        >
-                          {ed.ctaLabel} →
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: EDITORIAL UNDERLINE GATED REGISTRATION PORTAL */}
-          {section === "register" && (
-            <div id="daftar" className="split-panel-enter space-y-5">
-              <div>
-                <div className="font-mono-meta text-[10px] uppercase tracking-[0.2em] text-[#6C675E]">
-                  Gerbang Pendaftaran &amp; Akses Privat Resmi
-                </div>
-                <h1 className="font-editorial mt-1.5 text-2xl font-normal text-[#141311] sm:text-3xl">
-                  Mulai aktivasi <em className="italic text-[#0F5132]">perusahaan Anda</em>.
-                </h1>
-              </div>
-              <RegistrationPortal
-                selectedEdition={selectedEdition}
-                onChangeEdition={setSelectedEdition}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* SINGLE BOTTOM FOOTER — Safe pb-20 on mobile/tablet so floating AI button NEVER overlaps text */}
-        <footer className="relative z-10 flex flex-wrap items-center justify-between gap-2 border-t border-[#141311]/12 px-4 pb-20 pt-4 sm:px-8 lg:px-10 lg:py-3.5">
-          <span className="font-mono-meta text-[10px] uppercase tracking-[0.14em] text-[#6C675E]">
-            PT WACRM Digital Nusantara · Pure-Free Enterprise UI
-          </span>
-          <span className="font-mono-meta text-[10px] text-[#6C675E]">
-            TLS 1.3 · AES-256-GCM · PSAK 72
-          </span>
-        </footer>
-      </section>
+        )}
+      </header>
 
       {/* =====================================================================
-          RIGHT 50% — FULL-HEIGHT CINEMATIC IMAGE & LIVE CANVAS (DESKTOP lg+ ONLY)
-          On Mobile & Tablet (< lg), the visual hero already renders at the TOP
-          of the page above the fold, eliminating duplicate below-the-fold panels!
+          2. HERO BANNER CAROUSEL (Signature Made Dark Full-Bleed Slider)
           ===================================================================== */}
-      <aside className="relative hidden lg:flex lg:h-screen lg:w-1/2 lg:flex-col lg:justify-between lg:overflow-hidden bg-[#111110] text-[#F5F2EB]">
-        {/* Smooth Fade & Scale Editorial Background Image Layer */}
+      <section
+        id="beranda"
+        className="relative flex min-h-[510px] w-full items-center overflow-hidden bg-[#222222] text-white sm:min-h-[560px] lg:min-h-[620px]"
+      >
+        {/* Background Photo + High-Contrast Dark Overlay */}
         <div className="absolute inset-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            key={canvasImage}
-            src={canvasImage}
-            alt="WACRM Enterprise Editorial Canvas"
-            className="h-full w-full object-cover opacity-80 transition-all duration-700 ease-out"
-            style={{ transform: "scale(1.02)" }}
+            key={currentHero.image}
+            src={currentHero.image}
+            alt={currentHero.title}
+            className="h-full w-full object-cover opacity-45 transition-all duration-700"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#0D0D0C] via-[#0D0D0C]/45 to-[#0D0D0C]/35" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#161918]/75 via-[#161918]/65 to-[#161918]/85" />
         </div>
 
-        {/* Top Canvas Metadata Bar */}
-        <div className="relative z-10 flex items-center justify-between px-10 py-5">
-          <span className="font-mono-meta border border-[#F5F2EB]/25 bg-[#141311]/60 px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-[#F5F2EB] backdrop-blur">
-            {section === "index"
-              ? `${activeItem.num} / 08 · ${activeItem.category}`
-              : section === "pricing"
-                ? `LISENSI · ${hoveredEdition.name.toUpperCase()}`
-                : section === "about"
-                  ? "PROFIL & ROI ENTERPRISE"
-                  : "ONBOARDING PRIVAT TERVERIFIKASI"}
-          </span>
-          <span className="font-mono-meta text-[10px] uppercase tracking-[0.2em] text-[#F5F2EB]/75">
-            Indonesia · Cloud &amp; Native
-          </span>
-        </div>
+        {/* Desktop Left/Right Arrows */}
+        <button
+          type="button"
+          onClick={() => setHeroIdx((prev) => (prev - 1 + HERO_SLIDES.length) % HERO_SLIDES.length)}
+          aria-label="Slide sebelumnya"
+          className="absolute left-4 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-black/30 text-white transition hover:border-[#00A885] hover:bg-[#00A885] md:flex"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setHeroIdx((prev) => (prev + 1) % HERO_SLIDES.length)}
+          aria-label="Slide berikutnya"
+          className="absolute right-4 top-1/2 z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-black/30 text-white transition hover:border-[#00A885] hover:bg-[#00A885] md:flex"
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
 
-        {/* Center/Bottom Editorial Showcase Overlay */}
-        <div className="relative z-10 space-y-5 px-10 pb-20 pt-8">
-          {section === "index" && (
-            <div key={activeItem.id} className="split-panel-enter space-y-4">
-              <div className="grid grid-cols-3 gap-2.5">
-                {activeItem.metrics.map((m) => (
-                  <div
-                    key={m.label}
-                    className="border border-[#F5F2EB]/15 bg-[#141311]/70 p-3 backdrop-blur-md"
+        {/* Centered Hero Content */}
+        <div className="relative z-10 mx-auto w-full max-w-4xl px-5 py-14 text-center sm:px-8 sm:py-20">
+          <div key={heroIdx} className="made-fade-in">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#00A885]/50 bg-[#00A885]/20 px-3.5 py-1 text-[11px] font-bold uppercase tracking-widest text-emerald-200">
+              <Sparkles className="h-3.5 w-3.5 text-[#00D4A8]" />
+              {currentHero.eyebrow}
+            </div>
+
+            <h1 className="font-heading mt-4 text-3xl font-extrabold leading-[1.18] tracking-tight text-white sm:text-5xl lg:text-[54px]">
+              {currentHero.title}
+            </h1>
+
+            <p className="mx-auto mt-3.5 max-w-2xl text-sm font-medium leading-relaxed text-zinc-200 sm:text-base">
+              {currentHero.subtitle}
+            </p>
+
+            {/* Dual CTA Buttons — Full width stacked on Android, horizontal on sm+ */}
+            <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4">
+              <button
+                type="button"
+                onClick={() => scrollToRegister(selectedEdition)}
+                className="inline-flex w-full items-center justify-center gap-2 rounded bg-[#00A885] px-7 py-3.5 font-heading text-xs font-bold uppercase tracking-widest text-white shadow-lg shadow-[#00A885]/30 transition hover:bg-[#008C6F] sm:w-auto"
+              >
+                {currentHero.primaryCta} <ArrowRight className="h-4 w-4" />
+              </button>
+              <a
+                href={heroIdx === 1 ? "#roi" : "#produk"}
+                className="inline-flex w-full items-center justify-center gap-2 rounded border-2 border-white/80 bg-transparent px-7 py-3 font-heading text-xs font-bold uppercase tracking-widest text-white transition hover:border-[#00A885] hover:bg-[#00A885] sm:w-auto"
+              >
+                {currentHero.secondaryCta}
+              </a>
+            </div>
+          </div>
+
+          {/* Slide Indicators (1 · 2 · 3) */}
+          <div className="mt-9 flex items-center justify-center gap-2.5">
+            {HERO_SLIDES.map((slide, idx) => (
+              <button
+                key={slide.title}
+                type="button"
+                onClick={() => setHeroIdx(idx)}
+                aria-label={`Pilih slide ${idx + 1}`}
+                className={`h-2.5 rounded-full transition-all ${
+                  idx === heroIdx ? "w-8 bg-[#00A885]" : "w-2.5 bg-white/45 hover:bg-white/80"
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================================
+          3. THREE CORE FEATURES (Signature Made Icon-Left White Section)
+          ===================================================================== */}
+      <section id="keunggulan" className="scroll-mt-20 bg-white py-14 sm:py-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-3 md:gap-9">
+            {[
+              {
+                icon: Bot,
+                title: "11 Agen AI & Omnichannel WA",
+                desc: "Menjawab chat masuk otomatis 24/7 dalam 3,2 detik, melakukan skoring prospek BANT, dan follow-up terjadwal H+0 hingga H+7.",
+              },
+              {
+                icon: Layers,
+                title: "ERP FIFO, POS & Akuntansi PSAK 72",
+                desc: "Setiap transaksi kasir QR otomatis memotong stok FIFO multi-gudang sekaligus menjurnal Neraca, Laba Rugi, dan PPN 11%.",
+              },
+              {
+                icon: Smartphone,
+                title: "Adaptif Android, Tablet & Windows",
+                desc: "Dirancang responsif untuk layar HP Android, Tablet, Web Desktop, hingga installer native APK Android v5.3.2 & Windows .EXE.",
+              },
+            ].map((feat) => {
+              const Icon = feat.icon;
+              return (
+                <div key={feat.title} className="flex items-start gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-[#E6F7F3] text-[#00A885]">
+                    <Icon className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h2 className="font-heading text-base font-bold text-[#222222] sm:text-lg">
+                      {feat.title}
+                    </h2>
+                    <p className="mt-1.5 text-sm leading-relaxed text-[#797979]">{feat.desc}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================================
+          4. BUSINESS HIGHLIGHT + BROWSER-FRAME SLIDER (Signature Made Grey Section)
+          ===================================================================== */}
+      <section id="bisnis" className="scroll-mt-20 border-y border-zinc-200/70 bg-[#F5F5F5] py-14 sm:py-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-12 lg:gap-12">
+            {/* Left: Browser-Top Frame Slider (.slid_shap #00A885) */}
+            <div className="lg:col-span-6">
+              <div className="overflow-hidden rounded-lg bg-white shadow-lg ring-1 ring-black/5">
+                {/* Signature Emerald Browser Header Bar */}
+                <div className="flex h-10 items-center justify-between bg-[#00A885] px-4 text-white">
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-white/85" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-white/60" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-white/40" />
+                  </div>
+                  <span className="text-[11px] font-bold uppercase tracking-widest">
+                    {currentBiz.tag}
+                  </span>
+                </div>
+
+                {/* Image Viewport */}
+                <div className="relative aspect-[16/10] w-full overflow-hidden bg-[#222222]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    key={currentBiz.image}
+                    src={currentBiz.image}
+                    alt={currentBiz.caption}
+                    className="h-full w-full object-cover transition-all duration-500"
+                  />
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-4 text-white">
+                    <p className="text-xs font-medium sm:text-sm">{currentBiz.caption}</p>
+                  </div>
+
+                  {/* Prev / Next Controls */}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBizIdx((p) => (p - 1 + BUSINESS_SLIDES.length) % BUSINESS_SLIDES.length)
+                    }
+                    aria-label="Pratinjau sebelumnya"
+                    className="absolute left-2.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white transition hover:bg-[#00A885]"
                   >
-                    <div className="font-mono-meta text-[9px] uppercase tracking-widest text-[#F5F2EB]/60">
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBizIdx((p) => (p + 1) % BUSINESS_SLIDES.length)}
+                    aria-label="Pratinjau berikutnya"
+                    className="absolute right-2.5 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white transition hover:bg-[#00A885]"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Bottom Dots */}
+                <div className="flex items-center justify-center gap-2 bg-white py-3">
+                  {BUSINESS_SLIDES.map((s, idx) => (
+                    <button
+                      key={s.tag}
+                      type="button"
+                      onClick={() => setBizIdx(idx)}
+                      aria-label={`Pilih pratinjau ${idx + 1}`}
+                      className={`h-2 rounded-full transition-all ${
+                        idx === bizIdx ? "w-6 bg-[#00A885]" : "w-2 bg-zinc-300"
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Made Corporate Pitch + Checklist + Dual Buttons */}
+            <div className="lg:col-span-6">
+              <h2 className="font-heading text-2xl font-extrabold leading-tight text-[#222222] sm:text-3xl">
+                <span className="text-[#00A885]">WACRM</span> Adalah Platform Terpadu Untuk Bisnis
+                Anda
+              </h2>
+
+              <ul className="mt-5 space-y-2.5 text-sm font-medium text-[#333333] sm:text-base">
+                {[
+                  "Arsitektur Modern — 11 Agen AI + ERP + POS + PSAK 72",
+                  "100% Responsif di HP Android, Tablet & Layar Desktop",
+                  "Terenkripsi AES-256-GCM dengan Akses Privat Terverifikasi",
+                ].map((point) => (
+                  <li key={point} className="flex items-start gap-2.5">
+                    <Check className="mt-0.5 h-5 w-5 shrink-0 text-[#00A885]" />
+                    <span>{point}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <p className="mt-5 text-sm leading-relaxed text-[#666666]">
+                Tidak perlu lagi membayar 5 aplikasi terpisah untuk chat WhatsApp, kasir toko,
+                manajemen gudang, absensi HRD, dan laporan pajak. PT WACRM Digital Nusantara
+                menyatukan seluruh siklus operasional bisnis Anda dalam satu sistem yang mulai dari{" "}
+                <strong className="text-[#222222]">Rp 0 Gratis Selamanya untuk UMKM</strong>.
+              </p>
+
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                <a
+                  href="#roi"
+                  className="inline-flex items-center justify-center gap-2 rounded border border-zinc-300 bg-white px-6 py-3 font-heading text-xs font-bold uppercase tracking-wider text-[#333333] transition hover:border-[#00A885] hover:text-[#00A885]"
+                >
+                  <Calculator className="h-4 w-4" /> Hitung ROI Anda
+                </a>
+                <button
+                  type="button"
+                  onClick={() => scrollToRegister("enterprise")}
+                  className="inline-flex items-center justify-center gap-2 rounded bg-[#00A885] px-6 py-3 font-heading text-xs font-bold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#008C6F]"
+                >
+                  Daftar Sekarang <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================================
+          5. PRODUCT / MODULE SHOWCASE (Signature Made 4-Card Carousel Grid)
+          ===================================================================== */}
+      <section id="produk" className="scroll-mt-20 bg-white py-14 sm:py-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
+            <div>
+              <h2 className="font-heading text-2xl font-extrabold uppercase tracking-tight text-[#222222] sm:text-3xl">
+                Ekosistem 8 Modul Utama
+              </h2>
+              <p className="mt-1.5 text-sm text-[#797979]">
+                Ketuk kartu modul untuk melihat metrik &amp; detail kapabilitas Enterprise
+              </p>
+            </div>
+
+            {/* Clean Page Switcher (4 Modules / Page) */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setProductPage(0)}
+                className={`rounded px-3.5 py-2 font-heading text-xs font-bold uppercase tracking-wider transition ${
+                  productPage === 0
+                    ? "bg-[#00A885] text-white"
+                    : "border border-zinc-200 bg-white text-[#555555] hover:border-[#00A885]"
+                }`}
+              >
+                01–04 Inti
+              </button>
+              <button
+                type="button"
+                onClick={() => setProductPage(1)}
+                className={`rounded px-3.5 py-2 font-heading text-xs font-bold uppercase tracking-wider transition ${
+                  productPage === 1
+                    ? "bg-[#00A885] text-white"
+                    : "border border-zinc-200 bg-white text-[#555555] hover:border-[#00A885]"
+                }`}
+              >
+                05–08 Skala
+              </button>
+            </div>
+          </div>
+
+          {/* 4-Column Responsive Card Grid */}
+          <div
+            key={productPage}
+            className="made-fade-in mt-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4"
+          >
+            {visibleModules.map((mod) => (
+              <article
+                key={mod.id}
+                onClick={() => setInspectModuleId(mod.id)}
+                className="group cursor-pointer overflow-hidden rounded-lg border border-zinc-200/90 bg-white shadow-xs transition hover:-translate-y-1 hover:border-[#00A885]/50 hover:shadow-md"
+              >
+                <div className="relative aspect-[4/3] overflow-hidden bg-[#222222]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={mod.image}
+                    alt={mod.title}
+                    className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-black/20 transition group-hover:bg-[#00A885]/45" />
+                  <span className="absolute left-3 top-3 rounded bg-black/65 px-2 py-0.5 font-mono text-[10px] font-bold text-white">
+                    {mod.num}
+                  </span>
+                  <span className="absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full bg-[#00A885] text-white shadow-md transition group-hover:scale-110">
+                    <Plus className="h-4 w-4" />
+                  </span>
+                </div>
+                <div className="p-4">
+                  <h3 className="font-heading text-base font-bold text-[#222222] transition group-hover:text-[#00A885]">
+                    {mod.title}
+                  </h3>
+                  <div className="mt-0.5 text-xs font-medium text-[#797979]">— {mod.category}</div>
+                  <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-[#666666]">
+                    {mod.summary}
+                  </p>
+                  <div className="mt-3 flex items-center justify-between border-t border-zinc-100 pt-2.5 text-[11px]">
+                    <span className="font-semibold text-[#00A885]">
+                      {mod.metrics[0].label}: {mod.metrics[0].value}
+                    </span>
+                    <span className="font-bold text-[#222222] group-hover:text-[#00A885]">
+                      Detail →
+                    </span>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          {/* Inline Module Detail Panel when a card is tapped */}
+          {inspectedModule && (
+            <div className="made-fade-in mt-6 rounded-xl border-2 border-[#00A885] bg-[#F5F5F5] p-5 shadow-md sm:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <span className="inline-block rounded bg-[#00A885] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                    Modul {inspectedModule.num} · {inspectedModule.category}
+                  </span>
+                  <h3 className="font-heading mt-2 text-xl font-extrabold text-[#222222] sm:text-2xl">
+                    {inspectedModule.title}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInspectModuleId(null)}
+                  aria-label="Tutup detail modul"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#444444] shadow-xs hover:text-[#222222]"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <p className="mt-2.5 text-sm leading-relaxed text-[#555555]">
+                {inspectedModule.summary}
+              </p>
+
+              <div className="mt-4 grid grid-cols-3 gap-2.5 sm:max-w-lg">
+                {inspectedModule.metrics.map((m) => (
+                  <div key={m.label} className="rounded-md bg-white p-3 shadow-2xs">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-[#797979]">
                       {m.label}
                     </div>
-                    <div className="font-editorial mt-1 text-xl text-[#F5F2EB]">{m.value}</div>
+                    <div className="font-heading mt-0.5 text-base font-extrabold text-[#00A885] sm:text-lg">
+                      {m.value}
+                    </div>
                   </div>
                 ))}
               </div>
 
-              <div className="space-y-2 border-t border-[#F5F2EB]/20 pt-4">
-                <div className="font-mono-meta text-[10px] uppercase tracking-[0.22em] text-emerald-300">
-                  {activeItem.category} — {activeItem.year}
-                </div>
-                <h2 className="font-editorial text-4xl font-normal leading-tight text-[#F5F2EB]">
-                  {activeItem.title}
-                </h2>
-                <p className="max-w-lg text-sm leading-relaxed text-[#F5F2EB]/80">
-                  {activeItem.summary}
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap gap-1.5">
-                  {activeItem.highlights.map((h) => (
+                  {inspectedModule.highlights.map((h) => (
                     <span
                       key={h}
-                      className="font-mono-meta border border-[#F5F2EB]/20 bg-[#141311]/55 px-2.5 py-1 text-[10px] text-[#F5F2EB]/90 backdrop-blur"
+                      className="rounded-full border border-[#00A885]/30 bg-white px-3 py-1 text-xs font-medium text-[#333333]"
                     >
                       {h}
                     </span>
@@ -733,89 +688,412 @@ export default function SplitIndexEnterprisePage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (activeItem.suggestedEdition) setSelectedEdition(activeItem.suggestedEdition);
-                    setSection(activeItem.actionTarget);
-                  }}
-                  className="font-mono-meta inline-flex items-center gap-1.5 border border-[#F5F2EB] bg-[#F5F2EB] px-4 py-2 text-[10px] font-medium uppercase tracking-widest text-[#141311] transition hover:bg-transparent hover:text-[#F5F2EB]"
+                  onClick={() => scrollToRegister(inspectedModule.suggestedEdition ?? "enterprise")}
+                  className="inline-flex items-center gap-1.5 rounded bg-[#00A885] px-5 py-2.5 font-heading text-xs font-bold uppercase tracking-wider text-white hover:bg-[#008C6F]"
                 >
-                  {activeItem.actionLabel} <ArrowUpRight className="h-3.5 w-3.5" />
+                  {inspectedModule.actionLabel} <ArrowRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
           )}
-
-          {section === "pricing" && (
-            <div key={hoveredEdition.id} className="split-panel-enter space-y-4">
-              <div className="border border-[#F5F2EB]/20 bg-[#141311]/75 p-5 backdrop-blur-md">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono-meta text-[10px] uppercase tracking-widest text-emerald-300">
-                    {hoveredEdition.badge}
-                  </span>
-                  <span className="font-mono-meta text-xs text-[#F5F2EB]/80">
-                    {hoveredEdition.annualPriceLabel}
-                  </span>
-                </div>
-                <h3 className="font-editorial mt-2 text-3xl text-[#F5F2EB]">
-                  {hoveredEdition.name}
-                </h3>
-                <p className="mt-1 text-xs text-[#F5F2EB]/75">{hoveredEdition.tagline}</p>
-                <ul className="mt-4 space-y-2 border-t border-[#F5F2EB]/15 pt-4 text-xs text-[#F5F2EB]/90">
-                  {hoveredEdition.features.map((feat) => (
-                    <li key={feat} className="flex items-start gap-2">
-                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                      <span>{feat}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          )}
-
-          {section === "about" && (
-            <div className="split-panel-enter max-w-md space-y-3">
-              <p className="font-editorial text-3xl italic leading-snug text-[#F5F2EB]">
-                &ldquo;Pertumbuhan bisnis skala enterprise lahir dari data yang bersih, respon yang
-                seketika, dan pembukuan yang selalu seimbang.&rdquo;
-              </p>
-              <div className="font-mono-meta text-[11px] uppercase tracking-[0.2em] text-[#F5F2EB]/70">
-                — PT WACRM Digital Nusantara
-              </div>
-            </div>
-          )}
-
-          {section === "register" && (
-            <div className="split-panel-enter max-w-md space-y-4">
-              <p className="font-editorial text-3xl italic leading-snug text-[#F5F2EB]">
-                &ldquo;Satu pendaftaran membuka akses privat aplikasi sekaligus mengaktifkan
-                pendampingan 5 Agen AI kami secara otomatis.&rdquo;
-              </p>
-              <div className="font-mono-meta text-[11px] uppercase tracking-[0.2em] text-[#F5F2EB]/70">
-                — WACRM Publisher HQ Onboarding
-              </div>
-              <div className="grid grid-cols-2 gap-2.5 pt-2 text-[11px]">
-                <div className="border border-[#F5F2EB]/20 bg-[#141311]/65 p-3 backdrop-blur">
-                  <div className="font-mono-meta text-[9px] uppercase tracking-widest text-emerald-300">
-                    Langkah 01
-                  </div>
-                  <div className="mt-1 text-[#F5F2EB]">Kirim data perusahaan &amp; pilih edisi</div>
-                </div>
-                <div className="border border-[#F5F2EB]/20 bg-[#141311]/65 p-3 backdrop-blur">
-                  <div className="font-mono-meta text-[9px] uppercase tracking-widest text-emerald-300">
-                    Langkah 02
-                  </div>
-                  <div className="mt-1 text-[#F5F2EB]">
-                    Akses privat terbuka &amp; lanjut ke Publisher HQ
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
-      </aside>
+      </section>
 
-      {/* 24/7 Live Multi-Agent AI Concierge Widget Connected to Publisher HQ */}
-      <LiveAiChatWidget onOpenRegister={() => openRegistration()} />
+      {/* =====================================================================
+          6. FOUR COMMERCIAL EDITIONS PRICING (Light Grey Section)
+          ===================================================================== */}
+      <section id="harga" className="scroll-mt-20 border-y border-zinc-200/70 bg-[#F5F5F5] py-14 sm:py-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="text-center">
+            <h2 className="font-heading text-2xl font-extrabold uppercase tracking-tight text-[#222222] sm:text-3xl">
+              Skema Lisensi Komersial
+            </h2>
+            <p className="mx-auto mt-2 max-w-xl text-sm text-[#797979]">
+              Empat jenjang transparan tanpa biaya tersembunyi — mulai dari Rp 0 Gratis Selamanya
+              untuk UMKM hingga Holding Multi-Cabang.
+            </p>
+          </div>
+
+          <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {COMMERCIAL_EDITIONS.map((ed) => {
+              const featured = ed.id === "enterprise";
+              return (
+                <div
+                  key={ed.id}
+                  className={`flex flex-col justify-between overflow-hidden rounded-lg bg-white p-6 shadow-xs transition hover:shadow-md ${
+                    featured
+                      ? "border-2 border-[#00A885] ring-2 ring-[#00A885]/15"
+                      : "border border-zinc-200"
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={`rounded px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                          featured
+                            ? "bg-[#00A885] text-white"
+                            : "bg-[#E6F7F3] text-[#008C6F]"
+                        }`}
+                      >
+                        {ed.badge}
+                      </span>
+                      <span className="text-[11px] font-semibold text-[#797979]">
+                        {ed.metrics.branches}
+                      </span>
+                    </div>
+
+                    <h3 className="font-heading mt-3 text-xl font-extrabold text-[#222222]">
+                      {ed.name}
+                    </h3>
+                    <p className="mt-1 text-xs leading-relaxed text-[#797979]">{ed.tagline}</p>
+
+                    <div className="mt-4 border-y border-zinc-100 py-3.5">
+                      <div className="font-heading text-2xl font-extrabold text-[#222222]">
+                        {ed.monthlyPriceLabel}
+                        {ed.monthlyValueIdr > 0 && (
+                          <span className="text-xs font-normal text-[#797979]"> /bulan</span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-[#00A885]">{ed.annualPriceLabel}</div>
+                    </div>
+
+                    <ul className="mt-4 space-y-2 text-xs text-[#444444]">
+                      {ed.features.slice(0, 5).map((feat) => (
+                        <li key={feat} className="flex items-start gap-2">
+                          <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#00A885]" />
+                          <span>{feat}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="mt-6 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => scrollToRegister(ed.id)}
+                      className={`w-full rounded px-4 py-3 font-heading text-xs font-bold uppercase tracking-wider transition ${
+                        featured
+                          ? "bg-[#00A885] text-white hover:bg-[#008C6F]"
+                          : "border border-[#00A885] bg-white text-[#00A885] hover:bg-[#00A885] hover:text-white"
+                      }`}
+                    >
+                      {ed.ctaLabel} →
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================================
+          7. INTERACTIVE ROI CALCULATOR (Clean White Section)
+          ===================================================================== */}
+      <section id="roi" className="scroll-mt-20 bg-white py-14 sm:py-20">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6">
+          <div className="text-center">
+            <h2 className="font-heading text-2xl font-extrabold uppercase tracking-tight text-[#222222] sm:text-3xl">
+              Simulasi ROI Operasional
+            </h2>
+            <p className="mx-auto mt-2 max-w-xl text-sm text-[#797979]">
+              Geser parameter operasional bisnis Anda untuk menghitung estimasi penghematan software
+              dan kenaikan omzet bulanan bersama WACRM.
+            </p>
+          </div>
+
+          <div className="mt-8 grid grid-cols-1 gap-6 rounded-xl border border-zinc-200 bg-[#F9F9F9] p-5 shadow-xs sm:p-8 lg:grid-cols-12 lg:items-center">
+            <div className="space-y-5 lg:col-span-7">
+              <div>
+                <div className="mb-1.5 flex justify-between text-xs font-semibold sm:text-sm">
+                  <span className="text-[#333333]">Jumlah Cabang / Gudang</span>
+                  <span className="font-bold text-[#00A885]">{branches} Cabang</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={30}
+                  value={branches}
+                  onChange={(e) => setBranches(Number(e.target.value))}
+                  className="h-2 w-full cursor-pointer accent-[#00A885]"
+                />
+              </div>
+
+              <div>
+                <div className="mb-1.5 flex justify-between text-xs font-semibold sm:text-sm">
+                  <span className="text-[#333333]">Jumlah Staf Operasional &amp; Sales</span>
+                  <span className="font-bold text-[#00A885]">{staffCount} Staf</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={80}
+                  value={staffCount}
+                  onChange={(e) => setStaffCount(Number(e.target.value))}
+                  className="h-2 w-full cursor-pointer accent-[#00A885]"
+                />
+              </div>
+
+              <div>
+                <div className="mb-1.5 flex justify-between text-xs font-semibold sm:text-sm">
+                  <span className="text-[#333333]">Volume Chat Prospek WA / Hari</span>
+                  <span className="font-bold text-[#00A885]">{dailyChats} Chat/Hari</span>
+                </div>
+                <input
+                  type="range"
+                  min={20}
+                  max={800}
+                  step={10}
+                  value={dailyChats}
+                  onChange={(e) => setDailyChats(Number(e.target.value))}
+                  className="h-2 w-full cursor-pointer accent-[#00A885]"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-[#222222] p-6 text-white lg:col-span-5">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-[#00D4A8]">
+                Rekomendasi: {roiCalc.recName}
+              </div>
+              <div className="mt-2 text-xs text-zinc-300">
+                Estimasi Efisiensi &amp; Tambahan Omzet / Bulan
+              </div>
+              <div className="font-heading mt-1 text-3xl font-extrabold text-white">
+                {formatIdr(roiCalc.monthlyImpact)}
+              </div>
+              <div className="mt-2 text-xs text-zinc-300">
+                {roiCalc.savedHours} jam kerja terhemat/bln ·{" "}
+                <span className="font-semibold text-emerald-300">
+                  {formatIdr(roiCalc.annualImpact)}/tahun
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => scrollToRegister(roiCalc.rec)}
+                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded bg-[#00A885] px-5 py-3 font-heading text-xs font-bold uppercase tracking-widest text-white transition hover:bg-[#008C6F]"
+              >
+                Aktifkan {roiCalc.recName} <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================================
+          8. TESTIMONIALS (Made Grey Section) + ENTERPRISE STANDARDS STRIP
+          ===================================================================== */}
+      <section id="testimoni" className="scroll-mt-20 border-t border-zinc-200/70 bg-[#F5F5F5] py-14 sm:py-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="text-center">
+            <h2 className="font-heading text-2xl font-extrabold uppercase tracking-tight text-[#222222] sm:text-3xl">
+              Apa Kata Pengguna Bisnis
+            </h2>
+            <p className="mt-1.5 text-sm text-[#797979]">
+              Dampak nyata otomasi operasional di berbagai sektor usaha Indonesia
+            </p>
+          </div>
+
+          <div className="mt-9 grid grid-cols-1 gap-6 md:grid-cols-2">
+            {TESTIMONIALS.map((t) => (
+              <div
+                key={t.name}
+                className="flex flex-col gap-4 rounded-lg bg-white p-6 shadow-xs ring-1 ring-black/5 sm:flex-row sm:items-start"
+              >
+                <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#00A885] font-heading text-lg font-extrabold text-white">
+                  {t.initials}
+                  <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#222222] text-white">
+                    <Quote className="h-3 w-3" />
+                  </span>
+                </div>
+                <div>
+                  <h3 className="font-heading text-base font-bold text-[#222222]">{t.name}</h3>
+                  <div className="text-xs font-semibold text-[#00A885]">{t.company}</div>
+                  <p className="mt-2.5 text-sm leading-relaxed text-[#666666]">{t.quote}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Standards / Brand Trust Strip */}
+      <section className="bg-white py-10 sm:py-12">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {TRUST_BADGES.map((b) => (
+              <div
+                key={b.title}
+                className="flex flex-col items-center justify-center rounded-lg border border-zinc-200/80 bg-[#FAFAFA] px-3 py-4 text-center"
+              >
+                <ShieldCheck className="h-5 w-5 text-[#00A885]" />
+                <div className="font-heading mt-1.5 text-xs font-extrabold text-[#222222]">
+                  {b.title}
+                </div>
+                <div className="text-[10px] text-[#797979]">{b.sub}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================================
+          9. EMERALD ACTION CALLOUT BANNER (Signature Made #00A885 Strip)
+          ===================================================================== */}
+      <section className="bg-[#00A885] py-10 text-white sm:py-12">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-5 px-4 text-center sm:px-6 md:flex-row md:text-left">
+          <div>
+            <h2 className="font-heading text-xl font-extrabold uppercase tracking-tight sm:text-2xl">
+              Siap Mengotomasi Operasional Bisnis Anda Hari Ini?
+            </h2>
+            <p className="mt-1 text-sm text-white/90">
+              Mulai gratis untuk UMKM atau jadwalkan aktivasi Enterprise multi-cabang bersama 5 Agen
+              AI kami.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => scrollToRegister(selectedEdition)}
+            className="w-full shrink-0 rounded border-2 border-white bg-white px-7 py-3 font-heading text-xs font-extrabold uppercase tracking-widest text-[#00A885] shadow-sm transition hover:bg-transparent hover:text-white md:w-auto"
+          >
+            Daftar Sekarang →
+          </button>
+        </div>
+      </section>
+
+      {/* =====================================================================
+          10. GATED PRIVATE REGISTRATION SECTION (Zero Public Client URL)
+          ===================================================================== */}
+      <section id="daftar" className="scroll-mt-20 bg-[#F5F5F5] py-14 sm:py-20">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6">
+          <div className="text-center">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#E6F7F3] px-3.5 py-1 text-[11px] font-bold uppercase tracking-wider text-[#008C6F]">
+              <Lock className="h-3.5 w-3.5" /> Gerbang Pendaftaran &amp; Akses Privat Resmi
+            </span>
+            <h2 className="font-heading mt-3 text-2xl font-extrabold text-[#222222] sm:text-3xl">
+              Buka Akses Privat Aplikasi WACRM Anda
+            </h2>
+            <p className="mx-auto mt-2 max-w-xl text-sm text-[#666666]">
+              Lengkapi formulir singkat di bawah. Tautan privat aplikasi langsung terbuka setelah
+              terverifikasi dan pendaftaran otomatis diteruskan ke WACRM Publisher HQ.
+            </p>
+          </div>
+
+          <div className="mt-8 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-8">
+            <RegistrationPortal
+              selectedEdition={selectedEdition}
+              onChangeEdition={setSelectedEdition}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================================
+          11. DARK CORPORATE FOOTER (Signature Made #222222 4-Column Footer)
+          ===================================================================== */}
+      <footer className="bg-[#222222] text-zinc-300">
+        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
+          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Col 1: About */}
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded bg-[#00A885] font-heading text-sm font-extrabold text-white">
+                  W
+                </span>
+                <span className="font-heading text-lg font-extrabold text-white">
+                  WACRM<span className="text-[#00A885]">.</span>
+                </span>
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-zinc-400">
+                PT WACRM Digital Nusantara — Platform Enterprise Commercial OS v5.3.2 untuk CRM AI,
+                ERP Multi-Gudang FIFO, Kasir POS, HRD Payroll &amp; Akuntansi PSAK 72.
+              </p>
+              <div className="mt-4 space-y-2 text-xs text-zinc-400">
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-3.5 w-3.5 shrink-0 text-[#00A885]" />
+                  <span>Jakarta &amp; Jawa Timur, Indonesia</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Globe className="h-3.5 w-3.5 shrink-0 text-[#00A885]" />
+                  <span>Cloud &amp; Native Android / Windows</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Col 2: Quick Links */}
+            <div>
+              <h3 className="font-heading text-sm font-bold uppercase tracking-wider text-white">
+                Navigasi Cepat
+              </h3>
+              <ul className="mt-3.5 space-y-2 text-xs">
+                {NAV_LINKS.map((l) => (
+                  <li key={l.href}>
+                    <a href={l.href} className="text-zinc-400 transition hover:text-[#00A885]">
+                      › {l.label}
+                    </a>
+                  </li>
+                ))}
+                <li>
+                  <a href="#daftar" className="text-zinc-400 transition hover:text-[#00A885]">
+                    › Pendaftaran Akses Privat
+                  </a>
+                </li>
+              </ul>
+            </div>
+
+            {/* Col 3: Commercial Editions */}
+            <div>
+              <h3 className="font-heading text-sm font-bold uppercase tracking-wider text-white">
+                Edisi Lisensi
+              </h3>
+              <ul className="mt-3.5 space-y-2 text-xs text-zinc-400">
+                {COMMERCIAL_EDITIONS.map((ed) => (
+                  <li key={ed.id} className="flex items-center justify-between gap-2">
+                    <span>{ed.name}</span>
+                    <span className="font-semibold text-[#00D4A8]">{ed.monthlyPriceLabel}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Col 4: Security & AI Readiness */}
+            <div>
+              <h3 className="font-heading text-sm font-bold uppercase tracking-wider text-white">
+                Standar Enterprise
+              </h3>
+              <ul className="mt-3.5 space-y-2.5 text-xs text-zinc-400">
+                <li className="flex items-start gap-2">
+                  <Cpu className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#00A885]" />
+                  <span>11 Agen AI Otonom + 5 Agen Publisher HQ 24/7</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#00A885]" />
+                  <span>Enkripsi TLS 1.3, AES-256-GCM &amp; RLS Multi-Tenant</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Smartphone className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#00A885]" />
+                  <span>Signed Release APK v5.3.2 &amp; Windows Offline Installer</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Copyright Strip — Safe pb-20 on mobile so floating AI pill NEVER covers text */}
+        <div className="border-t border-white/10 bg-[#1B1B1B] px-4 pb-20 pt-5 text-center text-xs text-zinc-400 sm:pb-5">
+          <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 sm:flex-row">
+            <span>
+              © {new Date().getFullYear()} PT WACRM Digital Nusantara · Pure-Free Original Enterprise
+              UI
+            </span>
+            <span className="text-[11px] text-zinc-500">
+              TLS 1.3 · AES-256-GCM · PSAK 72 · Zero Public Client Link
+            </span>
+          </div>
+        </div>
+      </footer>
+
+      {/* 24/7 Live Multi-Agent AI Concierge Widget */}
+      <LiveAiChatWidget onOpenRegister={() => scrollToRegister()} />
     </div>
   );
 }

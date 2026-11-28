@@ -76,7 +76,7 @@ export function RegistrationPortal({
           industry: industry.trim(),
           teamSize,
           interestedEdition: selectedEdition,
-          source: "enterprise_website_split_index",
+          source: "enterprise_website_made_corporate",
           notes: notes.trim(),
         }),
       });
@@ -122,72 +122,72 @@ export function RegistrationPortal({
 
   if (success) {
     return (
-      <div className="split-panel-enter space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#141311]/15 pb-3">
-          <span className="font-mono-meta inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-widest text-[#0F5132]">
+      <div className="made-fade-in space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 pb-3.5">
+          <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#00A885]">
             <CheckCircle2 className="h-4 w-4" /> Terverifikasi · {success.registrationCode}
           </span>
           {success.aiTier && (
-            <span className="font-mono-meta border border-[#141311]/20 px-2 py-0.5 text-[10px] uppercase tracking-wider text-[#141311]">
+            <span className="rounded bg-[#E6F7F3] px-2.5 py-1 text-[11px] font-semibold text-[#008C6F]">
               AI BANT: {success.aiTier} ({success.aiScore}/100)
             </span>
           )}
         </div>
 
-        <div className="border-l-2 border-[#141311] bg-[#ECE7DC]/70 p-4 text-xs leading-relaxed text-[#141311]">
-          <div className="font-mono-meta mb-1.5 flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-[#0F5132]">
-            <Bot className="h-3.5 w-3.5" /> Respon Otomatis 5 Agen AI WACRM
+        <div className="rounded-lg border-l-4 border-[#00A885] bg-[#F5F5F5] p-4 text-xs leading-relaxed text-[#333333]">
+          <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#00A885]">
+            <Bot className="h-4 w-4" /> Respon Otomatis 5 Agen AI WACRM
           </div>
           <p className="whitespace-pre-line">{success.aiWelcomeMessage}</p>
         </div>
 
         {success.privateAccessUrl && (
-          <div className="border border-[#0F5132]/40 bg-[#0F5132]/5 p-4 text-xs">
-            <div className="font-mono-meta flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-widest text-[#0F5132]">
-              <KeyRound className="h-3.5 w-3.5" /> Akses Privat Aplikasi Klien Terbuka
+          <div className="rounded-lg border border-[#00A885]/40 bg-[#E6F7F3]/70 p-4 text-xs">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#008C6F]">
+              <KeyRound className="h-4 w-4" /> Akses Privat Aplikasi Klien Terbuka
             </div>
-            <p className="mt-1.5 text-[#6C675E]">
+            <p className="mt-1.5 text-[#555555]">
               Tautan eksklusif berikut diterbitkan khusus untuk pendaftar resmi Anda:
             </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2.5">
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
               <a
                 href={success.privateAccessUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="split-wipe-btn inline-flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider"
+                className="inline-flex items-center justify-center gap-1.5 rounded bg-[#00A885] px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-[#008C6F]"
               >
                 <ExternalLink className="h-3.5 w-3.5" /> Buka Aplikasi Klien
               </a>
-              <span className="font-mono-meta break-all bg-[#141311]/5 px-2.5 py-1.5 text-[10px] text-[#141311]">
+              <span className="break-all rounded bg-white px-2.5 py-1.5 font-mono text-[11px] text-[#222222] shadow-xs">
                 {success.privateAccessUrl}
               </span>
             </div>
           </div>
         )}
 
-        <div className="border border-[#141311]/20 bg-[#ECE7DC] p-4 text-xs">
-          <div className="font-editorial text-base font-semibold text-[#141311]">
+        <div className="rounded-lg border border-zinc-200 bg-[#F5F5F5] p-4 text-xs">
+          <div className="font-heading text-base font-bold text-[#222222]">
             {autoRedirectPaused
               ? "Pengalihan otomatis dijeda."
               : `Melanjutkan otomatis ke Publisher HQ dalam ${countdown} detik…`}
           </div>
-          <p className="mt-1 text-[11px] text-[#6C675E]">
+          <p className="mt-1 text-xs text-[#666666]">
             Proses aktivasi lisensi &amp; tindak lanjut otomatis berlanjut ke{" "}
-            <span className="font-mono-meta text-[#141311]">{PUBLISHER_HQ_BASE_URL}</span>.
+            <span className="font-mono font-semibold text-[#222222]">{PUBLISHER_HQ_BASE_URL}</span>.
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="mt-3.5 flex flex-wrap items-center gap-2.5">
             <a
               href={success.publisherPortalUrl}
-              className="inline-flex items-center gap-1.5 bg-[#141311] px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-[#F5F2EB] transition hover:bg-[#0F5132]"
+              className="inline-flex items-center gap-1.5 rounded bg-[#222222] px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-white transition hover:bg-[#00A885]"
             >
               Lanjut ke Publisher HQ <ArrowRight className="h-3.5 w-3.5" />
             </a>
             <button
               type="button"
               onClick={() => setAutoRedirectPaused((p) => !p)}
-              className="inline-flex items-center gap-1 border border-[#141311]/30 px-3 py-2.5 text-[11px] font-medium text-[#141311] hover:border-[#141311]"
+              className="inline-flex items-center gap-1 rounded border border-zinc-300 bg-white px-3.5 py-2.5 text-xs font-semibold text-[#333333] hover:border-[#222222]"
             >
-              <Pause className="h-3 w-3" /> {autoRedirectPaused ? "Lanjutkan Timer" : "Jeda"}
+              <Pause className="h-3.5 w-3.5" /> {autoRedirectPaused ? "Lanjutkan Timer" : "Jeda"}
             </button>
           </div>
         </div>
@@ -196,16 +196,16 @@ export function RegistrationPortal({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="split-panel-enter space-y-5 text-xs">
+    <form onSubmit={handleSubmit} className="made-fade-in space-y-4 text-sm">
       {errorMsg && (
-        <div className="border border-rose-700/40 bg-rose-50 px-3.5 py-2.5 text-rose-900">
+        <div className="rounded-md border border-rose-300 bg-rose-50 px-4 py-3 text-xs font-medium text-rose-800">
           {errorMsg}
         </div>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
-          <span className="font-mono-meta block text-[10px] uppercase tracking-widest text-[#6C675E]">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#555555]">
             Nama Lengkap PIC *
           </span>
           <input
@@ -213,11 +213,11 @@ export function RegistrationPortal({
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
             placeholder="Budi Santoso"
-            className="split-underline-input text-sm"
+            className="made-input"
           />
         </label>
         <label className="block">
-          <span className="font-mono-meta block text-[10px] uppercase tracking-widest text-[#6C675E]">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#555555]">
             Perusahaan / Usaha *
           </span>
           <input
@@ -225,14 +225,14 @@ export function RegistrationPortal({
             value={companyName}
             onChange={(e) => setCompanyName(e.target.value)}
             placeholder="PT Nusantara Distribusi"
-            className="split-underline-input text-sm"
+            className="made-input"
           />
         </label>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
-          <span className="font-mono-meta block text-[10px] uppercase tracking-widest text-[#6C675E]">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#555555]">
             Email Bisnis *
           </span>
           <input
@@ -241,11 +241,11 @@ export function RegistrationPortal({
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="nama@perusahaan.co.id"
-            className="split-underline-input text-sm"
+            className="made-input"
           />
         </label>
         <label className="block">
-          <span className="font-mono-meta block text-[10px] uppercase tracking-widest text-[#6C675E]">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#555555]">
             No. WhatsApp Aktif *
           </span>
           <input
@@ -253,40 +253,40 @@ export function RegistrationPortal({
             value={whatsapp}
             onChange={(e) => setWhatsapp(e.target.value)}
             placeholder="0812xxxxxxxx"
-            className="split-underline-input text-sm"
+            className="made-input"
           />
         </label>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <label className="block">
-          <span className="font-mono-meta block text-[10px] uppercase tracking-widest text-[#6C675E]">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#555555]">
             Kota
           </span>
           <input
             value={city}
             onChange={(e) => setCity(e.target.value)}
-            className="split-underline-input text-sm"
+            className="made-input"
           />
         </label>
         <label className="block">
-          <span className="font-mono-meta block text-[10px] uppercase tracking-widest text-[#6C675E]">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#555555]">
             Industri
           </span>
           <input
             value={industry}
             onChange={(e) => setIndustry(e.target.value)}
-            className="split-underline-input text-sm"
+            className="made-input"
           />
         </label>
         <label className="block">
-          <span className="font-mono-meta block text-[10px] uppercase tracking-widest text-[#6C675E]">
+          <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#555555]">
             Skala Tim
           </span>
           <select
             value={teamSize}
             onChange={(e) => setTeamSize(e.target.value)}
-            className="split-underline-input text-sm"
+            className="made-input"
           >
             <option value="1-5 Staf">1–5 Staf (UMKM)</option>
             <option value="6-15 Staf">6–15 Staf (UKM)</option>
@@ -297,10 +297,10 @@ export function RegistrationPortal({
       </div>
 
       <div>
-        <span className="font-mono-meta mb-2 block text-[10px] uppercase tracking-widest text-[#6C675E]">
-          Edisi yang Diminati *
+        <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-[#555555]">
+          Pilih Edisi Lisensi *
         </span>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
           {COMMERCIAL_EDITIONS.map((ed) => {
             const active = selectedEdition === ed.id;
             return (
@@ -308,14 +308,14 @@ export function RegistrationPortal({
                 key={ed.id}
                 type="button"
                 onClick={() => onChangeEdition(ed.id)}
-                className={`border px-2.5 py-2 text-left transition ${
+                className={`rounded-md border px-3 py-2.5 text-left transition ${
                   active
-                    ? "border-[#141311] bg-[#141311] text-[#F5F2EB]"
-                    : "border-[#141311]/20 bg-transparent text-[#141311] hover:border-[#141311]"
+                    ? "border-[#00A885] bg-[#00A885] text-white shadow-sm"
+                    : "border-zinc-200 bg-[#FAFAFA] text-[#222222] hover:border-[#00A885]"
                 }`}
               >
-                <div className="text-[11px] font-semibold">{ed.name}</div>
-                <div className="font-mono-meta mt-0.5 text-[10px] opacity-75">
+                <div className="text-xs font-bold leading-snug">{ed.name}</div>
+                <div className={`mt-0.5 text-[11px] ${active ? "text-white/90" : "text-[#666666]"}`}>
                   {ed.monthlyPriceLabel}
                 </div>
               </button>
@@ -325,7 +325,7 @@ export function RegistrationPortal({
       </div>
 
       <label className="block">
-        <span className="font-mono-meta block text-[10px] uppercase tracking-widest text-[#6C675E]">
+        <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#555555]">
           Catatan Kebutuhan (Opsional)
         </span>
         <textarea
@@ -333,22 +333,22 @@ export function RegistrationPortal({
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Contoh: 5 cabang, kasir QR barcode & laporan PSAK 72."
-          className="split-underline-input resize-none text-sm"
+          className="made-input resize-none"
         />
       </label>
 
       <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-[11px] leading-relaxed text-[#6C675E] sm:max-w-xs">
-          Tautan akses privat aplikasi terbuka seketika setelah formulir dikirim dan langsung
-          dilanjutkan ke Publisher HQ.
+        <p className="text-xs leading-relaxed text-[#797979] sm:max-w-sm">
+          Tautan akses privat aplikasi terbuka otomatis setelah formulir terkirim dan dilanjutkan ke
+          Publisher HQ.
         </p>
         <button
           type="submit"
           disabled={submitting}
-          className="split-wipe-btn inline-flex w-full items-center justify-center gap-2 px-6 py-3.5 font-mono-meta text-xs uppercase tracking-widest disabled:opacity-50 sm:w-auto sm:py-3"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#00A885] px-6 py-3.5 text-xs font-bold uppercase tracking-widest text-white shadow-md shadow-[#00A885]/25 transition hover:bg-[#008C6F] disabled:opacity-50 sm:w-auto"
         >
           {submitting ? "Memverifikasi AI…" : "Daftar & Buka Akses"}
-          <ArrowRight className="h-3.5 w-3.5" />
+          <ArrowRight className="h-4 w-4" />
         </button>
       </div>
     </form>

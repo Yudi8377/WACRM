@@ -5,7 +5,7 @@ export async function GET() {
     ok: true,
     app: "wacrm-enterprise-website",
     version: "5.3.2",
-    uiSystem: "split-index-editorial",
+    uiSystem: "made-corporate-adaptive",
     licenseModel: "pure-free-no-copyright-original-code",
     zeroPublicClientAppLink: true,
     publisherPortal:

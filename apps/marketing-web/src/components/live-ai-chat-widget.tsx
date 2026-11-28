@@ -59,7 +59,7 @@ export function LiveAiChatWidget({ onOpenRegister }: LiveAiChatWidgetProps) {
           agentName: data.agentName || "Multi-Agent AI · WACRM",
           text:
             data.reply ||
-            "Terima kasih! Silakan lengkapi formulir pada tab Daftar untuk langsung menerima akses privat aplikasi.",
+            "Terima kasih! Silakan lengkapi formulir pendaftaran untuk langsung menerima akses privat aplikasi.",
         },
       ]);
     } catch {
@@ -69,7 +69,7 @@ export function LiveAiChatWidget({ onOpenRegister }: LiveAiChatWidgetProps) {
           id: `a-fb-${Date.now()}`,
           sender: "ai",
           agentName: "Multi-Agent AI · Mode Siaga",
-          text: "Terima kasih atas pesan Anda. Silakan buka tab Daftar untuk menerima akses privat aplikasi & balasan otomatis Publisher HQ.",
+          text: "Terima kasih atas pesan Anda. Silakan lengkapi formulir Daftar di halaman ini untuk menerima akses privat & tindak lanjut otomatis Publisher HQ.",
         },
       ]);
     } finally {
@@ -86,7 +86,7 @@ export function LiveAiChatWidget({ onOpenRegister }: LiveAiChatWidgetProps) {
     <>
       {open && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] sm:hidden"
+          className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[2px] sm:hidden"
           onClick={() => setOpen(false)}
           aria-hidden="true"
         />
@@ -97,44 +97,49 @@ export function LiveAiChatWidget({ onOpenRegister }: LiveAiChatWidgetProps) {
             type="button"
             onClick={() => setOpen(true)}
             aria-label="Buka Konsultan 5 Agen AI 24/7"
-            className="font-mono-meta inline-flex items-center gap-2 rounded-full border border-[#F5F2EB]/30 bg-[#141311]/95 px-3.5 py-2.5 text-[10px] uppercase tracking-widest text-[#F5F2EB] shadow-xl backdrop-blur transition hover:border-[#F5F2EB] hover:bg-[#0F5132] sm:rounded-none sm:px-4 sm:text-[11px]"
+            className="inline-flex items-center gap-2 rounded-full bg-[#00A885] px-4 py-3 text-xs font-bold uppercase tracking-wider text-white shadow-xl shadow-[#00A885]/35 transition hover:bg-[#008C6F] active:scale-95"
           >
             <Bot className="h-4 w-4 shrink-0" />
             <span className="sm:hidden">AI 24/7</span>
-            <span className="hidden sm:inline">5 Agen AI · 24/7</span>
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            <span className="hidden sm:inline">Konsultan AI · 24/7</span>
+            <span className="h-2 w-2 rounded-full bg-white" />
           </button>
         ) : (
-          <div className="fixed inset-x-3 bottom-3 z-50 flex h-[74dvh] max-h-[520px] flex-col overflow-hidden rounded-xl border border-[#141311]/25 bg-[#F5F2EB] text-[#141311] shadow-2xl sm:static sm:h-[460px] sm:w-[360px] sm:rounded-none">
-            <div className="flex items-center justify-between border-b border-[#141311]/15 bg-[#141311] px-4 py-3 text-[#F5F2EB]">
-              <div>
-                <div className="font-editorial text-sm font-semibold">Multi-Agent AI WACRM</div>
-                <div className="font-mono-meta text-[10px] uppercase tracking-widest text-[#F5F2EB]/65">
-                  Publisher HQ · Online 24/7
+          <div className="fixed inset-x-3 bottom-3 z-50 flex h-[74dvh] max-h-[520px] flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white text-[#222222] shadow-2xl sm:static sm:h-[470px] sm:w-[365px]">
+            <div className="flex items-center justify-between bg-[#222222] px-4 py-3.5 text-white">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#00A885]">
+                  <Bot className="h-4 w-4 text-white" />
+                </span>
+                <div>
+                  <div className="font-heading text-sm font-bold">Multi-Agent AI WACRM</div>
+                  <div className="text-[10px] uppercase tracking-wider text-emerald-300">
+                    Publisher HQ · Online 24/7
+                  </div>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="flex h-8 w-8 items-center justify-center text-[#F5F2EB]/75 hover:text-white"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-white/75 hover:bg-white/10 hover:text-white"
                 aria-label="Tutup chat AI"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="editorial-scroll flex-1 space-y-2.5 overflow-y-auto p-3.5 text-xs">
+            <div className="chat-scroll flex-1 space-y-2.5 overflow-y-auto bg-[#F9F9F9] p-3.5 text-xs">
               {messages.map((m) => (
                 <div
                   key={m.id}
-                  className={`p-3 ${
+                  className={`rounded-lg p-3 ${
                     m.sender === "user"
-                      ? "ml-6 bg-[#141311] text-[#F5F2EB]"
-                      : "mr-4 border border-[#141311]/15 bg-[#ECE7DC]/70 text-[#141311]"
+                      ? "ml-6 bg-[#00A885] text-white"
+                      : "mr-4 border border-zinc-200 bg-white text-[#333333] shadow-2xs"
                   }`}
                 >
                   {m.agentName && (
-                    <div className="font-mono-meta mb-1 text-[9px] uppercase tracking-wider text-[#0F5132]">
+                    <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-[#00A885]">
                       {m.agentName}
                     </div>
                   )}
@@ -142,36 +147,36 @@ export function LiveAiChatWidget({ onOpenRegister }: LiveAiChatWidgetProps) {
                 </div>
               ))}
               {sending && (
-                <div className="font-mono-meta mr-6 border border-[#141311]/15 bg-[#ECE7DC]/60 p-2.5 text-[10px] uppercase tracking-wider text-[#6C675E]">
+                <div className="mr-6 rounded-lg border border-zinc-200 bg-white p-2.5 text-[11px] text-[#797979]">
                   Agen AI sedang menyusun jawaban…
                 </div>
               )}
             </div>
 
-            <div className="border-t border-[#141311]/15 bg-[#ECE7DC]/60 px-3 py-2.5">
+            <div className="border-t border-zinc-200 bg-white px-3 py-2.5">
               <div className="mb-2 flex flex-wrap gap-1.5">
                 {QUICK_PROMPTS.map((q) => (
                   <button
                     key={q}
                     type="button"
                     onClick={() => void sendPrompt(q)}
-                    className="font-mono-meta border border-[#141311]/20 bg-[#F5F2EB] px-2 py-1 text-[10px] text-[#141311] transition hover:bg-[#141311] hover:text-[#F5F2EB]"
+                    className="rounded-full border border-[#00A885]/35 bg-[#E6F7F3] px-2.5 py-1 text-[10px] font-semibold text-[#008C6F] transition hover:bg-[#00A885] hover:text-white"
                   >
                     {q}
                   </button>
                 ))}
               </div>
-              <form onSubmit={handleSubmit} className="flex gap-1.5">
+              <form onSubmit={handleSubmit} className="flex gap-2">
                 <input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="Ketik pertanyaan bisnis Anda..."
-                  className="flex-1 border-b border-[#141311]/30 bg-transparent px-1 py-2 text-sm text-[#141311] outline-none focus:border-[#141311] sm:text-xs"
+                  className="flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm text-[#222222] outline-none focus:border-[#00A885] sm:text-xs"
                 />
                 <button
                   type="submit"
                   disabled={sending}
-                  className="bg-[#141311] px-3.5 py-2 text-[#F5F2EB] transition hover:bg-[#0F5132] disabled:opacity-50"
+                  className="rounded-md bg-[#00A885] px-3.5 py-2 text-white transition hover:bg-[#008C6F] disabled:opacity-50"
                   aria-label="Kirim pertanyaan"
                 >
                   <Send className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
@@ -185,7 +190,7 @@ export function LiveAiChatWidget({ onOpenRegister }: LiveAiChatWidgetProps) {
                       setOpen(false);
                       onOpenRegister();
                     }}
-                    className="font-mono-meta py-1 text-[10px] uppercase tracking-wider text-[#0F5132] hover:underline"
+                    className="py-0.5 text-[11px] font-bold text-[#00A885] hover:underline"
                   >
                     Buka Form Daftar Akses Privat →
                   </button>
