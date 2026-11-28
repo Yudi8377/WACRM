@@ -42,7 +42,7 @@ export const COMMERCIAL_EDITIONS: EditionSpec[] = [
       "Inbox WhatsApp CRM & Katalog Produk",
       "Kasir POS Digital + Scan Barcode/QR",
       "Master Data Pelanggan & Laporan Harian",
-      "Akses Web & Android APK v5.3.1",
+      "Akses Web & Android APK v5.3.2",
     ],
     ctaLabel: "Daftar Gratis Sekarang",
   },

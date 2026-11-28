@@ -11,11 +11,14 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   padding: 0;
+  overflow-x: clip;
   background-color: var(--paper);
   color: var(--ink);
   font-family: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
@@ -50,7 +53,7 @@ body {
   position: relative;
   overflow: hidden;
   isolation: isolate;
-  transition: color 360ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: color 340ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .split-wipe-row::before {
@@ -60,7 +63,7 @@ body {
   background-color: var(--ink);
   transform: scaleX(0);
   transform-origin: left center;
-  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 380ms cubic-bezier(0.22, 1, 0.36, 1);
   z-index: -1;
 }
 
@@ -76,7 +79,7 @@ body {
 
 .split-wipe-row:hover .split-row-muted,
 .split-wipe-row[data-active="true"] .split-row-muted {
-  color: rgba(245, 242, 235, 0.7);
+  color: rgba(245, 242, 235, 0.72);
 }
 
 /* Signature Split Index wipe button */
@@ -87,7 +90,7 @@ body {
   border: 1px solid var(--ink);
   background: transparent;
   color: var(--ink);
-  transition: color 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: color 300ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .split-wipe-btn::before {
@@ -96,7 +99,7 @@ body {
   inset: 0;
   background-color: var(--ink);
   transform: translateY(100%);
-  transition: transform 340ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
   z-index: -1;
 }
 
@@ -108,16 +111,17 @@ body {
   color: var(--paper);
 }
 
-/* Editorial underline inputs */
+/* Editorial underline inputs (min 16px on mobile to prevent iOS/Android auto-zoom) */
 .split-underline-input {
   width: 100%;
   background: transparent;
   border: 0;
   border-bottom: 1px solid rgba(20, 19, 17, 0.24);
-  padding: 0.6rem 0;
+  padding: 0.65rem 0;
   color: var(--ink);
   outline: none;
   border-radius: 0;
+  font-size: 15px;
   transition: border-color 220ms ease;
 }
 
@@ -126,7 +130,7 @@ body {
 }
 
 .split-underline-input::placeholder {
-  color: rgba(20, 19, 17, 0.38);
+  color: rgba(20, 19, 17, 0.4);
 }
 
 /* Editorial fade-in panel transition */
@@ -142,7 +146,7 @@ body {
 }
 
 .split-panel-enter {
-  animation: splitFadeIn 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: splitFadeIn 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* Subtle scrollbar for editorial left column */
@@ -156,4 +160,13 @@ body {
 
 .editorial-scroll::-webkit-scrollbar-thumb {
   background: rgba(20, 19, 17, 0.18);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

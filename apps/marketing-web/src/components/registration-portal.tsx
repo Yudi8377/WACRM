@@ -158,7 +158,7 @@ export function RegistrationPortal({
               >
                 <ExternalLink className="h-3.5 w-3.5" /> Buka Aplikasi Klien
               </a>
-              <span className="font-mono-meta bg-[#141311]/5 px-2.5 py-1.5 text-[10px] text-[#141311]">
+              <span className="font-mono-meta break-all bg-[#141311]/5 px-2.5 py-1.5 text-[10px] text-[#141311]">
                 {success.privateAccessUrl}
               </span>
             </div>
@@ -337,15 +337,15 @@ export function RegistrationPortal({
         />
       </label>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-        <p className="max-w-xs text-[11px] leading-relaxed text-[#6C675E]">
+      <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-[11px] leading-relaxed text-[#6C675E] sm:max-w-xs">
           Tautan akses privat aplikasi terbuka seketika setelah formulir dikirim dan langsung
           dilanjutkan ke Publisher HQ.
         </p>
         <button
           type="submit"
           disabled={submitting}
-          className="split-wipe-btn inline-flex items-center gap-2 px-6 py-3 font-mono-meta text-xs uppercase tracking-widest disabled:opacity-50"
+          className="split-wipe-btn inline-flex w-full items-center justify-center gap-2 px-6 py-3.5 font-mono-meta text-xs uppercase tracking-widest disabled:opacity-50 sm:w-auto sm:py-3"
         >
           {submitting ? "Memverifikasi AI…" : "Daftar & Buka Akses"}
           <ArrowRight className="h-3.5 w-3.5" />
