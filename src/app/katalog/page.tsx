@@ -4,6 +4,7 @@ import { ArrowLeft, CheckCircle2, Globe, Search, ShoppingBag, Sparkles, Tag } fr
 import { formatIdr } from "@/lib/crm-types";
 import { db, isDatabaseConfigured } from "@/lib/db";
 import { slugifySeo } from "@/lib/seo-engine";
+import { CorporateFooter, CorporateNavbar } from "@/components/brand-chrome";
 
 export const dynamic = "force-dynamic";
 
@@ -162,34 +163,36 @@ export default async function PublicCatalogPage() {
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-emerald-50/60 via-white to-slate-50 px-4 py-10">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
-      />
+    <div className="flex min-h-screen flex-col bg-[#F5F5F5] text-[#444444]">
+      <CorporateNavbar activeHref="/katalog" />
 
-      <div className="mx-auto max-w-6xl space-y-8">
-        <header className="rounded-3xl border border-emerald-200 bg-white p-6 shadow-sm sm:p-8">
+      <main className="mx-auto w-full max-w-6xl flex-1 space-y-8 px-4 py-8 sm:px-6">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
+        />
+
+        <header className="rounded-2xl bg-[#222222] p-6 text-white shadow-lg sm:p-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Link
               href="/"
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+              className="inline-flex items-center gap-2 rounded border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20"
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Kembali ke Aplikasi Utama
             </Link>
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-[#00A885]/20 px-3 py-1 font-heading text-xs font-bold text-[#00D4A8]">
               <Search className="h-3.5 w-3.5" /> Terindeks Google SEO · Schema.org Product JSON-LD
             </div>
           </div>
 
-          <h1 className="mt-5 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+          <h1 className="font-heading mt-5 text-2xl font-extrabold tracking-tight text-white sm:text-4xl">
             Katalog Produk Publik Teroptimasi SEO Omnichannel
           </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600 sm:text-base">
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-300 sm:text-base">
             Halaman katalog ini dirender langsung dari server dengan structured data{" "}
-            <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">schema.org/Product</code>,{" "}
-            <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">sitemap.xml</code>, dan{" "}
-            <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">robots.txt</code> agar setiap produk mudah ditemukan di Google Search serta siap dibagikan ke WhatsApp, Instagram, TikTok, YouTube &amp; Facebook.
+            <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs text-[#00D4A8]">schema.org/Product</code>,{" "}
+            <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs text-[#00D4A8]">sitemap.xml</code>, dan{" "}
+            <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs text-[#00D4A8]">robots.txt</code> agar setiap produk mudah ditemukan di Google Search serta siap dibagikan ke WhatsApp, Instagram, TikTok, YouTube &amp; Facebook.
           </p>
         </header>
 
@@ -203,39 +206,39 @@ export default async function PublicCatalogPage() {
               <article
                 key={item.id}
                 id={slug}
-                className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-emerald-300 hover:shadow-md"
+                className="flex flex-col justify-between rounded-xl border border-zinc-200 bg-white p-5 shadow-xs transition hover:border-[#00A885] hover:shadow-md"
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#E6F7F3] px-2.5 py-1 font-heading font-bold text-[#008C6F]">
                       <Tag className="h-3 w-3" /> {item.category}
                     </span>
-                    <span className="font-mono text-[11px] text-slate-500">SKU: {item.sku}</span>
+                    <span className="font-mono text-[11px] text-[#797979]">SKU: {item.sku}</span>
                   </div>
 
-                  <h2 className="mt-3 text-lg font-bold text-slate-900">{item.name}</h2>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-600">{item.description}</p>
+                  <h2 className="font-heading mt-3 text-lg font-extrabold text-[#222222]">{item.name}</h2>
+                  <p className="mt-2 text-sm leading-relaxed text-[#666666]">{item.description}</p>
                 </div>
 
-                <div className="mt-5 border-t border-slate-100 pt-4">
+                <div className="mt-5 border-t border-zinc-100 pt-4">
                   <div className="flex items-baseline justify-between gap-2">
-                    <div className="text-xl font-extrabold text-emerald-700">
+                    <div className="font-heading text-xl font-extrabold text-[#00A885]">
                       {formatIdr(item.unitPrice)}
-                      <span className="text-xs font-normal text-slate-500"> /{item.unit}</span>
+                      <span className="text-xs font-normal text-[#797979]"> /{item.unit}</span>
                     </div>
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#008C6F]">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-[#00A885]" />
                       {item.stockQty > 0 ? `Stok Ready (${item.stockQty})` : "Pre-Order"}
                     </span>
                   </div>
 
-                  <div className="mt-3 flex items-center justify-between gap-2 text-xs text-slate-500">
+                  <div className="mt-3 flex items-center justify-between gap-2 text-xs text-[#666666]">
                     <span className="inline-flex items-center gap-1">
-                      <Globe className="h-3.5 w-3.5 text-slate-400" /> {item.storeName}
+                      <Globe className="h-3.5 w-3.5 text-[#797979]" /> {item.storeName}
                     </span>
                     <Link
                       href="/"
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+                      className="inline-flex items-center gap-1.5 rounded bg-[#00A885] px-3.5 py-2 font-heading text-xs font-bold uppercase tracking-wider text-white hover:bg-[#008C6F]"
                     >
                       <ShoppingBag className="h-3.5 w-3.5" /> Pesan via AI
                     </Link>
@@ -246,21 +249,23 @@ export default async function PublicCatalogPage() {
           })}
         </section>
 
-        <footer className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-xs text-slate-600">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-white px-5 py-4 text-xs text-[#555555]">
           <div className="inline-flex items-center gap-2 font-medium">
-            <Sparkles className="h-4 w-4 text-emerald-600" />
-            Dioptimalkan oleh Agen #9 SEO &amp; Omnichannel Growth AI — WACRM v4.0
+            <Sparkles className="h-4 w-4 text-[#00A885]" />
+            Dioptimalkan oleh Agen #9 SEO &amp; Omnichannel Growth AI — WACRM v5.3.2
           </div>
           <div className="flex gap-4">
-            <a href="/sitemap.xml" className="font-semibold text-emerald-700 hover:underline">
+            <a href="/sitemap.xml" className="font-semibold text-[#00A885] hover:underline">
               sitemap.xml
             </a>
-            <a href="/robots.txt" className="font-semibold text-emerald-700 hover:underline">
+            <a href="/robots.txt" className="font-semibold text-[#00A885] hover:underline">
               robots.txt
             </a>
           </div>
-        </footer>
-      </div>
-    </main>
+        </div>
+      </main>
+
+      <CorporateFooter />
+    </div>
   );
 }

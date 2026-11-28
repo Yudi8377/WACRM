@@ -473,30 +473,33 @@ export function WorkspaceApp({
     : "--:--";
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-slate-50">
-      {/* TOP BAR */}
-      <header className="safe-top flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3.5 md:px-5">
+    <div className="flex h-dvh flex-col overflow-hidden bg-[#F5F5F5]">
+      {/* TOP BAR (Unified WACRM Enterprise Brand Chrome) */}
+      <header className="safe-top flex h-14 shrink-0 items-center justify-between border-b border-zinc-200 bg-white px-3.5 shadow-xs md:px-5">
         <div className="flex min-w-0 items-center gap-2.5">
           <button
             type="button"
             onClick={() => setTab("inbox")}
             className="flex shrink-0 items-center gap-2 text-left"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/icons/icon-192.png" alt="WACRM" className="h-8 w-8 rounded-xl shadow-xs" />
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-[#00A885] font-heading text-sm font-extrabold text-white shadow-xs">
+              W
+            </span>
             <div className="flex items-center gap-1.5">
-              <span className="font-extrabold tracking-tight text-slate-900">WACRM</span>
-              <span className="hidden rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white sm:inline">
-                v4.2
+              <span className="font-heading text-base font-extrabold tracking-tight text-[#222222]">
+                WACRM<span className="text-[#00A885]">.</span>
+              </span>
+              <span className="hidden rounded bg-[#222222] px-1.5 py-0.5 text-[10px] font-bold text-[#00D4A8] sm:inline">
+                v5.3.2
               </span>
             </div>
           </button>
-          <span className="hidden text-slate-300 sm:inline">/</span>
+          <span className="hidden text-zinc-300 sm:inline">/</span>
           <button
             type="button"
             onClick={() => setTab("settings")}
             title="Klik untuk ubah profil toko/usaha"
-            className="truncate text-sm font-bold text-slate-800 hover:text-emerald-700"
+            className="truncate font-heading text-sm font-bold text-[#222222] hover:text-[#00A885]"
           >
             {storeProfile.businessName}
           </button>
@@ -504,14 +507,14 @@ export function WorkspaceApp({
             type="button"
             onClick={() => setTab("editions")}
             title="Klik untuk lihat & ubah Edisi WACRM"
-            className="hidden items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-[10px] font-bold text-indigo-800 hover:bg-indigo-100 md:inline-flex"
+            className="hidden items-center gap-1 rounded-full border border-[#00A885]/35 bg-[#E6F7F3] px-2.5 py-0.5 font-heading text-[10px] font-bold text-[#008C6F] hover:bg-[#d5f2eb] md:inline-flex"
           >
             <Layers className="h-3 w-3" />
             {activeEdition.name}
           </button>
           {adapter.mode === "neon" && (
-            <span className="hidden items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 lg:inline-flex">
-              <CloudCheck className="h-3.5 w-3.5" />
+            <span className="hidden items-center gap-1 rounded-full border border-[#00A885]/30 bg-[#E6F7F3] px-2.5 py-0.5 text-[11px] font-semibold text-[#006B54] lg:inline-flex">
+              <CloudCheck className="h-3.5 w-3.5 text-[#00A885]" />
               Sinkron · {syncedClock}
             </span>
           )}
@@ -548,10 +551,10 @@ export function WorkspaceApp({
               playWarmActivationChime();
               setCompanionOpenSignal((s) => s + 1);
             }}
-            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold ring-1 transition ${
+            className={`inline-flex items-center gap-1.5 rounded px-3 py-1.5 font-heading text-xs font-bold ring-1 transition ${
               voiceCompanionUnlocked
-                ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white ring-emerald-400 shadow-xs hover:from-emerald-600 hover:to-teal-600"
-                : "bg-emerald-50 text-emerald-800 ring-emerald-200 hover:bg-emerald-100"
+                ? "bg-[#00A885] text-white ring-[#00A885] shadow-xs hover:bg-[#008C6F]"
+                : "bg-[#E6F7F3] text-[#008C6F] ring-[#00A885]/35 hover:bg-[#d5f2eb]"
             }`}
             title="Buka Asisten Pribadi & Pemandu Suara AI 24/7 (Suara Ramah & Hangat)"
           >
@@ -596,7 +599,7 @@ export function WorkspaceApp({
           ) : (
             <Link
               href="/sign-in"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+              className="inline-flex items-center gap-1.5 rounded bg-[#222222] px-3 py-1.5 font-heading text-xs font-bold text-white hover:bg-[#00A885]"
             >
               <LogIn className="h-3.5 w-3.5" />
               <span>Masuk</span>
@@ -607,10 +610,10 @@ export function WorkspaceApp({
 
       {/* BODY: Desktop Sidebar + Main View */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <nav className="hidden w-60 shrink-0 flex-col justify-between overflow-y-auto border-r border-slate-200 bg-white p-3 md:flex">
+        <nav className="hidden w-60 shrink-0 flex-col justify-between overflow-y-auto border-r border-zinc-200 bg-white p-3 md:flex">
           <div className="space-y-4">
             <div>
-              <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+              <p className="mb-1.5 px-3 font-heading text-[10px] font-extrabold uppercase tracking-wider text-[#00A885]">
                 Operasional Bisnis
               </p>
               <div className="space-y-1">
@@ -627,17 +630,17 @@ export function WorkspaceApp({
                       key={item.id}
                       type="button"
                       onClick={() => setTab(item.id)}
-                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition ${
                         active
-                          ? "bg-emerald-50 text-emerald-800"
+                          ? "bg-[#E6F7F3] text-[#008C6F]"
                           : access.allowed
-                            ? "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                            : "text-slate-400 hover:bg-slate-50"
+                            ? "text-[#444444] hover:bg-[#F5F5F5] hover:text-[#222222]"
+                            : "text-[#888888] hover:bg-[#F5F5F5]"
                       }`}
                       title={access.allowed ? item.label : access.reason ?? "Terkunci oleh Edisi/Role"}
                     >
                       <span className="flex items-center gap-2.5">
-                        <Icon className={`h-4 w-4 ${active ? "text-emerald-600" : "text-slate-400"}`} />
+                        <Icon className={`h-4 w-4 ${active ? "text-[#00A885]" : "text-[#797979]"}`} />
                         {item.label}
                       </span>
                       {!access.allowed ? (
@@ -674,7 +677,7 @@ export function WorkspaceApp({
 
             {!compactMode && (
             <div>
-              <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <p className="mb-1.5 px-3 font-heading text-[10px] font-extrabold uppercase tracking-wider text-[#797979]">
                 CRM &amp; Kanal
               </p>
               <div className="space-y-1">
@@ -687,16 +690,16 @@ export function WorkspaceApp({
                       key={item.id}
                       type="button"
                       onClick={() => setTab(item.id)}
-                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition ${
                         active
-                          ? "bg-emerald-50 text-emerald-800"
+                          ? "bg-[#E6F7F3] text-[#008C6F]"
                           : access.allowed
-                            ? "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                            : "text-slate-400 hover:bg-slate-50"
+                            ? "text-[#444444] hover:bg-[#F5F5F5] hover:text-[#222222]"
+                            : "text-[#888888] hover:bg-[#F5F5F5]"
                       }`}
                     >
                       <span className="flex items-center gap-2.5">
-                        <Icon className={`h-4 w-4 ${active ? "text-emerald-600" : "text-slate-400"}`} />
+                        <Icon className={`h-4 w-4 ${active ? "text-[#00A885]" : "text-[#797979]"}`} />
                         {item.label}
                       </span>
                       {!access.allowed && (
@@ -713,8 +716,8 @@ export function WorkspaceApp({
             )}
 
             <div>
-              <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-wider text-amber-700">
-                Platform &amp; Edisi v5.0
+              <p className="mb-1.5 px-3 font-heading text-[10px] font-extrabold uppercase tracking-wider text-[#222222]">
+                Platform &amp; Edisi v5.3.2
               </p>
               <div className="space-y-1">
                 {NAV_ITEMS.filter((n) => n.group === "platform").map((item) => {
@@ -726,22 +729,22 @@ export function WorkspaceApp({
                       key={item.id}
                       type="button"
                       onClick={() => setTab(item.id)}
-                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold transition ${
                         active
-                          ? "bg-amber-50 text-amber-900"
+                          ? "bg-[#E6F7F3] text-[#008C6F]"
                           : access.allowed
-                            ? "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                            : "text-slate-400 hover:bg-slate-50"
+                            ? "text-[#444444] hover:bg-[#F5F5F5] hover:text-[#222222]"
+                            : "text-[#888888] hover:bg-[#F5F5F5]"
                       }`}
                     >
                       <span className="flex items-center gap-2.5">
-                        <Icon className={`h-4 w-4 ${active ? "text-amber-600" : "text-slate-400"}`} />
+                        <Icon className={`h-4 w-4 ${active ? "text-[#00A885]" : "text-[#797979]"}`} />
                         {item.label}
                       </span>
                       {!access.allowed ? (
                         <Lock className="h-3.5 w-3.5 text-amber-500" />
                       ) : item.id === "editions" ? (
-                        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800">
+                        <span className="rounded-full bg-[#222222] px-2 py-0.5 text-[10px] font-bold text-[#00D4A8]">
                           {activeEdition.id.toUpperCase()}
                         </span>
                       ) : null}
@@ -752,19 +755,19 @@ export function WorkspaceApp({
             </div>
           </div>
 
-          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs">
+          <div className="mt-4 rounded-xl border border-[#00A885]/30 bg-[#E6F7F3] p-3 text-xs">
             <div className="flex items-center justify-between gap-1">
-              <p className="truncate font-bold text-emerald-900">{activeEdition.name}</p>
+              <p className="truncate font-heading font-extrabold text-[#222222]">{activeEdition.name}</p>
               <button
                 type="button"
                 onClick={() => setTab("editions")}
-                className="text-[10px] font-bold text-indigo-700 hover:underline"
+                className="text-[10px] font-bold text-[#00A885] hover:underline"
               >
                 Upgrade
               </button>
             </div>
             {quotaSnapshot && (
-              <div className="mt-2 space-y-1 text-[10px] text-emerald-900/90">
+              <div className="mt-2 space-y-1 text-[10px] text-[#333333]">
                 <div className="flex justify-between">
                   <span>Kontak CRM</span>
                   <strong className={!quotaSnapshot.contacts.withinQuota ? "text-rose-600" : ""}>
@@ -858,16 +861,16 @@ export function WorkspaceApp({
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {/* PREVIEW-ONLY BANNER WHEN MODULE IS ABOVE ACTIVE EDITION */}
               {isPreviewRestricted && (
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-500/40 bg-slate-900 px-4 py-3 text-xs text-white">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#00A885]/40 bg-[#222222] px-4 py-3 text-xs text-white">
                   <div className="flex items-start gap-2.5">
-                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300">
+                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#00A885]/20 text-[#00D4A8]">
                       <Lock className="h-4 w-4" />
                     </div>
                     <div>
-                      <div className="font-extrabold text-amber-300">
+                      <div className="font-heading font-extrabold text-[#00D4A8]">
                         Mode Pratinjau Tampilan — Tombol Aksi Dibatasi ({activeEdition.name})
                       </div>
-                      <p className="mt-0.5 text-[11px] text-slate-300">
+                      <p className="mt-0.5 text-[11px] text-zinc-300">
                         {currentTabAccess.reason ||
                           `Modul ini membutuhkan minimal edisi ${currentTabAccess.requiredEditionName}. Coba gratis dengan Trial atau aktifkan License Key untuk membuka seluruh tombol & otomatisasi.`}
                       </p>
@@ -878,24 +881,24 @@ export function WorkspaceApp({
                       <button
                         type="button"
                         onClick={() => handleStartEditionTrial("pro")}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-500 px-3.5 py-2 text-xs font-extrabold text-slate-950 hover:bg-cyan-400"
+                        className="inline-flex items-center gap-1.5 rounded bg-white/15 px-3.5 py-2 font-heading text-xs font-extrabold text-white hover:bg-white/25"
                       >
-                        <Sparkles className="h-3.5 w-3.5" /> Coba Gratis 14 Hari Pro
+                        <Sparkles className="h-3.5 w-3.5 text-[#00D4A8]" /> Coba Gratis 14 Hari Pro
                       </button>
                     )}
                     {currentTabAccess.requiredEditionId === "enterprise" && (
                       <button
                         type="button"
                         onClick={() => handleStartEditionTrial("enterprise")}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-violet-500 px-3.5 py-2 text-xs font-extrabold text-white hover:bg-violet-400"
+                        className="inline-flex items-center gap-1.5 rounded bg-white/15 px-3.5 py-2 font-heading text-xs font-extrabold text-white hover:bg-white/25"
                       >
-                        <Sparkles className="h-3.5 w-3.5" /> Coba Gratis 7 Hari Enterprise
+                        <Sparkles className="h-3.5 w-3.5 text-[#00D4A8]" /> Coba Gratis 7 Hari Enterprise
                       </button>
                     )}
                     <button
                       type="button"
                       onClick={() => setTab("editions")}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 text-xs font-extrabold text-slate-950 hover:bg-emerald-400"
+                      className="inline-flex items-center gap-1.5 rounded bg-[#00A885] px-3.5 py-2 font-heading text-xs font-extrabold uppercase tracking-wider text-white hover:bg-[#008C6F]"
                     >
                       <KeyRound className="h-3.5 w-3.5" /> Buka dengan License Key
                     </button>
@@ -1262,7 +1265,7 @@ export function WorkspaceApp({
       </div>
 
       {/* MOBILE / ANDROID SCROLLABLE BOTTOM NAVIGATION BAR */}
-      <nav className="safe-bottom flex overflow-x-auto border-t border-slate-200 bg-white md:hidden">
+      <nav className="safe-bottom flex overflow-x-auto border-t border-zinc-200 bg-white md:hidden">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = tab === item.id;
@@ -1274,10 +1277,10 @@ export function WorkspaceApp({
               onClick={() => setTab(item.id)}
               className={`relative flex min-w-[66px] shrink-0 flex-col items-center justify-center gap-0.5 px-2 py-2 text-[10px] font-semibold transition ${
                 active
-                  ? "bg-emerald-50/70 text-emerald-700"
+                  ? "bg-[#E6F7F3] text-[#008C6F]"
                   : access.allowed
-                    ? "text-slate-500"
-                    : "text-slate-400"
+                    ? "text-[#666666]"
+                    : "text-[#999999]"
               }`}
             >
               <Icon className="h-4.5 w-4.5" />
@@ -1288,7 +1291,7 @@ export function WorkspaceApp({
                 </span>
               )}
               {access.allowed && item.id === "inbox" && unreadTotal > 0 && (
-                <span className="absolute right-2 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-600 px-1 text-[9px] font-bold text-white">
+                <span className="absolute right-2 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#00A885] px-1 text-[9px] font-bold text-white">
                   {unreadTotal}
                 </span>
               )}
@@ -1320,8 +1323,8 @@ export function WorkspaceApp({
       {toast && (
         <div
           role="status"
-          className={`fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-2xl px-4 py-2.5 text-xs font-semibold text-white shadow-xl md:bottom-6 ${
-            toast.tone === "error" ? "bg-red-600" : "bg-slate-900"
+          className={`fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-xl px-4 py-2.5 text-xs font-semibold text-white shadow-xl md:bottom-6 ${
+            toast.tone === "error" ? "bg-rose-600" : "bg-[#222222]"
           }`}
         >
           {toast.text}

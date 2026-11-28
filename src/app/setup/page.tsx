@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, Copy, Database, ExternalLink, RefreshCw, ShieldCheck, Terminal, XCircle } from "lucide-react";
 import { CommercialActivationConsole } from "@/components/commercial-activation-console";
+import { CorporateFooter, CorporateNavbar } from "@/components/brand-chrome";
 
 interface SystemStatusResponse {
   neon: {
@@ -113,103 +114,109 @@ export default function SetupPage() {
     : [];
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-4xl space-y-6">
+    <div className="flex min-h-screen flex-col bg-[#F5F5F5] text-[#444444]">
+      <CorporateNavbar activeHref="/setup" />
+
+      <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 px-4 py-8 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Link href="/" className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:underline">
+          <Link href="/" className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#00A885] hover:underline">
             <ArrowLeft className="h-4 w-4" />
-            Kembali ke Beranda
+            Kembali ke Portal Aplikasi
           </Link>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => void loadStatus()}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 rounded border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-[#444444] hover:border-[#00A885] hover:text-[#00A885]"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
               Periksa Ulang
             </button>
             <Link
               href="/demo"
-              className="rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+              className="rounded bg-[#00A885] px-4 py-2 font-heading text-xs font-bold uppercase tracking-wider text-white transition hover:bg-[#008C6F]"
             >
               Buka Mode Demo
             </Link>
           </div>
         </div>
 
-        <header className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+        <header className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4 bg-[#222222] p-6 text-white">
             <div>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#00A885]/20 px-3 py-1 font-heading text-xs font-bold text-[#00D4A8]">
                 <Database className="h-3.5 w-3.5" />
-                Pusat Koneksi Neon PostgreSQL
+                Pusat Koneksi Neon PostgreSQL &amp; Cloudflare Workers
               </span>
-              <h1 className="mt-3 text-2xl font-extrabold text-slate-900">Status Database &amp; Aktivasi Live</h1>
-              <p className="mt-1 text-sm text-slate-600">
-                Target Project: <code className="font-mono font-semibold">{status?.neon.projectId ?? "small-tree-35716017"}</code> · Branch:{" "}
-                <code className="font-mono font-semibold">{status?.neon.branchId ?? "br-patient-mud-a1xi2iun"}</code>
+              <h1 className="font-heading mt-3 text-2xl font-extrabold text-white">
+                Status Database &amp; Aktivasi Live
+              </h1>
+              <p className="mt-1 text-sm text-zinc-300">
+                Target Project: <code className="font-mono font-semibold text-[#00D4A8]">{status?.neon.projectId ?? "small-tree-35716017"}</code> · Branch:{" "}
+                <code className="font-mono font-semibold text-white">{status?.neon.branchId ?? "br-patient-mud-a1xi2iun"}</code>
               </p>
             </div>
             <a
               href={status?.neon.consoleUrl ?? "https://console.neon.tech/app/projects/small-tree-35716017/branches/br-patient-mud-a1xi2iun"}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-semibold text-white hover:bg-slate-800"
+              className="inline-flex items-center gap-1.5 rounded bg-[#00A885] px-4 py-2.5 font-heading text-xs font-bold uppercase tracking-wider text-white hover:bg-[#008C6F]"
             >
               Buka Neon Console
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
           </div>
 
-          <div className="mt-6 space-y-3">
+          <div className="space-y-3 p-6">
             {loading && !status ? (
-              <p className="text-sm text-slate-400">Memeriksa kesiapan server...</p>
+              <p className="text-sm text-[#797979]">Memeriksa kesiapan server...</p>
             ) : (
               checkRows.map((item) => (
-                <div key={item.label} className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-3.5">
+                <div key={item.label} className="flex items-start gap-3 rounded-xl border border-zinc-200 bg-[#F5F5F5] p-3.5">
                   {item.ok ? (
-                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#00A885]" />
                   ) : (
                     <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
                   )}
                   <div>
-                    <p className="text-sm font-bold text-slate-900">{item.label}</p>
-                    <p className="mt-0.5 text-xs text-slate-600">{item.hint}</p>
+                    <p className="font-heading text-sm font-bold text-[#222222]">{item.label}</p>
+                    <p className="mt-0.5 text-xs text-[#666666]">{item.hint}</p>
                   </div>
                 </div>
               ))
             )}
-          </div>
 
-          {status?.readyForLiveAuth && (
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-              <div className="flex items-center gap-2 text-sm font-bold text-emerald-900">
-                <ShieldCheck className="h-5 w-5 text-emerald-600" />
-                Database Neon siap digunakan untuk produksi!
+            {status?.readyForLiveAuth && (
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#00A885]/35 bg-[#E6F7F3] p-4">
+                <div className="flex items-center gap-2 text-sm font-bold text-[#006B54]">
+                  <ShieldCheck className="h-5 w-5 text-[#00A885]" />
+                  Database Neon siap digunakan untuk produksi!
+                </div>
+                <Link href="/sign-up" className="rounded bg-[#00A885] px-4 py-2 font-heading text-xs font-bold uppercase tracking-wider text-white hover:bg-[#008C6F]">
+                  Daftar &amp; Masuk Dashboard →
+                </Link>
               </div>
-              <Link href="/sign-up" className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700">
-                Daftar &amp; Masuk Dashboard →
-              </Link>
-            </div>
-          )}
+            )}
+          </div>
         </header>
 
         {/* Step-by-step */}
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs">
+        <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-bold text-slate-900">Langkah Aktivasi Neon (Otomatis saat Redeploy)</h2>
-            <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
+            <h2 className="font-heading text-lg font-extrabold text-[#222222]">
+              Langkah Aktivasi Neon (Otomatis saat Redeploy)
+            </h2>
+            <span className="rounded-full bg-[#E6F7F3] px-2.5 py-0.5 font-heading text-[11px] font-bold text-[#008C6F]">
               Auto-Migrate Aktif
             </span>
           </div>
-          <ol className="mt-4 space-y-3 text-sm text-slate-700 list-decimal pl-5">
+          <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm text-[#444444]">
             <li>
-              Buka Vercel Dashboard proyek <strong>wacrm → Storage / Integrations → Neon</strong> (atau <strong>Settings → Environment Variables</strong>) lalu hubungkan branch{" "}
-              <code className="font-mono">br-patient-mud-a1xi2iun</code> (<code className="font-mono">DATABASE_URL</code> / <code className="font-mono">POSTGRES_URL</code>).
+              Tambahkan <code className="font-mono">DATABASE_URL</code> (Neon branch{" "}
+              <code className="font-mono">br-patient-mud-a1xi2iun</code> atau Supabase PostgreSQL) pada Environment Variables Cloudflare Workers / GitHub Secrets.
             </li>
             <li>
-              Klik <strong>Redeploy</strong> di Vercel — skrip <code className="font-mono">scripts/vercel-migrate.mjs</code> otomatis menerapkan seluruh 19 tabel + RLS multi-tenant secara idempoten.
+              Jalankan deploy — skrip <code className="font-mono">scripts/vercel-migrate.mjs</code> otomatis menerapkan seluruh 19 tabel + RLS multi-tenant secara idempoten.
             </li>
             <li>
               <em>Opsional (role least-privilege <code className="font-mono">wacrm_runtime</code>):</em> jika menggunakan role non-owner, jalankan skrip SQL di bawah sekali saja di{" "}
@@ -217,7 +224,7 @@ export default function SetupPage() {
                 href="https://console.neon.tech/app/projects/small-tree-35716017/branches/br-patient-mud-a1xi2iun"
                 target="_blank"
                 rel="noreferrer"
-                className="font-semibold text-emerald-700 underline"
+                className="font-semibold text-[#00A885] underline"
               >
                 Neon SQL Editor
               </a>
@@ -230,30 +237,36 @@ export default function SetupPage() {
         <CommercialActivationConsole />
 
         {/* Copyable SQL */}
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs">
+        <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <Terminal className="h-5 w-5 text-emerald-600" />
+              <Terminal className="h-5 w-5 text-[#00A885]" />
               <div>
-                <h2 className="text-base font-bold text-slate-900">Skrip SQL Lengkap (db/neon-production-setup.sql)</h2>
-                <p className="text-xs text-slate-500">Migrasi 0001–0007 · 19 tabel · RLS multi-tenant aktif · Aman dijalankan berulang kali</p>
+                <h2 className="font-heading text-base font-extrabold text-[#222222]">
+                  Skrip SQL Lengkap (db/neon-production-setup.sql)
+                </h2>
+                <p className="text-xs text-[#666666]">
+                  Migrasi 0001–0007 · 19 tabel · RLS multi-tenant aktif · Aman dijalankan berulang kali
+                </p>
               </div>
             </div>
             <button
               type="button"
               onClick={copySql}
               disabled={!sqlText}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded bg-[#00A885] px-4 py-2 font-heading text-xs font-bold uppercase tracking-wider text-white hover:bg-[#008C6F] disabled:opacity-50"
             >
               <Copy className="h-3.5 w-3.5" />
               {copiedSql ? "SQL Tersalin!" : "Salin Semua SQL"}
             </button>
           </div>
-          <pre className="mt-4 max-h-96 overflow-auto rounded-2xl bg-slate-950 p-4 font-mono text-[11px] leading-relaxed text-emerald-200">
+          <pre className="mt-4 max-h-96 overflow-auto rounded-xl bg-[#1B1B1B] p-4 font-mono text-[11px] leading-relaxed text-[#00D4A8]">
             {sqlText || "Memuat skrip SQL..."}
           </pre>
         </section>
-      </div>
+      </main>
+
+      <CorporateFooter />
     </div>
   );
 }

@@ -17,21 +17,21 @@ export default function RefundPolicyPage() {
       effectiveDate="26 November 2026"
     >
       <section className="space-y-2">
-        <h2 className="text-base font-extrabold text-white">1. Evaluasi Risiko Nol (Gratis &amp; Uji Coba Sebelum Bayar)</h2>
+        <h2 className="text-base font-extrabold text-[#222222]">1. Evaluasi Risiko Nol (Gratis &amp; Uji Coba Sebelum Bayar)</h2>
         <p>
           WACRM menyediakan paket <strong>Starter UMKM Gratis Selamanya</strong> serta masa uji coba tanpa biaya (<strong>Trial 14 Hari Growth Pro</strong> dan <strong>Trial 7 Hari Enterprise AI Suite</strong>) agar calon pelanggan dapat menguji kesesuaian fitur, printer thermal/A4, dan alur operasional sebelum melakukan pembayaran apa pun.
         </p>
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-extrabold text-white">2. Metode Pembayaran Resmi</h2>
+        <h2 className="text-base font-extrabold text-[#222222]">2. Metode Pembayaran Resmi</h2>
         <p>
           Pembayaran upgrade paket dilakukan dalam mata uang <strong>Rupiah (IDR)</strong> melalui kanal resmi yang tertera pada halaman Tagihan &amp; Lisensi aplikasi (QRIS, Virtual Account Bank melalui Payment Gateway Midtrans / Xendit / Tripay, atau transfer bank resmi yang terverifikasi oleh Publisher HQ).
         </p>
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-extrabold text-white">3. Kriteria Pengembalian Dana (Refund 100%)</h2>
+        <h2 className="text-base font-extrabold text-[#222222]">3. Kriteria Pengembalian Dana (Refund 100%)</h2>
         <p>Pengajuan pengembalian dana dapat disetujui penuh dalam kondisi berikut:</p>
         <ul className="list-disc space-y-1.5 pl-5">
           <li><strong>Penagihan Ganda (Double Charge):</strong> Terjadi pendebitan dua kali untuk tagihan dan periode yang sama akibat gangguan jaringan pembayaran.</li>
@@ -41,7 +41,7 @@ export default function RefundPolicyPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-extrabold text-white">4. Kondisi yang Tidak Dapat Di-Refund</h2>
+        <h2 className="text-base font-extrabold text-[#222222]">4. Kondisi yang Tidak Dapat Di-Refund</h2>
         <ul className="list-disc space-y-1.5 pl-5">
           <li>Permintaan pengembalian dana setelah melewati 7 hari kalender sejak pembayaran dan layanan berjalan normal.</li>
           <li>Akun yang ditangguhkan akibat pelanggaran Syarat &amp; Ketentuan (misalnya aktivitas spam WhatsApp atau penyalahgunaan lisensi).</li>
@@ -50,7 +50,7 @@ export default function RefundPolicyPage() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-base font-extrabold text-white">5. Prosedur Pengajuan &amp; Waktu Pemrosesan</h2>
+        <h2 className="text-base font-extrabold text-[#222222]">5. Prosedur Pengajuan &amp; Waktu Pemrosesan</h2>
         <p>
           Kirimkan nomor invoice, email terdaftar, bukti transfer/pembayaran, dan alasan pengajuan ke <strong>billing@wacrm.id</strong> atau WhatsApp Billing resmi. Pengembalian dana yang disetujui diproses ke rekening atau metode pembayaran asal dalam <strong>5–10 hari kerja</strong>.
         </p>

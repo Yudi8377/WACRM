@@ -13,6 +13,7 @@ import {
   Smartphone,
   Terminal,
 } from "lucide-react";
+import { CorporateFooter, CorporateNavbar } from "@/components/brand-chrome";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -44,42 +45,41 @@ export default function AndroidPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6">
-      <div className="mx-auto max-w-4xl space-y-6">
+    <div className="flex min-h-screen flex-col bg-[#F5F5F5] text-[#444444]">
+      <CorporateNavbar activeHref="/android" />
+
+      <main className="mx-auto w-full max-w-5xl flex-1 space-y-6 px-4 py-8 sm:px-6">
         <div className="flex items-center justify-between">
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:underline"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#00A885] hover:underline"
           >
             <ArrowLeft className="h-4 w-4" />
-            Kembali ke Beranda
+            Kembali ke Portal Aplikasi
           </Link>
           <Link
             href="/demo"
-            className="rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+            className="rounded bg-[#00A885] px-4 py-2 font-heading text-xs font-bold uppercase tracking-wider text-white transition hover:bg-[#008C6F]"
           >
             Buka Web App
           </Link>
         </div>
 
         {/* Hero */}
-        <section className="rounded-3xl bg-slate-900 p-7 text-white shadow-xl">
+        <section className="rounded-2xl bg-[#222222] p-7 text-white shadow-xl">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/icons/icon-512.png"
-              alt="Ikon Aplikasi Android WACRM"
-              className="h-20 w-20 rounded-3xl shadow-lg"
-            />
+            <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-[#00A885] font-heading text-4xl font-extrabold text-white shadow-lg">
+              W
+            </span>
             <div>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-300">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#00A885]/20 px-3 py-1 font-heading text-xs font-bold text-[#00D4A8]">
                 <Smartphone className="h-3.5 w-3.5" />
                 Go-Commercial Suite v5.3.2 · Signed Release APK (v1/v2/v3) &amp; Auto-Fix Izin
               </span>
-              <h1 className="mt-2.5 text-2xl font-extrabold sm:text-3xl">
+              <h1 className="font-heading mt-2.5 text-2xl font-extrabold sm:text-3xl">
                 Pusat Installer Resmi WACRM v5.3.2 (Android APK &amp; Windows Offline Bundle)
               </h1>
-              <p className="mt-1.5 text-sm text-slate-300">
+              <p className="mt-1.5 text-sm text-zinc-300">
                 APK Release resmi <strong>com.wacrm.android v5.3.2</strong> telah ditandatangani
                 penuh (Signature v1 + v2 + v3, 4-byte zipalign, non-debuggable) dan dialirkan
                 langsung dari server HTTPS WACRM agar bebas korupsi unduhan di Chrome/MIUI/Samsung
@@ -92,7 +92,7 @@ export default function AndroidPage() {
             <a
               href="/api/download/android-apk"
               download="WACRM-v5.3.2-Android.apk"
-              className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-extrabold text-slate-950 shadow-lg shadow-emerald-500/25 hover:bg-emerald-400"
+              className="inline-flex items-center gap-2 rounded bg-[#00A885] px-5 py-3 font-heading text-xs font-extrabold uppercase tracking-wider text-white shadow-lg transition hover:bg-[#008C6F]"
             >
               <Download className="h-4 w-4" />
               Unduh APK Android Resmi (Signed Release v5.3.2)
@@ -100,7 +100,7 @@ export default function AndroidPage() {
             <a
               href="/downloads/WACRM-v5.3-Commercial-Offline-Installer-Bundle.zip"
               download
-              className="inline-flex items-center gap-2 rounded-2xl bg-amber-400 px-5 py-3 text-sm font-extrabold text-slate-950 shadow-lg shadow-amber-500/20 hover:bg-amber-300"
+              className="inline-flex items-center gap-2 rounded border border-white/25 bg-white/10 px-5 py-3 font-heading text-xs font-extrabold uppercase tracking-wider text-white transition hover:bg-white/20"
             >
               <Download className="h-4 w-4" />
               Unduh Bundle Offline Installer (Windows + Android ADB)
@@ -109,13 +109,13 @@ export default function AndroidPage() {
               <button
                 type="button"
                 onClick={() => void triggerInstall()}
-                className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/40 bg-emerald-500/15 px-5 py-3 text-sm font-bold text-emerald-200 hover:bg-emerald-500/25"
+                className="inline-flex items-center gap-2 rounded border border-[#00D4A8]/50 bg-[#00A885]/20 px-5 py-3 font-heading text-xs font-bold uppercase tracking-wider text-[#00D4A8] hover:bg-[#00A885]/30"
               >
                 <Smartphone className="h-4 w-4" />
                 Pasang Instan PWA (Tanpa APK)
               </button>
             ) : installed ? (
-              <span className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500/20 px-5 py-3 text-sm font-bold text-emerald-300">
+              <span className="inline-flex items-center gap-2 rounded bg-[#00A885]/20 px-5 py-3 text-sm font-bold text-[#00D4A8]">
                 <CheckCircle2 className="h-4 w-4" />
                 WACRM sudah terpasang di perangkat ini!
               </span>
@@ -124,44 +124,44 @@ export default function AndroidPage() {
               href="https://github.com/Yudi8377/WACRM/releases/latest/download/wacrm-android.apk"
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-700 bg-slate-800/70 px-4 py-3 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+              className="inline-flex items-center gap-2 rounded border border-zinc-600 bg-[#1B1B1B] px-4 py-3 text-xs font-semibold text-zinc-200 hover:border-[#00A885] hover:text-[#00D4A8]"
             >
               Mirror GitHub Releases
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
           </div>
 
-          <div className="mt-5 grid grid-cols-2 gap-2.5 rounded-2xl border border-slate-800 bg-slate-950/60 p-3.5 text-[11px] sm:grid-cols-4">
+          <div className="mt-5 grid grid-cols-2 gap-2.5 rounded-xl border border-white/10 bg-[#1B1B1B] p-3.5 text-[11px] sm:grid-cols-4">
             <div>
-              <div className="text-slate-400">Package ID Resmi</div>
-              <div className="font-mono font-bold text-emerald-300">com.wacrm.android</div>
+              <div className="text-zinc-400">Package ID Resmi</div>
+              <div className="font-mono font-bold text-[#00D4A8]">com.wacrm.android</div>
             </div>
             <div>
-              <div className="text-slate-400">Versi / Build</div>
+              <div className="text-zinc-400">Versi / Build</div>
               <div className="font-mono font-bold text-white">v5.3.2 (code 10)</div>
             </div>
             <div>
-              <div className="text-slate-400">Tanda Tangan APK</div>
-              <div className="font-bold text-emerald-300">Release v1 + v2 + v3</div>
+              <div className="text-zinc-400">Tanda Tangan APK</div>
+              <div className="font-bold text-[#00D4A8]">Release v1 + v2 + v3</div>
             </div>
             <div>
-              <div className="text-slate-400">Kompatibilitas OS</div>
+              <div className="text-zinc-400">Kompatibilitas OS</div>
               <div className="font-bold text-white">Android 7.0 – 15</div>
             </div>
           </div>
         </section>
 
         {/* Step-by-Step Android Installation & Troubleshooting Guide */}
-        <section className="rounded-3xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+        <section className="rounded-2xl border border-[#00A885]/30 bg-[#E6F7F3] p-6 shadow-xs">
           <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-200 text-amber-900">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#00A885] text-white">
               <AlertTriangle className="h-5 w-5" />
             </div>
             <div className="space-y-2">
-              <h2 className="text-base font-extrabold text-amber-950">
+              <h2 className="font-heading text-base font-extrabold text-[#222222]">
                 Panduan Instalasi Resmi di HP Android (Anti Gagal / Anti Bentrok Paket)
               </h2>
-              <ol className="list-decimal space-y-1.5 pl-4 text-xs leading-relaxed text-amber-900">
+              <ol className="list-decimal space-y-1.5 pl-4 text-xs leading-relaxed text-[#333333]">
                 <li>
                   <strong>Hapus versi uji coba lama (jika ada):</strong> Jika sebelumnya Anda
                   pernah memasang WACRM versi debug lama, hapus instalasinya terlebih dulu agar
@@ -170,7 +170,7 @@ export default function AndroidPage() {
                 <li>
                   <strong>Unduh melalui browser Chrome (bukan browser dalam WhatsApp):</strong>{" "}
                   Ketuk tombol hijau <em>&ldquo;Unduh APK Android Resmi (Signed Release v5.3.2)&rdquo;</em> di atas, lalu buka berkas{" "}
-                  <code className="rounded bg-amber-100 px-1.5 py-0.5 font-mono">
+                  <code className="rounded bg-white px-1.5 py-0.5 font-mono text-[#008C6F]">
                     WACRM-v5.3.2-Android.apk
                   </code>{" "}
                   dari menu <strong>Download</strong>.
@@ -192,18 +192,18 @@ export default function AndroidPage() {
 
         {/* Two Android Deployment Options */}
         <div className="grid gap-5 md:grid-cols-2">
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#E6F7F3] text-[#00A885]">
               <Layers className="h-5 w-5" />
             </div>
-            <h2 className="mt-4 text-lg font-bold text-slate-900">
+            <h2 className="font-heading mt-4 text-lg font-extrabold text-[#222222]">
               1. Pasang Instan via Chrome (PWA)
             </h2>
-            <p className="mt-1.5 text-sm text-slate-600">
+            <p className="mt-1.5 text-sm text-[#666666]">
               Alternatif tercepat tanpa unduh APK — langsung muncul ikon WACRM di layar utama
               Android dalam mode layar penuh (standalone).
             </p>
-            <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-slate-700">
+            <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-[#444444]">
               <li>Buka halaman WACRM di <strong>Google Chrome Android</strong>.</li>
               <li>Ketuk menu titik tiga (<strong>⋮</strong>) di pojok kanan atas.</li>
               <li>Pilih <strong>&ldquo;Tambahkan ke Layar Utama&rdquo;</strong> atau <strong>&ldquo;Pasang aplikasi&rdquo;</strong>.</li>
@@ -211,34 +211,34 @@ export default function AndroidPage() {
             </ol>
           </div>
 
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-emerald-400">
+          <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#222222] text-[#00D4A8]">
               <Shield className="h-5 w-5" />
             </div>
-            <h2 className="mt-4 text-lg font-bold text-slate-900">
+            <h2 className="font-heading mt-4 text-lg font-extrabold text-[#222222]">
               2. Native Kotlin APK v5.3.2 (Signed Release)
             </h2>
-            <p className="mt-1.5 text-sm text-slate-600">
+            <p className="mt-1.5 text-sm text-[#666666]">
               Proyek Android Studio native berbasis Kotlin + Material 3 + Hardware Permission Bridge
               + Bluetooth/USB OTG Thermal Printing.
             </p>
-            <ul className="mt-4 space-y-2 text-sm text-slate-700">
+            <ul className="mt-4 space-y-2 text-sm text-[#444444]">
               <li className="flex items-start gap-2">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#00A885]" />
                 <span>
                   Package ID Resmi: <code className="font-mono text-xs">com.wacrm.android</code> (Release Signed v1/v2/v3)
                 </span>
               </li>
               <li className="flex items-start gap-2">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#00A885]" />
                 <span>Auto-Grant Izin Kamera QR/FIFO, Mikrofon AI 24/7 &amp; Notifikasi</span>
               </li>
               <li className="flex items-start gap-2">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#00A885]" />
                 <span>Native Bluetooth Thermal ESC/POS (58mm/80mm) &amp; USB-C OTG Print</span>
               </li>
               <li className="flex items-start gap-2">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#00A885]" />
                 <span>Sinkronisasi Real-Time Desktop ↔ HP via Neon PostgreSQL</span>
               </li>
             </ul>
@@ -246,19 +246,21 @@ export default function AndroidPage() {
         </div>
 
         {/* Local Build Instructions */}
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
-            <Terminal className="h-4 w-4 text-emerald-600" />
+        <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-xs">
+          <div className="flex items-center gap-2 font-heading text-sm font-extrabold text-[#222222]">
+            <Terminal className="h-4 w-4 text-[#00A885]" />
             Build &amp; Verifikasi APK Lokal (Android Studio / Gradle)
           </div>
-          <pre className="mt-3 overflow-x-auto rounded-2xl bg-slate-950 p-4 font-mono text-xs text-emerald-300">
+          <pre className="mt-3 overflow-x-auto rounded-xl bg-[#1B1B1B] p-4 font-mono text-xs text-[#00D4A8]">
 {`cd android
 ./gradlew assembleRelease
 # Verifikasi tanda tangan & badging resmi:
 apksigner verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk`}
           </pre>
         </section>
-      </div>
+      </main>
+
+      <CorporateFooter />
     </div>
   );
 }

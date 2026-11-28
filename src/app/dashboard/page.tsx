@@ -6,6 +6,7 @@ import { getSafeSession, isAuthConfigured } from "@/lib/auth";
 import { db, NEON_BRANCH_ID, NEON_PROJECT_ID } from "@/lib/db";
 import { CreateWorkspaceForm } from "./create-workspace-form";
 import { SignOutButton } from "./sign-out-button";
+import { BrandLogoMark } from "@/components/brand-chrome";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,25 +24,21 @@ type Membership = {
 export default async function DashboardPage() {
   if (!isAuthConfigured()) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12">
-        <section className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 shadow-xl">
-          <div className="flex items-center gap-2.5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/icons/icon-192.png" alt="WACRM" className="h-10 w-10 rounded-xl" />
-            <span className="text-lg font-extrabold text-slate-900">WACRM Dashboard</span>
-          </div>
-          <h1 className="mt-5 text-2xl font-extrabold text-slate-900">Hubungkan Database Neon</h1>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">
+      <main className="flex min-h-screen items-center justify-center bg-[#F5F5F5] px-4 py-12">
+        <section className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-8 shadow-xl">
+          <BrandLogoMark subtitle="Dashboard Commercial OS" />
+          <h1 className="font-heading mt-5 text-2xl font-extrabold text-[#222222]">Hubungkan Database Neon</h1>
+          <p className="mt-2 text-sm leading-relaxed text-[#666666]">
             Dashboard produksi terhubung langsung ke Neon project <code className="font-mono font-semibold">{NEON_PROJECT_ID}</code>{" "}
             (branch <code className="font-mono font-semibold">{NEON_BRANCH_ID}</code>). Lengkapi <code className="font-mono">DATABASE_URL</code>{" "}
-            pada Environment Variables Vercel untuk mengaktifkan autentikasi &amp; penyimpanan persisten, atau langsung coba ruang kerja interaktif.
+            pada Environment Variables untuk mengaktifkan autentikasi &amp; penyimpanan persisten, atau langsung coba ruang kerja interaktif.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Link href="/setup" className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white hover:bg-emerald-700">
+            <Link href="/setup" className="inline-flex items-center gap-2 rounded bg-[#00A885] px-5 py-3 font-heading text-xs font-extrabold uppercase tracking-wider text-white hover:bg-[#008C6F]">
               <Database className="h-4 w-4" />
               Buka Panduan Setup Neon
             </Link>
-            <Link href="/demo" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-800 hover:bg-slate-50">
+            <Link href="/demo" className="inline-flex items-center gap-2 rounded border border-zinc-300 bg-white px-5 py-3 font-heading text-xs font-bold uppercase tracking-wider text-[#222222] hover:border-[#00A885] hover:text-[#00A885]">
               Coba Workspace Demo
               <ArrowRight className="h-4 w-4" />
             </Link>
@@ -96,21 +93,19 @@ export default async function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-8 sm:px-6">
+    <main className="min-h-screen bg-[#F5F5F5] px-4 py-8 sm:px-6">
       <div className="mx-auto max-w-5xl">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5">
-          <Link href="/" className="flex items-center gap-2.5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/icons/icon-192.png" alt="WACRM" className="h-9 w-9 rounded-xl" />
-            <span className="text-lg font-extrabold tracking-tight text-slate-900">WACRM</span>
+        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-200 pb-5">
+          <Link href="/" className="flex items-center">
+            <BrandLogoMark />
           </Link>
           <div className="flex items-center gap-2">
-            <Link href="/android" className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-              <Smartphone className="h-3.5 w-3.5 text-emerald-600" />
+            <Link href="/android" className="inline-flex items-center gap-1.5 rounded border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-[#444444] hover:border-[#00A885] hover:text-[#00A885]">
+              <Smartphone className="h-3.5 w-3.5 text-[#00A885]" />
               Android
             </Link>
-            <Link href="/setup" className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-              <Database className="h-3.5 w-3.5 text-emerald-600" />
+            <Link href="/setup" className="inline-flex items-center gap-1.5 rounded border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-[#444444] hover:border-[#00A885] hover:text-[#00A885]">
+              <Database className="h-3.5 w-3.5 text-[#00A885]" />
               Status Neon
             </Link>
             <SignOutButton />

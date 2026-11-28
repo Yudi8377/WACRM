@@ -182,16 +182,16 @@ export function CommercialActivationConsole() {
   ].join("\n");
 
   return (
-    <section className="rounded-3xl border border-emerald-200 bg-white p-6 shadow-sm space-y-5">
+    <section className="space-y-5 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-extrabold text-emerald-800">
-            <ShieldCheck className="h-3.5 w-3.5" /> Aktivasi Komersial Otonom (Rp 0,- → Pro · Enkripsi AES-256-GCM · Tanpa Redeploy)
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-[#E6F7F3] px-3 py-1 font-heading text-[11px] font-extrabold text-[#008C6F]">
+            <ShieldCheck className="h-3.5 w-3.5 text-[#00A885]" /> Aktivasi Komersial Otonom (Rp 0,- → Pro · Enkripsi AES-256-GCM · Tanpa Redeploy)
           </div>
-          <h2 className="mt-2 text-lg font-extrabold text-slate-900">
+          <h2 className="font-heading mt-2 text-lg font-extrabold text-[#222222]">
             Pusat Aktivasi Email OTP, Transfer Manual Rp 0,- &amp; Payment Gateway
           </h2>
-          <p className="mt-1 text-xs text-slate-600">
+          <p className="mt-1 text-xs text-[#666666]">
             Aktifkan <strong>Resend / Brevo Gratis</strong>, <strong>Rekening Transfer Manual Rp 0,-</strong>, dan{" "}
             <strong>Midtrans / Xendit / Tripay</strong> langsung dari sini (tersimpan terenkripsi AES-256-GCM di PostgreSQL) — atau salin blok env untuk Cloudflare Workers / Vercel.
           </p>
@@ -201,18 +201,18 @@ export function CommercialActivationConsole() {
         {cfg && (
           <div className="flex flex-wrap gap-1.5 text-[11px]">
             <span
-              className={`rounded-full px-2.5 py-1 font-bold ${
+              className={`rounded-full px-2.5 py-1 font-heading font-bold ${
                 cfg.sources.activeEmailProvider !== "none"
-                  ? "bg-emerald-100 text-emerald-800"
+                  ? "bg-[#E6F7F3] text-[#008C6F]"
                   : "bg-amber-100 text-amber-800"
               }`}
             >
               Email OTP: {cfg.sources.activeEmailProvider.toUpperCase()}
             </span>
-            <span className="rounded-full bg-cyan-100 px-2.5 py-1 font-bold text-cyan-900">
+            <span className="rounded-full bg-[#222222] px-2.5 py-1 font-heading font-bold text-[#00D4A8]">
               Billing: {cfg.sources.activePaymentProvider.toUpperCase()}
             </span>
-            <span className="rounded-full bg-indigo-100 px-2.5 py-1 font-bold text-indigo-900">
+            <span className="rounded-full bg-[#F5F5F5] px-2.5 py-1 font-heading font-bold text-[#222222]">
               Android: APK v5.3.2 + PWA
             </span>
           </div>
@@ -220,10 +220,10 @@ export function CommercialActivationConsole() {
       </div>
 
       {/* Admin Key Authorization Bar */}
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5">
+      <div className="rounded-xl border border-zinc-200 bg-[#F5F5F5] p-3.5">
         <label className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
-          <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700">
-            <KeyRound className="h-4 w-4 text-emerald-600" />
+          <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#222222]">
+            <KeyRound className="h-4 w-4 text-[#00A885]" />
             Kunci Otorisasi Admin (PUBLISHER_SYNC_SECRET / AUTH_SECRET):
           </span>
           <input
@@ -231,7 +231,7 @@ export function CommercialActivationConsole() {
             value={adminSecret}
             onChange={(e) => setAdminSecret(e.target.value)}
             placeholder="Tempel secret server Anda untuk menyimpan perubahan..."
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-mono text-xs text-slate-900 focus:border-emerald-500 focus:outline-none sm:w-96"
+            className="made-input !w-full font-mono text-xs sm:!w-96"
           />
         </label>
       </div>
@@ -252,10 +252,10 @@ export function CommercialActivationConsole() {
               key={item.id}
               type="button"
               onClick={() => setTab(item.id)}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
+              className={`inline-flex items-center gap-1.5 rounded px-3.5 py-2 font-heading text-xs font-bold transition ${
                 tab === item.id
-                  ? "bg-slate-900 text-white"
-                  : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                  ? "bg-[#00A885] text-white shadow-xs"
+                  : "border border-zinc-200 bg-[#F5F5F5] text-[#444444] hover:border-[#00A885]/50 hover:text-[#00A885]"
               }`}
             >
               <Icon className="h-3.5 w-3.5" /> {item.label}
@@ -266,9 +266,9 @@ export function CommercialActivationConsole() {
 
       {feedback && (
         <div
-          className={`flex items-center gap-2 rounded-xl border px-3.5 py-2.5 text-xs font-semibold ${
+          className={`flex items-center gap-2 rounded-lg border px-3.5 py-2.5 text-xs font-semibold ${
             feedback.ok
-              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+              ? "border-[#00A885]/40 bg-[#E6F7F3] text-[#006B54]"
               : "border-rose-300 bg-rose-50 text-rose-800"
           }`}
         >
@@ -341,11 +341,11 @@ export function CommercialActivationConsole() {
             </label>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 pt-3">
             <button
               type="submit"
               disabled={saving}
-              className="rounded-xl bg-emerald-600 px-4 py-2 font-extrabold text-white hover:bg-emerald-700 disabled:opacity-50"
+              className="rounded bg-[#00A885] px-4 py-2 font-heading text-xs font-extrabold uppercase tracking-wider text-white hover:bg-[#008C6F] disabled:opacity-50"
             >
               {saving ? "Menyimpan..." : "Simpan & Aktifkan Email OTP"}
             </button>
@@ -356,13 +356,13 @@ export function CommercialActivationConsole() {
                 value={testToEmail}
                 onChange={(e) => setTestToEmail(e.target.value)}
                 placeholder="Email tujuan tes OTP..."
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900"
+                className="rounded border border-zinc-300 bg-white px-3 py-2 text-xs text-[#222222]"
               />
               <button
                 type="button"
                 disabled={testingEmail || !testToEmail.trim()}
                 onClick={() => void handleTestEmail()}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 font-bold text-white hover:bg-slate-800 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded bg-[#222222] px-3.5 py-2 font-heading text-xs font-bold text-white hover:bg-[#00A885] disabled:opacity-50"
               >
                 <Send className="h-3.5 w-3.5" /> {testingEmail ? "Mengirim..." : "Kirim Tes Live"}
               </button>
@@ -429,7 +429,7 @@ export function CommercialActivationConsole() {
           <button
             type="submit"
             disabled={saving}
-            className="rounded-xl bg-emerald-600 px-4 py-2 font-extrabold text-white hover:bg-emerald-700 disabled:opacity-50"
+            className="rounded bg-[#00A885] px-4 py-2 font-heading text-xs font-extrabold uppercase tracking-wider text-white hover:bg-[#008C6F] disabled:opacity-50"
           >
             {saving ? "Menyimpan..." : "Simpan Rekening Transfer Manual Rp 0,-"}
           </button>
@@ -597,7 +597,7 @@ export function CommercialActivationConsole() {
           <button
             type="submit"
             disabled={saving}
-            className="rounded-xl bg-emerald-600 px-4 py-2 font-extrabold text-white hover:bg-emerald-700 disabled:opacity-50"
+            className="rounded bg-[#00A885] px-4 py-2 font-heading text-xs font-extrabold uppercase tracking-wider text-white hover:bg-[#008C6F] disabled:opacity-50"
           >
             {saving ? "Menyimpan..." : "Simpan & Aktifkan Payment Gateway"}
           </button>
@@ -644,7 +644,7 @@ export function CommercialActivationConsole() {
                 {copiedId === "env-block" ? "Disalin!" : "Salin Blok Env"}
               </button>
             </div>
-            <pre className="max-h-56 overflow-auto rounded-xl bg-slate-950 p-3 font-mono text-[11px] text-emerald-300">
+            <pre className="max-h-56 overflow-auto rounded-xl bg-[#1B1B1B] p-3 font-mono text-[11px] text-[#00D4A8]">
               {envSnippet}
             </pre>
           </div>

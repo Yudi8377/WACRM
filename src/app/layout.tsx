@@ -12,8 +12,8 @@ const APP_BASE_URL = (
 export const metadata: Metadata = {
   metadataBase: new URL(APP_BASE_URL),
   title: {
-    default: "WACRM v5.0 — Omnichannel CRM, POS COD, ERP Gudang, QR FIFO, Akuntansi & Multi-Agent AI",
-    template: "%s | WACRM AI Business Suite",
+    default: "WACRM Commercial OS v5.3.2 — Platform CRM AI, ERP Gudang, POS & Akuntansi PSAK 72",
+    template: "%s | WACRM Commercial OS",
   },
   description:
     "Platform Omnichannel CRM, POS Kasir, ERP Gudang, Akuntansi Double-Entry, Studio Cetak Universal (USB-C OTG, Inkjet, LaserJet, Thermal, EDC, Bluetooth, WiFi), dan 9 Agen AI Otonom termasuk SEO & Growth AI lintas WhatsApp, Google, Instagram, TikTok, YouTube & Facebook.",
@@ -82,9 +82,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#059669",
+  themeColor: "#00A885",
   width: "device-width",
   initialScale: 1,
+  maximumScale: 5,
   viewportFit: "cover",
 };
 
@@ -120,14 +121,21 @@ const softwareApplicationJsonLd = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="id">
+    <html lang="id" className="overflow-x-clip">
       <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link
+          href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&family=Raleway:wght@400;500;600;700;800&display=swap"
+          rel="stylesheet"
+        />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
         />
       </head>
-      <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
+      <body className="min-h-screen overflow-x-clip bg-white text-[#444444] antialiased selection:bg-[#00A885] selection:text-white">
         <PwaRegister />
         {children}
       </body>

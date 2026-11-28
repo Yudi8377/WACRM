@@ -24,6 +24,7 @@ import { authClient } from "@/lib/auth-client";
 import { saveTenantEdition } from "@/lib/editions";
 import { clearLegacyUnscopedLicenseStorage } from "@/lib/license-crypto";
 import { evaluatePasswordStrength } from "@/lib/security";
+import { CorporateFooter, CorporateNavbar } from "@/components/brand-chrome";
 
 export default function SignInPage() {
   const router = useRouter();
@@ -257,285 +258,301 @@ export default function SignInPage() {
   const forgotStrength = evaluatePasswordStrength(forgotNewPassword);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-slate-100">
-      <section className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900 p-8 shadow-2xl">
-        <Link href="/" className="inline-flex items-center gap-2.5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/icon-192.png" alt="WACRM" className="h-9 w-9 rounded-xl" />
-          <span className="text-lg font-extrabold tracking-tight text-white">WACRM</span>
-        </Link>
+    <div className="flex min-h-screen flex-col bg-[#F5F5F5] text-[#444444]">
+      <CorporateNavbar activeHref="/sign-in" />
 
-        {!showForgot ? (
-          <>
-            <h1 className="mt-6 text-2xl font-extrabold text-white">Masuk ke ruang kerja</h1>
-            <p className="mt-1.5 text-sm text-slate-400">
-              Kelola percakapan omnichannel AI, Master Data, POS QR &amp; hak akses sesuai Edisi aktif.
-            </p>
-
-            {dbReady === false && (
-              <div className="mt-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-200">
-                <p className="flex items-center gap-1.5 font-bold">
-                  <Database className="h-4 w-4 text-amber-400" />
-                  Mode Portal Komersial Aktif
-                </p>
-                <p className="mt-1 leading-relaxed text-amber-200/80">
-                  Anda dapat masuk langsung menggunakan akun komersial atau menautkan <code className="font-mono">DATABASE_URL</code> Neon di Vercel untuk sinkronisasi cloud multi-perangkat.
-                </p>
-              </div>
-            )}
-
-            {notice && (
-              <p role="status" className="mt-4 flex items-start gap-2 rounded-xl bg-emerald-500/15 p-3 text-xs font-medium text-emerald-200">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
-                <span>{notice}</span>
-              </p>
-            )}
-
-            <form onSubmit={submit} className="mt-6 space-y-4">
-              <label className="block text-xs font-semibold text-slate-300">
-                Email
-                <div className="relative mt-1">
-                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                  <input
-                    type="email"
-                    autoComplete="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="owner@wacrm.id"
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-9 pr-3 text-sm text-white outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </label>
-
-              <label className="block text-xs font-semibold text-slate-300">
-                <div className="flex items-center justify-between">
-                  <span>Kata sandi</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setForgotEmail(email);
-                      setShowForgot(true);
-                      setError("");
-                      setNotice("");
-                    }}
-                    className="text-xs font-semibold text-emerald-400 hover:underline"
-                  >
-                    Lupa password?
-                  </button>
-                </div>
-                <div className="relative mt-1">
-                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="current-password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Masukkan kata sandi"
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-9 pr-11 text-sm text-white outline-none focus:border-emerald-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    aria-label={showPassword ? "Sembunyikan kata sandi" : "Lihat kata sandi"}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </label>
-
-              {error && (
-                <p role="alert" className="flex items-start gap-2 rounded-xl bg-rose-500/15 p-3 text-xs font-medium text-rose-200">
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
-                  <span>{error}</span>
-                </p>
-              )}
-
-              <button
-                disabled={busy}
-                type="submit"
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-3 text-sm font-extrabold text-slate-950 shadow-sm transition hover:bg-emerald-400 disabled:opacity-50"
-              >
-                {busy ? "Memeriksa..." : "Masuk"}
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </form>
-          </>
-        ) : (
-          <div className="mt-6 space-y-4">
-            <div>
-              <h1 className="flex items-center gap-2 text-xl font-extrabold text-white">
-                <KeyRound className="h-5 w-5 text-emerald-400" />
-                Lupa Password
-              </h1>
-              <p className="mt-1 text-xs text-slate-400">
-                {forgotStep === "request"
-                  ? "Masukkan email terdaftar Anda untuk menerima kode verifikasi 6 digit (berlaku 15 menit)."
-                  : "Masukkan kode verifikasi 6 digit beserta kata sandi baru Anda."}
-              </p>
+      <main className="flex flex-1 items-center justify-center px-4 py-10">
+        <section className="made-fade-in w-full max-w-md overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-xl">
+          <div className="flex items-center justify-between bg-[#222222] px-6 py-4 text-white">
+            <div className="flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded bg-[#00A885] font-heading text-xs font-extrabold text-white">
+                W
+              </span>
+              <span className="font-heading text-sm font-extrabold tracking-tight">
+                WACRM<span className="text-[#00A885]">.</span> Sign In
+              </span>
             </div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#00D4A8]">
+              Commercial OS v5.3.2
+            </span>
+          </div>
 
-            {notice && (
-              <p role="status" className="flex items-start gap-2 rounded-xl bg-emerald-500/15 p-3 text-xs text-emerald-200">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
-                <span>{notice}</span>
-              </p>
-            )}
-            {error && (
-              <p role="alert" className="flex items-start gap-2 rounded-xl bg-rose-500/15 p-3 text-xs text-rose-200">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
-                <span>{error}</span>
-              </p>
-            )}
+          <div className="p-7">
+            {!showForgot ? (
+              <>
+                <h1 className="font-heading text-2xl font-extrabold text-[#222222]">Masuk ke Ruang Kerja</h1>
+                <p className="mt-1.5 text-sm text-[#666666]">
+                  Kelola percakapan omnichannel AI, Master Data, POS QR &amp; hak akses sesuai Edisi aktif.
+                </p>
 
-            {forgotStep === "request" ? (
-              <form onSubmit={handleForgotRequest} className="space-y-4">
-                <label className="block text-xs font-semibold text-slate-300">
-                  Email Terdaftar
-                  <input
-                    type="email"
-                    required
-                    value={forgotEmail}
-                    onChange={(e) => setForgotEmail(e.target.value)}
-                    placeholder="owner@wacrm.id"
-                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-emerald-500"
-                  />
-                </label>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowForgot(false)}
-                    className="rounded-xl border border-slate-700 px-4 py-2.5 text-xs font-semibold text-slate-300 hover:bg-slate-800"
-                  >
-                    Batal
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={busy}
-                    className="flex-1 rounded-xl bg-emerald-500 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
-                  >
-                    {busy ? "Mengirim..." : "Kirim Kode Verifikasi"}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <form onSubmit={handleForgotConfirm} className="space-y-3.5">
-                {forgotCodePreview && (
-                  <div className="rounded-xl border border-cyan-500/40 bg-cyan-500/15 p-3 text-xs text-cyan-200">
-                    <div>Kode Verifikasi (Pratinjau Non-SMTP):</div>
-                    <div className="mt-1 flex items-center justify-between">
-                      <span className="font-mono text-lg font-black tracking-widest text-white">
-                        {forgotCodePreview}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setForgotCode(forgotCodePreview)}
-                        className="rounded-lg bg-cyan-400 px-2.5 py-1 text-[11px] font-bold text-slate-950"
-                      >
-                        Isi Otomatis
-                      </button>
-                    </div>
+                {dbReady === false && (
+                  <div className="mt-5 rounded-lg border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-900">
+                    <p className="flex items-center gap-1.5 font-bold">
+                      <Database className="h-4 w-4 text-amber-600" />
+                      Mode Portal Komersial Aktif
+                    </p>
+                    <p className="mt-1 leading-relaxed text-amber-800">
+                      Anda dapat masuk langsung menggunakan akun komersial atau menautkan <code className="font-mono">DATABASE_URL</code> Neon/Supabase untuk sinkronisasi cloud multi-perangkat.
+                    </p>
                   </div>
                 )}
 
-                <label className="block text-xs font-semibold text-slate-300">
-                  Kode Verifikasi 6 Digit
-                  <input
-                    required
-                    pattern="\d{6}"
-                    maxLength={6}
-                    value={forgotCode}
-                    onChange={(e) => setForgotCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    placeholder="123456"
-                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-base tracking-widest text-white"
-                  />
-                </label>
-
-                <label className="block text-xs font-semibold text-slate-300">
-                  Kata Sandi Baru
-                  <div className="relative mt-1">
-                    <input
-                      type={showForgotPassword ? "text" : "password"}
-                      required
-                      minLength={8}
-                      value={forgotNewPassword}
-                      onChange={(e) => setForgotNewPassword(e.target.value)}
-                      placeholder="Minimal 8 karakter kuat"
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2 pl-3 pr-10 text-sm text-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowForgotPassword((v) => !v)}
-                      aria-label={showForgotPassword ? "Sembunyikan sandi" : "Lihat sandi"}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-white"
-                    >
-                      {showForgotPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </label>
-
-                {forgotNewPassword.length > 0 && (
-                  <p className="text-[11px] text-slate-400">
-                    Kekuatan sandi:{" "}
-                    <strong className={forgotStrength.score >= 3 ? "text-emerald-400" : "text-amber-400"}>
-                      {forgotStrength.label}
-                    </strong>
+                {notice && (
+                  <p role="status" className="mt-4 flex items-start gap-2 rounded-lg border border-[#00A885]/35 bg-[#E6F7F3] p-3 text-xs font-medium text-[#006B54]">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#00A885]" />
+                    <span>{notice}</span>
                   </p>
                 )}
 
-                <label className="block text-xs font-semibold text-slate-300">
-                  Konfirmasi Kata Sandi Baru
-                  <input
-                    type={showForgotPassword ? "text" : "password"}
-                    required
-                    value={forgotConfirmPassword}
-                    onChange={(e) => setForgotConfirmPassword(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
-                  />
-                </label>
+                <form onSubmit={submit} className="mt-6 space-y-4">
+                  <label className="block text-xs font-semibold text-[#333333]">
+                    Email
+                    <div className="relative mt-1">
+                      <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#888888]" />
+                      <input
+                        type="email"
+                        autoComplete="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="owner@wacrm.id"
+                        className="made-input !pl-9"
+                      />
+                    </div>
+                  </label>
 
-                <div className="flex gap-2">
+                  <label className="block text-xs font-semibold text-[#333333]">
+                    <div className="flex items-center justify-between">
+                      <span>Kata sandi</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForgotEmail(email);
+                          setShowForgot(true);
+                          setError("");
+                          setNotice("");
+                        }}
+                        className="text-xs font-bold text-[#00A885] hover:underline"
+                      >
+                        Lupa password?
+                      </button>
+                    </div>
+                    <div className="relative mt-1">
+                      <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#888888]" />
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        autoComplete="current-password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Masukkan kata sandi"
+                        className="made-input !pl-9 !pr-11"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        aria-label={showPassword ? "Sembunyikan kata sandi" : "Lihat kata sandi"}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-[#797979] hover:bg-zinc-100 hover:text-[#222222]"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </label>
+
+                  {error && (
+                    <p role="alert" className="flex items-start gap-2 rounded-lg border border-rose-300 bg-rose-50 p-3 text-xs font-medium text-rose-700">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                      <span>{error}</span>
+                    </p>
+                  )}
+
                   <button
-                    type="button"
-                    onClick={() => setForgotStep("request")}
-                    className="rounded-xl border border-slate-700 px-4 py-2.5 text-xs font-semibold text-slate-300"
-                  >
-                    Kembali
-                  </button>
-                  <button
-                    type="submit"
                     disabled={busy}
-                    className="flex-1 rounded-xl bg-emerald-500 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
+                    type="submit"
+                    className="flex w-full items-center justify-center gap-2 rounded bg-[#00A885] py-3 font-heading text-xs font-extrabold uppercase tracking-wider text-white shadow-sm transition hover:bg-[#008C6F] disabled:opacity-50"
                   >
-                    {busy ? "Menyimpan..." : "Simpan Kata Sandi"}
+                    {busy ? "Memeriksa..." : "Masuk"}
+                    <ArrowRight className="h-4 w-4" />
                   </button>
+                </form>
+              </>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <h1 className="font-heading flex items-center gap-2 text-xl font-extrabold text-[#222222]">
+                    <KeyRound className="h-5 w-5 text-[#00A885]" />
+                    Lupa Password
+                  </h1>
+                  <p className="mt-1 text-xs text-[#666666]">
+                    {forgotStep === "request"
+                      ? "Masukkan email terdaftar Anda untuk menerima kode verifikasi 6 digit (berlaku 15 menit)."
+                      : "Masukkan kode verifikasi 6 digit beserta kata sandi baru Anda."}
+                  </p>
                 </div>
-              </form>
-            )}
-          </div>
-        )}
 
-        <div className="mt-6 flex items-center justify-between border-t border-slate-800 pt-4 text-xs text-slate-400">
-          <span>
-            Belum punya akun?{" "}
-            <Link href="/sign-up" className="font-bold text-emerald-400 hover:underline">
-              Daftar
-            </Link>
-          </span>
-          <Link href="/" className="font-semibold text-slate-300 hover:text-emerald-400">
-            ← Portal Utama
-          </Link>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-[11px] text-slate-500">
-          <Link href="/privacy" className="hover:text-emerald-400">Kebijakan Privasi (UU PDP)</Link>
-          <span>·</span>
-          <Link href="/terms" className="hover:text-emerald-400">Syarat &amp; Ketentuan</Link>
-          <span>·</span>
-          <Link href="/refund" className="hover:text-emerald-400">Refund</Link>
-        </div>
-      </section>
-    </main>
+                {notice && (
+                  <p role="status" className="flex items-start gap-2 rounded-lg border border-[#00A885]/35 bg-[#E6F7F3] p-3 text-xs text-[#006B54]">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#00A885]" />
+                    <span>{notice}</span>
+                  </p>
+                )}
+                {error && (
+                  <p role="alert" className="flex items-start gap-2 rounded-lg border border-rose-300 bg-rose-50 p-3 text-xs text-rose-700">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                    <span>{error}</span>
+                  </p>
+                )}
+
+                {forgotStep === "request" ? (
+                  <form onSubmit={handleForgotRequest} className="space-y-4">
+                    <label className="block text-xs font-semibold text-[#333333]">
+                      Email Terdaftar
+                      <input
+                        type="email"
+                        required
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        placeholder="owner@wacrm.id"
+                        className="made-input mt-1"
+                      />
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowForgot(false)}
+                        className="rounded border border-zinc-300 px-4 py-2.5 text-xs font-semibold text-[#444444] hover:bg-zinc-50"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={busy}
+                        className="flex-1 rounded bg-[#00A885] py-2.5 font-heading text-xs font-extrabold uppercase tracking-wider text-white hover:bg-[#008C6F] disabled:opacity-50"
+                      >
+                        {busy ? "Mengirim..." : "Kirim Kode Verifikasi"}
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <form onSubmit={handleForgotConfirm} className="space-y-3.5">
+                    {forgotCodePreview && (
+                      <div className="rounded-lg border border-[#00A885]/35 bg-[#E6F7F3] p-3 text-xs text-[#006B54]">
+                        <div>Kode Verifikasi (Pratinjau Lokal):</div>
+                        <div className="mt-1 flex items-center justify-between">
+                          <span className="font-mono text-lg font-black tracking-widest text-[#222222]">
+                            {forgotCodePreview}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setForgotCode(forgotCodePreview)}
+                            className="rounded bg-[#00A885] px-2.5 py-1 text-[11px] font-bold text-white"
+                          >
+                            Isi Otomatis
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <label className="block text-xs font-semibold text-[#333333]">
+                      Kode Verifikasi 6 Digit
+                      <input
+                        required
+                        pattern="\d{6}"
+                        maxLength={6}
+                        value={forgotCode}
+                        onChange={(e) => setForgotCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                        placeholder="123456"
+                        className="made-input mt-1 font-mono text-base tracking-widest"
+                      />
+                    </label>
+
+                    <label className="block text-xs font-semibold text-[#333333]">
+                      Kata Sandi Baru
+                      <div className="relative mt-1">
+                        <input
+                          type={showForgotPassword ? "text" : "password"}
+                          required
+                          minLength={8}
+                          value={forgotNewPassword}
+                          onChange={(e) => setForgotNewPassword(e.target.value)}
+                          placeholder="Minimal 8 karakter kuat"
+                          className="made-input !pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowForgotPassword((v) => !v)}
+                          aria-label={showForgotPassword ? "Sembunyikan sandi" : "Lihat sandi"}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-[#797979] hover:text-[#222222]"
+                        >
+                          {showForgotPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </label>
+
+                    {forgotNewPassword.length > 0 && (
+                      <p className="text-[11px] text-[#666666]">
+                        Kekuatan sandi:{" "}
+                        <strong className={forgotStrength.score >= 3 ? "text-[#00A885]" : "text-amber-600"}>
+                          {forgotStrength.label}
+                        </strong>
+                      </p>
+                    )}
+
+                    <label className="block text-xs font-semibold text-[#333333]">
+                      Konfirmasi Kata Sandi Baru
+                      <input
+                        type={showForgotPassword ? "text" : "password"}
+                        required
+                        value={forgotConfirmPassword}
+                        onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                        className="made-input mt-1"
+                      />
+                    </label>
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setForgotStep("request")}
+                        className="rounded border border-zinc-300 px-4 py-2.5 text-xs font-semibold text-[#444444]"
+                      >
+                        Kembali
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={busy}
+                        className="flex-1 rounded bg-[#00A885] py-2.5 font-heading text-xs font-extrabold uppercase tracking-wider text-white hover:bg-[#008C6F] disabled:opacity-50"
+                      >
+                        {busy ? "Menyimpan..." : "Simpan Kata Sandi"}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            )}
+
+            <div className="mt-6 flex items-center justify-between border-t border-zinc-200 pt-4 text-xs text-[#666666]">
+              <span>
+                Belum punya akun?{" "}
+                <Link href="/sign-up" className="font-bold text-[#00A885] hover:underline">
+                  Daftar
+                </Link>
+              </span>
+              <Link href="/" className="font-semibold text-[#444444] hover:text-[#00A885]">
+                ← Portal Utama
+              </Link>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-[11px] text-[#797979]">
+              <Link href="/privacy" className="hover:text-[#00A885]">Kebijakan Privasi (UU PDP)</Link>
+              <span>·</span>
+              <Link href="/terms" className="hover:text-[#00A885]">Syarat &amp; Ketentuan</Link>
+              <span>·</span>
+              <Link href="/refund" className="hover:text-[#00A885]">Refund</Link>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <CorporateFooter />
+    </div>
   );
 }
