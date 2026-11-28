@@ -62,7 +62,15 @@ jobs:
 
       - name: Deploy WACRM to Cloudflare Workers (Rp 0 Commercial Free Tier)
         if: steps.cf_check.outputs.ready == 'true'
-        run: npx wrangler deploy
+        run: |
+          npx wrangler deploy | tee /tmp/wrangler-wacrm.log
+          URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' /tmp/wrangler-wacrm.log | head -1 || true)
+          if [ -n "$URL" ]; then
+            echo "### WACRM Commercial OS Live on Cloudflare Workers (Rp 0 Commercial Tier)" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Live URL: $URL" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Setup & Activation Console: $URL/setup" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Android APK v5.3.2 & PWA: $URL/android" >> "$GITHUB_STEP_SUMMARY"
+          fi
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -114,9 +122,6 @@ jobs:
   deploy-wacrm-enterprise:
     if: github.event_name == 'push' || github.event.inputs.target_app == 'both' || github.event.inputs.target_app == 'wacrm-enterprise'
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/marketing-web
     steps:
       - name: Check Cloudflare secrets configured
         id: cf_check
@@ -141,15 +146,25 @@ jobs:
 
       - name: Install dependencies
         if: steps.cf_check.outputs.ready == 'true'
+        working-directory: apps/marketing-web
         run: npm ci
 
       - name: Build Enterprise Marketing Web for Cloudflare Workers
         if: steps.cf_check.outputs.ready == 'true'
+        working-directory: apps/marketing-web
         run: npx opennextjs-cloudflare build
 
       - name: Deploy Enterprise Web to Cloudflare Workers (Rp 0 Commercial Free Tier)
         if: steps.cf_check.outputs.ready == 'true'
-        run: npx wrangler deploy
+        working-directory: apps/marketing-web
+        run: |
+          npx wrangler deploy | tee /tmp/wrangler-enterprise.log
+          URL=$(grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' /tmp/wrangler-enterprise.log | head -1 || true)
+          if [ -n "$URL" ]; then
+            echo "### WACRM Enterprise Web Live on Cloudflare Workers (Rp 0 Commercial Tier)" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Live URL: $URL" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Legal Pages: $URL/privacy · $URL/terms · $URL/refund" >> "$GITHUB_STEP_SUMMARY"
+          fi
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
