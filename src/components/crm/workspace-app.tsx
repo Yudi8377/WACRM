@@ -1101,6 +1101,8 @@ export function WorkspaceApp({
                     products={snapshot.products}
                     orders={snapshot.orders}
                     conversations={snapshot.conversations}
+                    contacts={snapshot.contacts}
+                    report={snapshot.financialReport}
                     storeProfile={storeProfile}
                     onCreateProduct={async (input) => {
                       await adapter.createProduct(input);
@@ -1187,6 +1189,7 @@ export function WorkspaceApp({
                     contacts={snapshot.contacts}
                     conversations={snapshot.conversations}
                     report={snapshot.financialReport}
+                    onOpenMarketForecast={() => setTab("forecast")}
                     onOpenEditions={() => setTab("editions")}
                     onToast={(msg, tone) => showToast(msg, tone === "error" ? "error" : "success")}
                   />

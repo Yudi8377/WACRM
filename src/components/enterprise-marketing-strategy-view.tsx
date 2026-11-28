@@ -8,6 +8,7 @@ import {
   Copy,
   Crown,
   Edit3,
+  Landmark,
   Lock,
   Plus,
   Printer,
@@ -30,13 +31,18 @@ import {
   type StoreBusinessProfile,
 } from "@/lib/crm-types";
 import {
+  buildEconomicCensusExportSheets,
+  buildEconomicCensusMarketReport,
+  renderEconomicCensusMarketPrintHtml,
+} from "@/lib/economic-census-report";
+import {
   buildEnterpriseMarketingBlueprint,
   loadMarketingInitiatives,
   renderMarketingStrategyPrintHtml,
   saveMarketingInitiatives,
   type MarketingCampaignInitiative,
 } from "@/lib/enterprise-marketing-strategy";
-import { buildEscPosTextReport } from "@/lib/printer";
+import { buildEscPosTextReport, printViaSystemSpooler } from "@/lib/printer";
 
 interface EnterpriseMarketingStrategyViewProps {
   tenantId: string;
@@ -47,6 +53,7 @@ interface EnterpriseMarketingStrategyViewProps {
   contacts: ContactRecord[];
   conversations: ConversationRecord[];
   report: FinancialReportSummary;
+  onOpenMarketForecast?: () => void;
   onOpenEditions?: () => void;
   onToast: (message: string, tone?: "ok" | "error") => void;
 }
@@ -62,6 +69,7 @@ export function EnterpriseMarketingStrategyView({
   contacts,
   conversations,
   report,
+  onOpenMarketForecast,
   onOpenEditions,
   onToast,
 }: EnterpriseMarketingStrategyViewProps) {
@@ -99,6 +107,41 @@ export function EnterpriseMarketingStrategyView({
     strategicFocus,
     runRevision,
   ]);
+
+  const economicCensus = useMemo(
+    () =>
+      buildEconomicCensusMarketReport({
+        storeProfile,
+        products,
+        orders,
+        conversations,
+        contacts,
+        report,
+        horizonDays: 90,
+        existingMarketingBlueprint: blueprint,
+      }),
+    [storeProfile, products, orders, conversations, contacts, report, blueprint],
+  );
+
+  function handleQuickPrintBlueprint() {
+    const html = renderMarketingStrategyPrintHtml(blueprint, initiatives);
+    const res = printViaSystemSpooler(
+      `Blueprint Strategi Marketing AI — ${storeProfile.businessName}`,
+      html,
+      "a4",
+    );
+    onToast(res.message, res.ok ? "ok" : "error");
+  }
+
+  function handleQuickPrintCensusReport() {
+    const html = renderEconomicCensusMarketPrintHtml(economicCensus);
+    const res = printViaSystemSpooler(
+      `Laporan Riset Pasar & Sensus Ekonomi — ${storeProfile.businessName}`,
+      html,
+      "a4",
+    );
+    onToast(res.message, res.ok ? "ok" : "error");
+  }
 
   const [initiatives, setInitiatives] = useState<MarketingCampaignInitiative[]>(() =>
     loadMarketingInitiatives(tenantId, blueprint),
@@ -224,16 +267,39 @@ export function EnterpriseMarketingStrategyView({
               5 Agen AI bekerja berantai: <strong>1) Pengumpul Data Real-Time</strong> → <strong>2) Analis SWOT &amp; Persona</strong> → <strong>3) Forecaster Budget &amp; ROAS 90 Hari</strong> → <strong>4) Arsitek Blueprint &amp; Skrip Kampanye</strong> → <strong>5) Manajer Eksekusi Kampanye</strong>.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setRunRevision((r) => r + 1);
-              onToast("5 Multi-Agent AI selesai menyegarkan data, SWOT, ROAS & Blueprint Strategi 90 Hari!", "ok");
-            }}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-amber-300"
-          >
-            <RefreshCw className="h-4 w-4" /> Jalankan Ulang 5-Agen AI (Run #{runRevision})
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleQuickPrintBlueprint}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400"
+            >
+              <Printer className="h-4 w-4" /> Cetak / Print Blueprint PDF
+            </button>
+            <button
+              type="button"
+              onClick={handleQuickPrintCensusReport}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-400/50 bg-cyan-500/15 px-3.5 py-2.5 text-xs font-extrabold text-cyan-200 transition hover:bg-cyan-500/25"
+            >
+              <Landmark className="h-4 w-4" /> Cetak Laporan Riset &amp; Sensus
+            </button>
+            <button
+              type="button"
+              onClick={() => setSubTab("print_export")}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900 px-3.5 py-2.5 text-xs font-bold text-slate-200 transition hover:bg-slate-800"
+            >
+              <Printer className="h-3.5 w-3.5 text-amber-300" /> Studio Cetak &amp; Excel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setRunRevision((r) => r + 1);
+                onToast("5 Multi-Agent AI selesai menyegarkan data, SWOT, ROAS & Blueprint Strategi 90 Hari!", "ok");
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 px-4 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-amber-300"
+            >
+              <RefreshCw className="h-4 w-4" /> Jalankan Ulang 5-Agen AI (Run #{runRevision})
+            </button>
+          </div>
         </div>
 
         {/* Interactive Strategy Controls */}
@@ -685,6 +751,54 @@ export function EnterpriseMarketingStrategyView({
         </div>
       )}
 
+      {/* ALWAYS-VISIBLE QUICK PRINT STRIP ON TABS 1–4 */}
+      {subTab !== "print_export" && (
+        <div className="space-y-2 rounded-3xl border border-emerald-500/30 bg-slate-900/90 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 font-bold text-emerald-300">
+              <Printer className="h-4 w-4" />
+              Cetak Cepat Blueprint Strategi Marketing AI (Tersedia di Semua Tab)
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {onOpenMarketForecast && (
+                <button
+                  type="button"
+                  onClick={onOpenMarketForecast}
+                  className="inline-flex items-center gap-1 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-bold text-cyan-200 hover:bg-cyan-500/20"
+                >
+                  <Landmark className="h-3.5 w-3.5" /> Lihat Tren Minat &amp; Sensus Ekonomi
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSubTab("print_export")}
+                className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-[11px] font-bold text-amber-200 hover:bg-amber-500/20"
+              >
+                Buka Studio Ekspor Excel Lengkap →
+              </button>
+            </div>
+          </div>
+          <UniversalPrintPanel
+            documentLabel="Blueprint Strategi Pemasaran Enterprise 90 Hari"
+            jobTitle={`Blueprint Strategi Marketing Enterprise — ${storeProfile.businessName}`}
+            filenameBase="blueprint-strategi-marketing-enterprise"
+            defaultPaper="a4"
+            buildHtml={() => renderMarketingStrategyPrintHtml(blueprint, initiatives)}
+            buildEscPos={() =>
+              buildEscPosTextReport("STRATEGI MARKETING ENTERPRISE", storeProfile, [
+                `Budget/Bln: ${formatIdr(blueprint.monthlyBudgetIdr)}`,
+                `Blended ROAS: ${blueprint.forecast.blendedRoas}x (BE ${blueprint.forecast.breakEvenRoas}x)`,
+                `Proyeksi 90h: ${formatIdr(blueprint.forecast.projected90dRevenueIdr)}`,
+                `Hero: ${blueprint.dataMetrics.heroProductName}`,
+                `Kampanye Aktif: ${initiatives.length}`,
+              ])
+            }
+            onResult={(res) => onToast(res.message, res.ok ? "ok" : "error")}
+            compact
+          />
+        </div>
+      )}
+
       {/* TAB 5: PRINT BLUEPRINT PDF & MULTI-SHEET EXCEL EXPORT */}
       {subTab === "print_export" && (
         <div className="space-y-4">
@@ -706,11 +820,29 @@ export function EnterpriseMarketingStrategyView({
             onResult={(res) => onToast(res.message, res.ok ? "ok" : "error")}
           />
 
+          <UniversalPrintPanel
+            documentLabel="Laporan Terpadu Riset Pasar, Sensus Ekonomi UMKM & Kesimpulan Strategi AI"
+            jobTitle={`Laporan Sensus Ekonomi & Riset Pasar — ${storeProfile.businessName}`}
+            filenameBase={`laporan-sensus-ekonomi-strategi-ai-${economicCensus.documentNumber.toLowerCase()}`}
+            defaultPaper="a4"
+            buildHtml={() => renderEconomicCensusMarketPrintHtml(economicCensus)}
+            buildEscPos={() =>
+              buildEscPosTextReport("SENSUS EKONOMI & STRATEGI AI", storeProfile, [
+                `No. Dok: ${economicCensus.documentNumber}`,
+                `Skala: ${economicCensus.entityProfile.umkmScale}`,
+                `GVA: ${formatIdr(economicCensus.economicIndicators.grossValueAddedIdr)}`,
+                `Digital: ${economicCensus.economicIndicators.digitalPaymentInclusionPct}%`,
+                `Blended ROAS: ${blueprint.forecast.blendedRoas}x`,
+              ])
+            }
+            onResult={(res) => onToast(res.message, res.ok ? "ok" : "error")}
+          />
+
           <ReportExportHub
-            heading="Ekspor Blueprint Strategi Marketing Enterprise (Alokasi ROAS, Roadmap 90h, Persona & Kampanye) ke Desktop"
+            heading="Ekspor Blueprint Strategi Marketing & Dataset Sensus Ekonomi (Excel Multi-Sheet / PDF / CSV) ke Desktop"
             onToast={onToast}
             buildPayload={() => ({
-              reportTitle: "Blueprint Strategi Pemasaran Enterprise Multi-Agen AI",
+              reportTitle: "Blueprint Strategi Pemasaran Enterprise & Riset Pasar UMKM",
               subtitle: `Fokus: ${blueprint.strategicFocus} · Blended ROAS ${blueprint.forecast.blendedRoas}x · Proyeksi 90h ${formatIdr(blueprint.forecast.projected90dRevenueIdr)}`,
               businessName: storeProfile.businessName,
               filenameBase: "strategi-marketing-enterprise-sovereign",
@@ -756,6 +888,7 @@ export function EnterpriseMarketingStrategyView({
                     i.status,
                   ]),
                 },
+                ...buildEconomicCensusExportSheets(economicCensus),
               ],
             })}
           />

@@ -51,7 +51,9 @@ import {
   computeVendorSlaScorecard,
   DEAL_STAGE_META,
   renderCorporateErpPrintHtml,
+  renderContextualAccountingPrintHtml,
   renderCorporateTaxAndAccountingPrintHtml,
+  type AccountingPrintContext,
   runCorporateSeoAudit,
   VIP_TIER_DISCOUNT,
   type CorporateErpPrintScope,
@@ -210,6 +212,7 @@ function SovereignAccountingSuiteInner({
   const [subTab, setSubTab] = useState<
     "statements" | "trial_balance" | "cashflow_tax" | "tax_ratios" | "ar_aging"
   >("statements");
+  const [printScope, setPrintScope] = useState<"active_tab" | "full_bundle">("active_tab");
   const [fixedAssetsIdr, setFixedAssetsIdr] = useState(25_000_000);
   const [operatingExpCustom, setOperatingExpCustom] = useState<string>("");
   const [pph21PayrollIdr, setPph21PayrollIdr] = useState(450_000);
@@ -672,20 +675,104 @@ function SovereignAccountingSuiteInner({
         </div>
       )}
 
-      {/* Direct Corporate PSAK + SPT Tax PDF Print Panel */}
-      <UniversalPrintPanel
-        documentLabel="Laporan Keuangan PSAK & SPT Pajak Korporat"
-        jobTitle={`Laporan PSAK & Pajak — ${businessName}`}
-        filenameBase="laporan-psak-pajak-sovereign"
-        defaultPaper="a4"
-        buildHtml={() =>
-          renderCorporateTaxAndAccountingPrintHtml(corp, taxReport, businessName)
-        }
-        buildEscPos={() =>
-          buildEscPosTextReport(
-            `PSAK & PAJAK ${taxReport.periodLabel}`,
-            businessName,
-            [
+      {/* Contextual PSAK Print Mode Selector + Direct Print Panel */}
+      {(() => {
+        const activeContext: AccountingPrintContext =
+          printScope === "full_bundle" ? "full_bundle" : subTab;
+
+        const metaByContext: Record<
+          AccountingPrintContext,
+          {
+            shortName: string;
+            docLabel: string;
+            filenameBase: string;
+            escTitle: string;
+            escLines: string[];
+            exportHeading: string;
+            exportTitle: string;
+          }
+        > = {
+          statements: {
+            shortName: "Laba Rugi & Neraca",
+            docLabel: "Laporan Laba Rugi & Neraca Posisi Keuangan (PSAK 1)",
+            filenameBase: "laporan-laba-rugi-neraca-psak",
+            escTitle: `LABA RUGI & NERACA ${taxReport.periodLabel}`,
+            escLines: [
+              `Omzet Kotor: ${formatIdr(corp.incomeStatement.grossRevenueIdr)}`,
+              `HPP FIFO: ${formatIdr(corp.incomeStatement.cogsIdr)}`,
+              `Laba Kotor: ${formatIdr(corp.incomeStatement.grossProfitIdr)} (${corp.incomeStatement.grossMarginPct}%)`,
+              `Laba Bersih: ${formatIdr(corp.incomeStatement.netProfitAfterTaxIdr)} (${corp.incomeStatement.netMarginPct}%)`,
+              `Total Aset: ${formatIdr(corp.balanceSheet.totalAssetsIdr)}`,
+              `Liab+Ekuitas: ${formatIdr(corp.balanceSheet.totalLiabilitiesIdr + corp.balanceSheet.totalEquityIdr)}`,
+              `Status Neraca: ${corp.balanceSheet.isBalanced ? "SEIMBANG 100%" : "CEK SELISIH"}`,
+            ],
+            exportHeading: "Ekspor Laporan Laba Rugi & Neraca (Excel / PDF / CSV / JSON)",
+            exportTitle: "Laporan Laba Rugi & Neraca Posisi Keuangan (PSAK 1)",
+          },
+          trial_balance: {
+            shortName: "COA & Neraca Saldo",
+            docLabel: "Daftar Akun (COA 4-Digit) & Neraca Saldo (Trial Balance)",
+            filenameBase: "daftar-coa-neraca-saldo-psak",
+            escTitle: `NERACA SALDO COA ${taxReport.periodLabel}`,
+            escLines: [
+              `Jumlah Akun COA: ${corp.coaTrialBalance.length} akun`,
+              `Total Debit: ${formatIdr(corp.totalTrialDebit)}`,
+              `Total Kredit: ${formatIdr(corp.totalTrialCredit)}`,
+              `Status Balance: ${corp.isTrialBalanced ? "SEIMBANG 100%" : "SELISIH"}`,
+            ],
+            exportHeading: "Ekspor Daftar COA 4-Digit & Neraca Saldo (Excel / PDF / CSV / JSON)",
+            exportTitle: "Daftar Akun (COA 4-Digit) & Neraca Saldo (Trial Balance)",
+          },
+          cashflow_tax: {
+            shortName: "Arus Kas & Ringkasan Pajak",
+            docLabel: "Laporan Arus Kas (PSAK 2) & Ringkasan Pajak Masa",
+            filenameBase: "laporan-arus-kas-ringkasan-pajak",
+            escTitle: `ARUS KAS & PAJAK ${taxReport.periodLabel}`,
+            escLines: [
+              `Kas Masuk: ${formatIdr(corp.cashFlow.cashFromCustomersIdr)}`,
+              `Kas Keluar: ${formatIdr(corp.cashFlow.cashPaidForInventoryAndOpsIdr)}`,
+              `Arus Kas Ops: ${formatIdr(corp.cashFlow.operatingCashFlowIdr)}`,
+              `Saldo Kas 1101: ${formatIdr(corp.balanceSheet.cashAndBankIdr)}`,
+              `PPN 11%: ${formatIdr(corp.taxSummary.ppn11Idr)}`,
+              `PPh Final 0.5%: ${formatIdr(corp.taxSummary.pphFinal05Idr)}`,
+              `Total Pajak Masa: ${formatIdr(corp.taxSummary.estimatedTotalTaxIdr)}`,
+            ],
+            exportHeading: "Ekspor Laporan Arus Kas & Ringkasan Pajak Masa (Excel / PDF / CSV)",
+            exportTitle: "Laporan Arus Kas (PSAK 2) & Ringkasan Pajak Masa",
+          },
+          tax_ratios: {
+            shortName: "SPT Pajak Lengkap & Rasio",
+            docLabel: "Ikhtisar SPT Pajak Indonesia, Perubahan Ekuitas & Rasio Eksekutif",
+            filenameBase: "laporan-spt-pajak-rasio-keuangan",
+            escTitle: `SPT PAJAK & RASIO ${taxReport.periodLabel}`,
+            escLines: [
+              `PPN Netto 1111: ${formatIdr(taxReport.ppnNetPayableIdr)}`,
+              `PPh Final 0.5%: ${formatIdr(taxReport.pphFinalUmkm05Idr)}`,
+              `PPh 21 TER: ${formatIdr(taxReport.pph21PayrollIdr)}`,
+              `Total Pajak Est: ${formatIdr(taxReport.totalEstimatedTaxLiabilityIdr)}`,
+              `Current Ratio: ${taxReport.currentRatio}x | DER: ${taxReport.debtToEquityRatio}x`,
+              `ROA: ${taxReport.returnOnAssetsPct}% | BEP: ${formatIdr(taxReport.breakEvenRevenueIdr)}`,
+            ],
+            exportHeading: "Ekspor Ikhtisar SPT Pajak Lengkap & Rasio Eksekutif (Excel / PDF / CSV)",
+            exportTitle: "Ikhtisar SPT Pajak Indonesia, Perubahan Ekuitas & Rasio Keuangan",
+          },
+          ar_aging: {
+            shortName: "Aging Piutang COD",
+            docLabel: "Laporan Umur Piutang Usaha & COD (AR Aging Schedule)",
+            filenameBase: "laporan-aging-piutang-cod",
+            escTitle: `AGING PIUTANG COD ${taxReport.periodLabel}`,
+            escLines: corp.arAging.map(
+              (b) => `${b.label}: ${formatIdr(b.amountIdr)} (${b.count} order)`,
+            ),
+            exportHeading: "Ekspor Laporan Aging Piutang Usaha & COD (Excel / PDF / CSV)",
+            exportTitle: "Laporan Umur Piutang Usaha & COD (AR Aging Schedule)",
+          },
+          full_bundle: {
+            shortName: "Paket Lengkap 5-in-1 PSAK",
+            docLabel: "Paket Lengkap Laporan Keuangan PSAK & SPT Pajak Korporat (5-in-1)",
+            filenameBase: "laporan-psak-pajak-sovereign-lengkap",
+            escTitle: `PSAK & PAJAK LENGKAP ${taxReport.periodLabel}`,
+            escLines: [
               `Omzet: ${formatIdr(corp.incomeStatement.netRevenueIdr)}`,
               `Laba Bersih: ${formatIdr(corp.incomeStatement.netProfitAfterTaxIdr)}`,
               `PPN Netto: ${formatIdr(taxReport.ppnNetPayableIdr)}`,
@@ -693,39 +780,73 @@ function SovereignAccountingSuiteInner({
               `PPh 21 TER: ${formatIdr(taxReport.pph21PayrollIdr)}`,
               `Total Pajak: ${formatIdr(taxReport.totalEstimatedTaxLiabilityIdr)}`,
             ],
-          )
-        }
-        onResult={(res) => onToast?.(res.message, res.ok ? "ok" : "error")}
-        compact
-      />
+            exportHeading:
+              "Ekspor Paket Lengkap 5-in-1 PSAK & SPT Pajak (Excel Multi-Sheet / PDF / CSV / JSON)",
+            exportTitle: "Paket Lengkap Laporan Keuangan Korporat PSAK & SPT Pajak Indonesia",
+          },
+        };
 
-      {/* Multi-Format Export + USB/Bluetooth/Wi-Fi Transfer to Desktop */}
-      <ReportExportHub
-        heading="Ekspor Laporan Keuangan PSAK & SPT Pajak Lengkap (Excel Multi-Sheet / PDF / CSV / JSON) ke Desktop"
-        onToast={onToast}
-        buildPayload={() => ({
-          reportTitle: "Laporan Keuangan Korporat PSAK & SPT Pajak Indonesia",
-          subtitle: `Sovereign Corporate Accounting · Margin Bersih ${corp.incomeStatement.netMarginPct}% · Current Ratio ${taxReport.currentRatio}x`,
-          businessName,
-          filenameBase: "laporan-keuangan-pajak-corporate-psak",
-          kpis: [
-            { label: "Pendapatan Kotor", value: formatIdr(corp.incomeStatement.grossRevenueIdr) },
-            { label: "Laba Bersih", value: formatIdr(corp.incomeStatement.netProfitAfterTaxIdr) },
-            { label: "Total Aset", value: formatIdr(corp.balanceSheet.totalAssetsIdr) },
-            { label: "Total Pajak Est.", value: formatIdr(taxReport.totalEstimatedTaxLiabilityIdr) },
-          ],
-          sheets: [
-            {
-              sheetName: "Neraca Saldo COA",
-              headers: ["Kode COA", "Nama Akun", "Kategori", "Debit (Rp)", "Kredit (Rp)"],
-              rows: corp.coaTrialBalance.map((r) => [
-                r.code,
-                r.name,
-                r.category,
-                r.debit,
-                r.credit,
-              ]),
-            },
+        const activeMeta = metaByContext[activeContext];
+        const tabShortLabel = metaByContext[subTab].shortName;
+
+        const unpaidOrders = orders.filter(
+          (o) => o.paymentStatus !== "paid" && o.orderStatus !== "cancelled",
+        );
+
+        const buildContextSheets = () => {
+          const statementsSheet = {
+            sheetName: "Laba Rugi & Neraca",
+            headers: ["Kelompok", "Kode", "Pos Laporan", "Nominal (Rp)"],
+            rows: [
+              ["Laba Rugi", "4101", "Pendapatan Penjualan Kotor", corp.incomeStatement.grossRevenueIdr],
+              ["Laba Rugi", "5101", "HPP (FIFO)", -corp.incomeStatement.cogsIdr],
+              ["Laba Rugi", "-", "Laba Kotor", corp.incomeStatement.grossProfitIdr],
+              ["Laba Rugi", "6101", "Beban Operasional & Logistik", -corp.incomeStatement.operatingExpenseIdr],
+              ["Laba Rugi", "6201", "Estimasi PPh Final UMKM 0,5%", -corp.incomeStatement.pphFinalUmkmIdr],
+              ["Laba Rugi", "-", "Laba Bersih Setelah Pajak", corp.incomeStatement.netProfitAfterTaxIdr],
+              ["Neraca — Aset", "1101", "Kas & Bank", corp.balanceSheet.cashAndBankIdr],
+              ["Neraca — Aset", "1102", "Piutang Usaha & COD", corp.balanceSheet.accountsReceivableIdr],
+              ["Neraca — Aset", "1103", "Persediaan FIFO", corp.balanceSheet.inventoryAssetIdr],
+              ["Neraca — Aset", "1201", "Aset Tetap", corp.balanceSheet.fixedAssetsIdr],
+              ["Neraca — Aset", "-", "TOTAL ASET", corp.balanceSheet.totalAssetsIdr],
+              ["Neraca — Pasiva", "2101", "Utang Usaha Supplier", corp.balanceSheet.accountsPayableIdr],
+              ["Neraca — Pasiva", "2102-03", "Utang Pajak", corp.balanceSheet.taxPayableIdr],
+              ["Neraca — Pasiva", "3101", "Modal Disetor", corp.balanceSheet.paidInCapitalIdr],
+              ["Neraca — Pasiva", "3201", "Laba Tahun Berjalan", corp.balanceSheet.currentYearEarningsIdr],
+              [
+                "Neraca — Pasiva",
+                "-",
+                "TOTAL LIABILITAS + EKUITAS",
+                corp.balanceSheet.totalLiabilitiesIdr + corp.balanceSheet.totalEquityIdr,
+              ],
+            ],
+          };
+          const trialBalanceSheet = {
+            sheetName: "Neraca Saldo COA",
+            headers: ["Kode COA", "Nama Akun", "Kategori", "Debit (Rp)", "Kredit (Rp)"],
+            rows: corp.coaTrialBalance.map((r) => [
+              r.code,
+              r.name,
+              r.category,
+              r.debit,
+              r.credit,
+            ]),
+          };
+          const cashflowTaxSheet = {
+            sheetName: "Arus Kas & Pajak Masa",
+            headers: ["Bagian", "Komponen", "Nominal (Rp)"],
+            rows: [
+              ["Arus Kas", "Kas Masuk dari Pelanggan", corp.cashFlow.cashFromCustomersIdr],
+              ["Arus Kas", "Pembayaran Stok & Operasional", -corp.cashFlow.cashPaidForInventoryAndOpsIdr],
+              ["Arus Kas", "Arus Kas Bersih Operasional", corp.cashFlow.operatingCashFlowIdr],
+              ["Arus Kas", "Saldo Kas & Bank Akhir (1101)", corp.balanceSheet.cashAndBankIdr],
+              ["Pajak Masa", "Dasar Pengenaan Pajak (DPP)", corp.taxSummary.dppIdr],
+              ["Pajak Masa", "PPN Keluaran 11% (UU HPP)", corp.taxSummary.ppn11Idr],
+              ["Pajak Masa", "PPh Final UMKM 0,5% (PP 55/2022)", corp.taxSummary.pphFinal05Idr],
+              ["Pajak Masa", "Total Estimasi Pajak Masa", corp.taxSummary.estimatedTotalTaxIdr],
+            ],
+          };
+          const taxRatiosSheets = [
             {
               sheetName: "SPT Pajak Indonesia",
               headers: ["Jenis Pajak", "Tarif / Regulasi", "Nominal (Rp)"],
@@ -756,14 +877,132 @@ function SovereignAccountingSuiteInner({
                 ["Estimasi BEP Omzet (Rp)", taxReport.breakEvenRevenueIdr],
               ],
             },
+          ];
+          const arAgingSheets = [
             {
-              sheetName: "Aging Piutang COD",
+              sheetName: "Rekap Aging Piutang",
               headers: ["Bucket Umur", "Jumlah Order", "Nominal (Rp)"],
               rows: corp.arAging.map((b) => [b.label, b.count, b.amountIdr]),
             },
-          ],
-        })}
-      />
+            {
+              sheetName: "Rincian Order COD",
+              headers: ["No. Order", "Pelanggan", "Metode", "Status", "Tagihan (Rp)"],
+              rows: unpaidOrders.map((o) => [
+                o.invoiceNumber,
+                o.customerName,
+                o.paymentMethod || "COD",
+                o.orderStatus,
+                o.totalAmount,
+              ]),
+            },
+          ];
+
+          if (activeContext === "statements") return [statementsSheet];
+          if (activeContext === "trial_balance") return [trialBalanceSheet];
+          if (activeContext === "cashflow_tax") return [cashflowTaxSheet];
+          if (activeContext === "tax_ratios") return taxRatiosSheets;
+          if (activeContext === "ar_aging") return arAgingSheets;
+          return [
+            statementsSheet,
+            trialBalanceSheet,
+            cashflowTaxSheet,
+            ...taxRatiosSheets,
+            ...arAgingSheets,
+          ];
+        };
+
+        return (
+          <div className="space-y-3">
+            {/* Scope Toggle Bar: Context-Matched Active Menu vs Full 5-in-1 Audit Book */}
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-500/30 bg-emerald-950/20 px-3.5 py-2.5 text-xs">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                <span className="font-semibold text-emerald-200">
+                  Konteks Cetak &amp; Ekspor Aktif:
+                </span>
+                <span className="rounded-md bg-emerald-500/20 px-2 py-0.5 font-extrabold text-white">
+                  {activeMeta.shortName}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setPrintScope("active_tab")}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                    printScope === "active_tab"
+                      ? "bg-emerald-500 text-slate-950"
+                      : "border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+                  }`}
+                >
+                  Sesuai Menu Aktif ({tabShortLabel})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintScope("full_bundle")}
+                  className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
+                    printScope === "full_bundle"
+                      ? "bg-amber-500 text-slate-950"
+                      : "border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"
+                  }`}
+                >
+                  Paket Lengkap 5-in-1 PSAK
+                </button>
+              </div>
+            </div>
+
+            <UniversalPrintPanel
+              documentLabel={activeMeta.docLabel}
+              jobTitle={`${activeMeta.shortName} — ${businessName}`}
+              filenameBase={activeMeta.filenameBase}
+              defaultPaper="a4"
+              buildHtml={() =>
+                renderContextualAccountingPrintHtml({
+                  context: activeContext,
+                  report: corp,
+                  tax: taxReport,
+                  businessName,
+                  orders,
+                })
+              }
+              buildEscPos={() =>
+                buildEscPosTextReport(activeMeta.escTitle, businessName, activeMeta.escLines)
+              }
+              onResult={(res) => onToast?.(res.message, res.ok ? "ok" : "error")}
+              compact
+            />
+
+            <ReportExportHub
+              heading={activeMeta.exportHeading}
+              onToast={onToast}
+              buildPayload={() => ({
+                reportTitle: activeMeta.exportTitle,
+                subtitle: `Konteks: ${activeMeta.shortName} · Margin Bersih ${corp.incomeStatement.netMarginPct}% · Current Ratio ${taxReport.currentRatio}x`,
+                businessName,
+                filenameBase: activeMeta.filenameBase,
+                kpis: [
+                  {
+                    label: "Pendapatan Kotor",
+                    value: formatIdr(corp.incomeStatement.grossRevenueIdr),
+                  },
+                  {
+                    label: "Laba Bersih",
+                    value: formatIdr(corp.incomeStatement.netProfitAfterTaxIdr),
+                  },
+                  {
+                    label: "Total Aset",
+                    value: formatIdr(corp.balanceSheet.totalAssetsIdr),
+                  },
+                  {
+                    label: "Total Pajak Est.",
+                    value: formatIdr(taxReport.totalEstimatedTaxLiabilityIdr),
+                  },
+                ],
+                sheets: buildContextSheets(),
+              })}
+            />
+          </div>
+        );
+      })()}
     </section>
   );
 }

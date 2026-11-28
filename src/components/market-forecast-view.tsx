@@ -3,18 +3,22 @@
 import { useMemo, useState } from "react";
 import {
   ArrowUpRight,
+  BookOpen,
   Bot,
   BrainCircuit,
+  Building2,
   CheckCircle2,
   Copy,
   Crown,
   Flame,
+  Landmark,
   LineChart,
   Lock,
   Package,
   Printer,
   RefreshCw,
   Rocket,
+  ShieldCheck,
   Sparkles,
   Target,
   TrendingUp,
@@ -25,11 +29,18 @@ import { UniversalPrintPanel } from "@/components/universal-print-panel";
 import {
   formatIdr,
   type AppEditionId,
+  type ContactRecord,
   type ConversationRecord,
   type ErpProductRecord,
+  type FinancialReportSummary,
   type PosOrderRecord,
   type StoreBusinessProfile,
 } from "@/lib/crm-types";
+import {
+  buildEconomicCensusExportSheets,
+  buildEconomicCensusMarketReport,
+  renderEconomicCensusMarketPrintHtml,
+} from "@/lib/economic-census-report";
 import { editionHasFeature } from "@/lib/editions";
 import {
   buildSmartAutoBundlePlan,
@@ -52,6 +63,8 @@ interface MarketForecastViewProps {
   products: ErpProductRecord[];
   orders: PosOrderRecord[];
   conversations: ConversationRecord[];
+  contacts?: ContactRecord[];
+  report?: FinancialReportSummary;
   storeProfile: StoreBusinessProfile;
   onCreateProduct?: (input: {
     sku: string;
@@ -75,6 +88,8 @@ export function MarketForecastView({
   products,
   orders,
   conversations,
+  contacts = [],
+  report,
   storeProfile,
   onCreateProduct,
   onOpenMarketingStrategy,
@@ -82,6 +97,9 @@ export function MarketForecastView({
   onNotify,
 }: MarketForecastViewProps) {
   const [horizonDays, setHorizonDays] = useState<30 | 60 | 90>(90);
+  const [censusSubTab, setCensusSubTab] = useState<
+    "overview" | "marketing_conclusion" | "umkm_learning"
+  >("overview");
   const hasSovereignForecast = editionHasFeature(editionId, "buyer_interest_forecast");
 
   // Autonomous Self-Learning Knowledge Brain (v5.3)
@@ -256,6 +274,34 @@ export function MarketForecastView({
     [products, orders, storeProfile.businessName, horizonDays],
   );
 
+  const economicCensus = useMemo(
+    () =>
+      buildEconomicCensusMarketReport({
+        storeProfile,
+        products,
+        orders,
+        conversations,
+        contacts,
+        report,
+        brain,
+        horizonDays,
+        existingProductIntel: productIntel,
+        existingForecast: sovereignForecast,
+      }),
+    [
+      storeProfile,
+      products,
+      orders,
+      conversations,
+      contacts,
+      report,
+      brain,
+      horizonDays,
+      productIntel,
+      sovereignForecast,
+    ],
+  );
+
   // SVG chart scaling for 90-day forecast curve
   const maxChartVal = Math.max(
     1,
@@ -293,15 +339,38 @@ export function MarketForecastView({
               {productIntel.executiveSummary}
             </p>
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            {productIntel.analyzingAgents.map((ag) => (
-              <span
-                key={ag}
-                className="rounded-full border border-slate-700 bg-slate-950 px-2.5 py-1 text-[10px] font-bold text-cyan-300"
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-wrap justify-end gap-1.5">
+              {productIntel.analyzingAgents.map((ag) => (
+                <span
+                  key={ag}
+                  className="rounded-full border border-slate-700 bg-slate-950 px-2.5 py-1 text-[10px] font-bold text-cyan-300"
+                >
+                  ✓ {ag}
+                </span>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById("economic-census-market-report-hub");
+                  el?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-1.5 text-xs font-extrabold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400"
               >
-                ✓ {ag}
-              </span>
-            ))}
+                <Landmark className="h-3.5 w-3.5" /> Laporan Sensus Ekonomi &amp; Riset Pasar
+              </button>
+              {onOpenMarketingStrategy && (
+                <button
+                  type="button"
+                  onClick={onOpenMarketingStrategy}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-violet-400/40 bg-violet-500/15 px-3 py-1.5 text-xs font-bold text-violet-200 transition hover:bg-violet-500/25"
+                >
+                  <Target className="h-3.5 w-3.5" /> Buka Strategi Marketing AI
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -759,6 +828,328 @@ export function MarketForecastView({
           </div>
         )}
       </div>
+
+      {/* ITEM #3B (NEW INSTITUTIONAL HUB): LAPORAN RISET PASAR, SENSUS EKONOMI UMKM & KESIMPULAN STRATEGI MARKETING AI */}
+      <section
+        id="economic-census-market-report-hub"
+        className="space-y-5 rounded-3xl border border-emerald-500/40 bg-gradient-to-br from-slate-900 via-emerald-950/25 to-cyan-950/25 p-5 shadow-xl md:p-6"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-emerald-500/15 px-3 py-1 text-[11px] font-extrabold text-emerald-200">
+              <Landmark className="h-3.5 w-3.5" /> Standar BPS · Dinas Koperasi &amp; UKM · Disperindag · Bank Indonesia · Riset Pasar &amp; Edukasi UMKM
+            </div>
+            <h3 className="mt-2.5 text-xl font-extrabold text-white">
+              Laporan Riset Pasar, Sensus Ekonomi UMKM &amp; Kesimpulan Strategi Marketing AI
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-slate-300">
+              Dataset terstruktur untuk kebutuhan pendataan <strong>Sensus Ekonomi BPS</strong>, pelaporan <strong>Dinas Koperasi &amp; UKM / Disperindag</strong>, inklusi QRIS <strong>Bank Indonesia</strong>, pengajuan <strong>KUR Perbankan</strong>, serta modul belajar riset pasar mandiri bagi UMKM — sudah terintegrasi otomatis dengan <strong>Kesimpulan 5-Agen Strategi Marketing AI</strong>.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-emerald-500/30 bg-slate-950/90 px-3.5 py-2.5 text-right text-[11px]">
+            <div className="font-mono font-extrabold text-emerald-300">
+              No. {economicCensus.documentNumber}
+            </div>
+            <div className="text-slate-400">
+              KBLI Ref: {economicCensus.entityProfile.kbliReferenceCode} ·{" "}
+              {economicCensus.reportingPeriodLabel}
+            </div>
+            <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-200">
+              <ShieldCheck className="h-3 w-3" /> {economicCensus.entityProfile.umkmScale}
+            </div>
+          </div>
+        </div>
+
+        {/* 4 Institutional Census & Economic KPI Cards */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/90 p-3.5">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Nilai Tambah Bruto (GVA / PDB)
+            </div>
+            <div className="mt-1 font-mono text-lg font-extrabold text-emerald-300">
+              {formatIdr(economicCensus.economicIndicators.grossValueAddedIdr)}
+            </div>
+            <div className="mt-0.5 text-[11px] text-slate-400">
+              Rasio Nilai Tambah {economicCensus.economicIndicators.valueAddedRatioPct}% · AOV{" "}
+              {formatIdr(economicCensus.economicIndicators.averageOrderValueIdr)}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/90 p-3.5">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Inklusi Bayar Digital (BI)
+            </div>
+            <div className="mt-1 font-mono text-lg font-extrabold text-cyan-300">
+              {economicCensus.economicIndicators.digitalPaymentInclusionPct}% Digital
+            </div>
+            <div className="mt-0.5 text-[11px] text-slate-400">
+              QRIS &amp; VA vs {(100 - economicCensus.economicIndicators.digitalPaymentInclusionPct).toFixed(1)}% COD/Tunai
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/90 p-3.5">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Indeks Kematangan Digital
+            </div>
+            <div className="mt-1 font-mono text-lg font-extrabold text-amber-300">
+              {economicCensus.entityProfile.digitalMaturityScore}/100
+            </div>
+            <div className="mt-0.5 text-[11px] text-slate-400">
+              Level: {economicCensus.entityProfile.digitalMaturityTier}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/90 p-3.5">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              ROAS &amp; LTV:CAC (Marketing AI)
+            </div>
+            <div className="mt-1 font-mono text-lg font-extrabold text-violet-300">
+              {economicCensus.marketingStrategyConclusion.blendedRoasTarget}x ROAS
+            </div>
+            <div className="mt-0.5 text-[11px] text-slate-400">
+              BEP {economicCensus.marketingStrategyConclusion.breakEvenRoas}x · LTV:CAC{" "}
+              {economicCensus.marketingStrategyConclusion.ltvToCacRatio}x
+            </div>
+          </div>
+        </div>
+
+        {/* Integrated Executive Verdict */}
+        <div className="rounded-2xl border border-cyan-500/30 bg-cyan-950/20 p-4 text-xs leading-relaxed text-cyan-100">
+          <div className="mb-1 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-cyan-300">
+            <Sparkles className="h-3.5 w-3.5" /> Ringkasan Eksekutif Terpadu (Sensus Ekonomi + Riset Pasar + Strategi Marketing AI)
+          </div>
+          {economicCensus.integratedExecutiveVerdict}
+        </div>
+
+        {/* Interactive Sub-Tabs for Institutional Preview */}
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              { id: "overview", label: "Indikator Sensus BPS & Struktur Komoditas", icon: Building2 },
+              { id: "marketing_conclusion", label: "Kesimpulan Strategi Marketing AI", icon: Target },
+              { id: "umkm_learning", label: "Modul Belajar Analisis Pasar UMKM (5 Pelajaran)", icon: BookOpen },
+            ] as const
+          ).map((t) => {
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setCensusSubTab(t.id)}
+                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                  censusSubTab === t.id
+                    ? "bg-emerald-500 text-slate-950"
+                    : "border border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" /> {t.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {censusSubTab === "overview" && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Payment Inclusion Table */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/90 p-4">
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-emerald-300">
+                Struktur Inklusi Pembayaran Digital (Indikator Bank Indonesia &amp; BPS)
+              </h4>
+              <div className="mt-3 space-y-2">
+                {economicCensus.economicIndicators.paymentBreakdown.map((p) => (
+                  <div
+                    key={p.channel}
+                    className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-xs"
+                  >
+                    <div>
+                      <div className="font-bold text-white">{p.channel}</div>
+                      <div className="text-[10px] text-slate-400">
+                        {p.category} · {p.ordersCount} transaksi
+                      </div>
+                    </div>
+                    <div className="text-right font-mono">
+                      <div className="font-extrabold text-cyan-300">{p.sharePct}%</div>
+                      <div className="text-[10px] text-slate-400">{formatIdr(p.amountIdr)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/60 p-2.5 text-[11px] text-slate-300">
+                <strong>Instansi Pengguna Dataset:</strong>{" "}
+                {economicCensus.intendedInstitutions.join(" · ")}
+              </div>
+            </div>
+
+            {/* Category Commodity Structure */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/90 p-4">
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-amber-300">
+                Struktur Komoditas &amp; Konsentrasi Pasar Per Kategori
+              </h4>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-left text-[11px]">
+                  <thead className="border-b border-slate-800 text-slate-400">
+                    <tr>
+                      <th className="py-1.5 pr-2">Kategori</th>
+                      <th className="py-1.5 pr-2 text-right">SKU / Stok</th>
+                      <th className="py-1.5 pr-2 text-right">Margin</th>
+                      <th className="py-1.5 text-right">Porsi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/70">
+                    {economicCensus.categoryStructure.slice(0, 6).map((c) => (
+                      <tr key={c.category}>
+                        <td className="py-1.5 pr-2 font-semibold text-white">{c.category}</td>
+                        <td className="py-1.5 pr-2 text-right font-mono text-slate-300">
+                          {c.skuCount} / {c.totalStockUnits}
+                        </td>
+                        <td className="py-1.5 pr-2 text-right font-mono text-emerald-300">
+                          {c.avgGrossMarginPct}%
+                        </td>
+                        <td className="py-1.5 text-right font-mono font-bold text-cyan-300">
+                          {c.revenueSharePct}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {censusSubTab === "marketing_conclusion" && (
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-emerald-500/25 bg-slate-950/90 p-4 text-xs">
+                <div className="font-extrabold text-emerald-300">
+                  Kekuatan &amp; Peluang Utama (SWOT — Strategi Marketing AI)
+                </div>
+                <ul className="mt-2 space-y-1.5 text-slate-300">
+                  {economicCensus.marketingStrategyConclusion.keyStrengths.map((s, i) => (
+                    <li key={`str-${i}`} className="flex gap-1.5">
+                      <span className="text-emerald-400">✓</span> <span>{s}</span>
+                    </li>
+                  ))}
+                  {economicCensus.marketingStrategyConclusion.priorityOpportunities.map((o, i) => (
+                    <li key={`opp-${i}`} className="flex gap-1.5">
+                      <span className="text-cyan-400">★</span> <span>{o}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-2xl border border-amber-500/25 bg-slate-950/90 p-4 text-xs">
+                <div className="font-extrabold text-amber-300">
+                  Celah Funnel &amp; Alokasi Kanal Pemasaran Strategis
+                </div>
+                <div className="mt-2 space-y-1.5">
+                  {economicCensus.marketingStrategyConclusion.channelBudgetSplit.map((ch) => (
+                    <div
+                      key={ch.channel}
+                      className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/70 px-2.5 py-1.5"
+                    >
+                      <span className="font-semibold text-white">{ch.channel}</span>
+                      <span className="font-mono text-[11px] text-cyan-300">
+                        {ch.sharePct}% · {formatIdr(ch.monthlyBudgetIdr)} · ROAS {ch.expectedRoas}x
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {onOpenMarketingStrategy && (
+                  <button
+                    type="button"
+                    onClick={onOpenMarketingStrategy}
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-violet-500 px-3 py-1.5 text-[11px] font-extrabold text-white hover:bg-violet-400"
+                  >
+                    <ArrowUpRight className="h-3.5 w-3.5" /> Lihat Detail Lengkap di Strategi Marketing AI
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {censusSubTab === "umkm_learning" && (
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {economicCensus.umkmLearningModules.map((mod) => (
+              <div
+                key={mod.code}
+                className="flex flex-col justify-between rounded-2xl border border-emerald-500/25 bg-slate-950/90 p-4 text-xs"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="rounded-md bg-emerald-500/20 px-2 py-0.5 font-mono text-[10px] font-extrabold text-emerald-300">
+                      {mod.code}
+                    </span>
+                    <span className="text-[10px] font-semibold text-cyan-300">
+                      {mod.institutionalRelevance}
+                    </span>
+                  </div>
+                  <h4 className="mt-2 font-extrabold text-white">{mod.topic}</h4>
+                  <div className="mt-1.5 rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 font-mono text-[11px] text-amber-300">
+                    {mod.observedMetricLabel}: <strong>{mod.observedMetricValue}</strong>
+                  </div>
+                  <p className="mt-2 leading-relaxed text-slate-300">{mod.plainLanguageLesson}</p>
+                </div>
+                <div className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-950/30 p-2.5 text-[11px] text-emerald-200">
+                  <strong>Langkah Praktis:</strong> {mod.recommendedAction}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Direct Formal A4/PDF Print + 6-Sheet Institutional Excel/CSV Export */}
+        <UniversalPrintPanel
+          documentLabel="Laporan Riset Pasar, Sensus Ekonomi UMKM & Kesimpulan Strategi AI"
+          jobTitle={`Laporan Sensus Ekonomi & Riset Pasar — ${storeProfile.businessName}`}
+          filenameBase={`laporan-sensus-ekonomi-riset-pasar-${economicCensus.documentNumber.toLowerCase()}`}
+          defaultPaper="a4"
+          buildHtml={() => renderEconomicCensusMarketPrintHtml(economicCensus)}
+          buildEscPos={() =>
+            buildEscPosTextReport(
+              `SENSUS EKONOMI & RISET PASAR`,
+              storeProfile,
+              [
+                `No. Dok: ${economicCensus.documentNumber}`,
+                `Skala: ${economicCensus.entityProfile.umkmScale}`,
+                `GVA (PDB): ${formatIdr(economicCensus.economicIndicators.grossValueAddedIdr)} (${economicCensus.economicIndicators.valueAddedRatioPct}%)`,
+                `Bayar Digital: ${economicCensus.economicIndicators.digitalPaymentInclusionPct}%`,
+                `Kematangan Digital: ${economicCensus.entityProfile.digitalMaturityScore}/100`,
+                `Indeks Minat: ${economicCensus.economicIndicators.buyerIntentIndex}/100`,
+                `ROAS AI: ${economicCensus.marketingStrategyConclusion.blendedRoasTarget}x | LTV:CAC ${economicCensus.marketingStrategyConclusion.ltvToCacRatio}x`,
+              ],
+            )
+          }
+          onResult={(res) => onNotify(res.message)}
+        />
+
+        <ReportExportHub
+          heading="Ekspor Dataset Sensus Ekonomi, Riset Pasar & Strategi AI (6-Sheet Excel / PDF / CSV / JSON) untuk BPS, Dinas Koperasi & Bank KUR"
+          onToast={(msg) => onNotify(msg)}
+          buildPayload={() => ({
+            reportTitle: `Laporan Riset Pasar, Sensus Ekonomi UMKM & Kesimpulan Strategi Marketing AI (${economicCensus.documentNumber})`,
+            subtitle: `${economicCensus.entityProfile.umkmScale} · KBLI ${economicCensus.entityProfile.kbliReferenceCode} · Digital Maturity ${economicCensus.entityProfile.digitalMaturityScore}/100`,
+            businessName: storeProfile.businessName,
+            filenameBase: `dataset-sensus-ekonomi-riset-pasar-${horizonDays}h`,
+            kpis: [
+              { label: "Skala Usaha (PP 7/2021)", value: economicCensus.entityProfile.umkmScale },
+              {
+                label: "Nilai Tambah Bruto (GVA)",
+                value: formatIdr(economicCensus.economicIndicators.grossValueAddedIdr),
+              },
+              {
+                label: "Inklusi Digital (BI)",
+                value: `${economicCensus.economicIndicators.digitalPaymentInclusionPct}%`,
+              },
+              {
+                label: "Target ROAS Strategi AI",
+                value: `${economicCensus.marketingStrategyConclusion.blendedRoasTarget}x`,
+              },
+            ],
+            sheets: buildEconomicCensusExportSheets(economicCensus),
+          })}
+        />
+      </section>
 
       {/* ITEM #4: STUDIO CETAK & EKSPOR LAPORAN TREN MINAT & AI PRODUK */}
       <div className="space-y-4 rounded-3xl border border-violet-500/35 bg-slate-900/95 p-4 md:p-6">

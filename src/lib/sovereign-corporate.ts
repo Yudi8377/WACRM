@@ -1035,6 +1035,462 @@ function formatRpHtml(n: number): string {
   return `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 }
 
+export type AccountingPrintContext =
+  | "statements"
+  | "trial_balance"
+  | "cashflow_tax"
+  | "tax_ratios"
+  | "ar_aging"
+  | "full_bundle";
+
+function buildAccountingPrintShell(params: {
+  docTitle: string;
+  docBadge: string;
+  businessName: string;
+  periodLabel: string;
+  npwp?: string;
+  accentHex?: string;
+  kpis: Array<{ label: string; value: string; sub?: string }>;
+  bodyHtml: string;
+  footerLeft?: string;
+}): string {
+  const accent = params.accentHex || "#047857";
+  const kpiCards = params.kpis
+    .map(
+      (k) => `<div class="kpi">
+        <div class="lbl">${escapeCorpHtml(k.label)}</div>
+        <div class="val">${escapeCorpHtml(k.value)}</div>
+        ${k.sub ? `<div class="sub">${escapeCorpHtml(k.sub)}</div>` : ""}
+      </div>`,
+    )
+    .join("");
+
+  return `<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8" />
+<title>${escapeCorpHtml(params.docTitle)} — ${escapeCorpHtml(params.businessName)}</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; color: #0f172a; margin: 0; padding: 18px; font-size: 11px; line-height: 1.45; }
+  .head { border-bottom: 3px solid ${accent}; padding-bottom: 10px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .badge { display: inline-block; background: #ecfdf5; color: ${accent}; border: 1px solid ${accent}40; border-radius: 4px; padding: 2px 7px; font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
+  h1 { margin: 0; font-size: 16px; color: ${accent}; letter-spacing: -0.01em; }
+  h2 { font-size: 12px; color: ${accent}; margin: 15px 0 6px; border-left: 3px solid ${accent}; padding-left: 8px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; }
+  .kpi { border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; background: #f8fafc; }
+  .kpi .lbl { font-size: 9px; color: #64748b; text-transform: uppercase; font-weight: 700; }
+  .kpi .val { font-size: 13px; font-weight: 800; margin-top: 2px; color: #0f172a; }
+  .kpi .sub { font-size: 9px; color: #475569; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+  th { background: #f1f5f9; color: #0f172a; border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; text-align: left; font-weight: 700; }
+  td { border: 1px solid #e2e8f0; padding: 5.5px 8px; font-size: 10px; }
+  tr.subtotal td { background: #f8fafc; font-weight: 700; }
+  tr.total td { background: #ecfdf5; color: #065f46; font-weight: 800; border-top: 2px solid ${accent}; }
+  .num { text-align: right; font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; }
+  .note { margin-top: 10px; padding: 8px 10px; border-left: 3px solid ${accent}; background: #f8fafc; font-size: 10px; color: #334155; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .sign { margin-top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; page-break-inside: avoid; }
+  .sign-box { text-align: center; font-size: 10px; }
+  .sign-line { margin-top: 42px; border-top: 1px solid #475569; padding-top: 4px; font-weight: 700; }
+  .foot { margin-top: 16px; border-top: 1px dashed #cbd5e1; padding-top: 8px; font-size: 9px; color: #64748b; display: flex; justify-content: space-between; }
+</style></head><body>
+  <div class="head">
+    <div>
+      <div class="badge">${escapeCorpHtml(params.docBadge)}</div>
+      <h1>${escapeCorpHtml(params.docTitle)}</h1>
+      <div style="margin-top:3px;color:#334155"><strong>${escapeCorpHtml(params.businessName)}</strong> · NPWP: ${escapeCorpHtml(params.npwp || "-")}</div>
+    </div>
+    <div style="text-align:right;font-size:10px;color:#334155">
+      <div><strong>Periode: ${escapeCorpHtml(params.periodLabel)}</strong></div>
+      <div>Dicetak: ${new Date().toLocaleString("id-ID")}</div>
+      <div style="color:#64748b">Standar Pelaporan: SAK / PSAK Indonesia</div>
+    </div>
+  </div>
+  <div class="grid">${kpiCards}</div>
+  ${params.bodyHtml}
+  <div class="sign">
+    <div class="sign-box">
+      <div>Disusun Oleh,</div>
+      <div style="color:#64748b">Bagian Akuntansi &amp; Keuangan</div>
+      <div class="sign-line">( __________________________ )</div>
+    </div>
+    <div class="sign-box">
+      <div>Diperiksa &amp; Disetujui Oleh,</div>
+      <div style="color:#64748b">Direktur / Pemilik — ${escapeCorpHtml(params.businessName)}</div>
+      <div class="sign-line">( __________________________ )</div>
+    </div>
+  </div>
+  <div class="foot">
+    <span>${escapeCorpHtml(params.footerLeft || "Dokumen Akuntansi PSAK — WACRM Commercial OS v5.3.2")}</span>
+    <span>Validasi Sistem Double-Entry Otomatis · Audit &amp; Direksi Ready</span>
+  </div>
+</body></html>`;
+}
+
+/**
+ * Context-specific PSAK accounting print renderer.
+ * Prints ONLY the dedicated formal document for the active accounting menu tab
+ * (Laba Rugi & Neraca, COA & Neraca Saldo, Arus Kas & Ringkasan Pajak,
+ * SPT Pajak Lengkap & Rasio, Aging Piutang COD, or Full 5-in-1 Audit Book).
+ */
+export function renderContextualAccountingPrintHtml(params: {
+  context: AccountingPrintContext;
+  report: CorporateFinancialStatements;
+  tax: EnterpriseTaxReport;
+  businessName: string;
+  orders?: PosOrderRecord[];
+  npwp?: string;
+}): string {
+  const { context, report, tax, businessName, orders = [], npwp = "-" } = params;
+  const inc = report.incomeStatement;
+  const bs = report.balanceSheet;
+  const cf = report.cashFlow;
+
+  // 1. LABA RUGI & NERACA (PSAK 1 & 72)
+  if (context === "statements") {
+    const bodyHtml = `
+      <h2>1. Laporan Laba Rugi Komprehensif (Income Statement — PSAK 1 &amp; 72)</h2>
+      <table>
+        <thead><tr><th>Kode</th><th>Pos Pendapatan &amp; Beban</th><th class="num">Nominal (Rp)</th><th class="num">% Omzet</th></tr></thead>
+        <tbody>
+          <tr><td><strong>4101</strong></td><td>Pendapatan Penjualan Kotor (POS, WhatsApp &amp; COD)</td><td class="num">${formatRpHtml(inc.grossRevenueIdr)}</td><td class="num">100,0%</td></tr>
+          <tr><td><strong>5101</strong></td><td>Harga Pokok Penjualan (HPP — Metode FIFO)</td><td class="num">(${formatRpHtml(inc.cogsIdr)})</td><td class="num">${inc.grossRevenueIdr > 0 ? ((inc.cogsIdr / inc.grossRevenueIdr) * 100).toFixed(1) : "0.0"}%</td></tr>
+          <tr class="subtotal"><td></td><td>LABA KOTOR (GROSS PROFIT)</td><td class="num">${formatRpHtml(inc.grossProfitIdr)}</td><td class="num">${inc.grossMarginPct}%</td></tr>
+          <tr><td><strong>6101</strong></td><td>Beban Operasional, Logistik &amp; Pemasaran</td><td class="num">(${formatRpHtml(inc.operatingExpenseIdr)})</td><td class="num">${inc.grossRevenueIdr > 0 ? ((inc.operatingExpenseIdr / inc.grossRevenueIdr) * 100).toFixed(1) : "0.0"}%</td></tr>
+          <tr class="subtotal"><td></td><td>LABA OPERASIONAL / EBITDA</td><td class="num">${formatRpHtml(inc.ebitdaIdr)}</td><td class="num">${inc.grossRevenueIdr > 0 ? ((inc.ebitdaIdr / inc.grossRevenueIdr) * 100).toFixed(1) : "0.0"}%</td></tr>
+          <tr><td><strong>6201</strong></td><td>Estimasi Beban Pajak PPh Final UMKM (0,5% — PP 55/2022)</td><td class="num">(${formatRpHtml(inc.pphFinalUmkmIdr)})</td><td class="num">0,5%</td></tr>
+          <tr class="total"><td></td><td>LABA BERSIH SETELAH PAJAK (NET INCOME)</td><td class="num">${formatRpHtml(inc.netProfitAfterTaxIdr)}</td><td class="num">${inc.netMarginPct}%</td></tr>
+        </tbody>
+      </table>
+
+      <h2>2. Laporan Posisi Keuangan / Neraca (Balance Sheet — PSAK 1)</h2>
+      <div class="two-col">
+        <table>
+          <thead><tr><th colspan="2">ASET (AKTIVA)</th><th class="num">Saldo (Rp)</th></tr></thead>
+          <tbody>
+            <tr><td><strong>1101</strong></td><td>Kas &amp; Rekening Bank Operasional</td><td class="num">${formatRpHtml(bs.cashAndBankIdr)}</td></tr>
+            <tr><td><strong>1102</strong></td><td>Piutang Usaha &amp; COD Dalam Pengiriman</td><td class="num">${formatRpHtml(bs.accountsReceivableIdr)}</td></tr>
+            <tr><td><strong>1103</strong></td><td>Persediaan Barang Dagang (FIFO)</td><td class="num">${formatRpHtml(bs.inventoryAssetIdr)}</td></tr>
+            <tr class="subtotal"><td></td><td>Sub-Total Aset Lancar</td><td class="num">${formatRpHtml(bs.cashAndBankIdr + bs.accountsReceivableIdr + bs.inventoryAssetIdr)}</td></tr>
+            <tr><td><strong>1201</strong></td><td>Aset Tetap &amp; Peralatan Outlet</td><td class="num">${formatRpHtml(bs.fixedAssetsIdr)}</td></tr>
+            <tr class="total"><td></td><td>TOTAL ASET</td><td class="num">${formatRpHtml(bs.totalAssetsIdr)}</td></tr>
+          </tbody>
+        </table>
+        <table>
+          <thead><tr><th colspan="2">LIABILITAS &amp; EKUITAS (PASIVA)</th><th class="num">Saldo (Rp)</th></tr></thead>
+          <tbody>
+            <tr><td><strong>2101</strong></td><td>Utang Usaha Supplier</td><td class="num">${formatRpHtml(bs.accountsPayableIdr)}</td></tr>
+            <tr><td><strong>2102–03</strong></td><td>Utang Pajak (PPN 11% + PPh Final)</td><td class="num">${formatRpHtml(bs.taxPayableIdr)}</td></tr>
+            <tr class="subtotal"><td></td><td>Sub-Total Liabilitas</td><td class="num">${formatRpHtml(bs.totalLiabilitiesIdr)}</td></tr>
+            <tr><td><strong>3101</strong></td><td>Modal Disetor &amp; Saldo Ekuitas Awal</td><td class="num">${formatRpHtml(bs.paidInCapitalIdr)}</td></tr>
+            <tr><td><strong>3201</strong></td><td>Laba Tahun Berjalan</td><td class="num">${formatRpHtml(bs.currentYearEarningsIdr)}</td></tr>
+            <tr class="total"><td></td><td>TOTAL LIABILITAS + EKUITAS</td><td class="num">${formatRpHtml(bs.totalLiabilitiesIdr + bs.totalEquityIdr)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="note">
+        <strong>Validasi Persamaan Akuntansi (PSAK 1):</strong>
+        Total Aset (${formatRpHtml(bs.totalAssetsIdr)}) = Total Liabilitas (${formatRpHtml(bs.totalLiabilitiesIdr)}) + Total Ekuitas (${formatRpHtml(bs.totalEquityIdr)}) →
+        <strong>${bs.isBalanced ? "SEIMBANG 100% (BALANCED · SELISIH Rp 0)" : "MEMERLUKAN PENYESUAIAN JURNAL"}</strong>.
+      </div>
+    `;
+    return buildAccountingPrintShell({
+      docTitle: "LAPORAN LABA RUGI & NERACA POSISI KEUANGAN (PSAK)",
+      docBadge: "Menu: Laba Rugi & Neraca",
+      businessName,
+      periodLabel: tax.periodLabel,
+      npwp,
+      kpis: [
+        { label: "Pendapatan Kotor", value: formatRpHtml(inc.grossRevenueIdr), sub: "Akun 4101" },
+        { label: "Laba Kotor", value: formatRpHtml(inc.grossProfitIdr), sub: `Gross Margin ${inc.grossMarginPct}%` },
+        { label: "Laba Bersih", value: formatRpHtml(inc.netProfitAfterTaxIdr), sub: `Net Margin ${inc.netMarginPct}%` },
+        { label: "Total Aset (Neraca)", value: formatRpHtml(bs.totalAssetsIdr), sub: bs.isBalanced ? "Status: Seimbang 100%" : "Cek Selisih" },
+      ],
+      bodyHtml,
+    });
+  }
+
+  // 2. COA & NERACA SALDO (TRIAL BALANCE)
+  if (context === "trial_balance") {
+    const categories: Array<CoaTrialBalanceRow["category"]> = [
+      "Aset",
+      "Liabilitas",
+      "Ekuitas",
+      "Pendapatan",
+      "HPP",
+      "Beban",
+    ];
+    const tbRows = report.coaTrialBalance
+      .map(
+        (r) => `<tr>
+          <td><strong>${escapeCorpHtml(r.code)}</strong></td>
+          <td>${escapeCorpHtml(r.name)}</td>
+          <td>${escapeCorpHtml(r.category)}</td>
+          <td>${r.category === "Aset" || r.category === "HPP" || r.category === "Beban" ? "Debit" : "Kredit"}</td>
+          <td class="num">${r.debit > 0 ? formatRpHtml(r.debit) : "-"}</td>
+          <td class="num">${r.credit > 0 ? formatRpHtml(r.credit) : "-"}</td>
+        </tr>`,
+      )
+      .join("");
+    const catSummaryRows = categories
+      .map((cat) => {
+        const subset = report.coaTrialBalance.filter((r) => r.category === cat);
+        const deb = subset.reduce((s, x) => s + x.debit, 0);
+        const crd = subset.reduce((s, x) => s + x.credit, 0);
+        return `<tr>
+          <td><strong>${cat}</strong></td>
+          <td class="num">${subset.length} akun</td>
+          <td class="num">${formatRpHtml(deb)}</td>
+          <td class="num">${formatRpHtml(crd)}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const diff = Math.abs(report.totalTrialDebit - report.totalTrialCredit);
+    const bodyHtml = `
+      <h2>1. Daftar Akun (Chart of Accounts 4-Digit) &amp; Neraca Saldo (Trial Balance)</h2>
+      <table>
+        <thead><tr><th>Kode COA</th><th>Nama Akun</th><th>Kategori</th><th>Saldo Normal</th><th class="num">Debit (Rp)</th><th class="num">Kredit (Rp)</th></tr></thead>
+        <tbody>
+          ${tbRows}
+          <tr class="total">
+            <td colspan="4">TOTAL NERACA SALDO (${report.isTrialBalanced ? "SEIMBANG 100% — DEBIT = KREDIT" : "PERLU PENYESUAIAN"})</td>
+            <td class="num">${formatRpHtml(report.totalTrialDebit)}</td>
+            <td class="num">${formatRpHtml(report.totalTrialCredit)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>2. Rekapitulasi Saldo Per Klasifikasi Akun PSAK</h2>
+      <table>
+        <thead><tr><th>Klasifikasi Akun</th><th class="num">Jumlah Akun</th><th class="num">Total Debit (Rp)</th><th class="num">Total Kredit (Rp)</th></tr></thead>
+        <tbody>${catSummaryRows}</tbody>
+      </table>
+      <div class="note">
+        <strong>Verifikasi Audit Double-Entry:</strong>
+        Selisih Debit vs Kredit = <strong>${formatRpHtml(diff)}</strong>.
+        Struktur kode COA 4-digit mengikuti konvensi akuntansi Indonesia (1xxx Aset, 2xxx Liabilitas, 3xxx Ekuitas, 4xxx Pendapatan, 5xxx HPP, 6xxx Beban).
+      </div>
+    `;
+    return buildAccountingPrintShell({
+      docTitle: "DAFTAR AKUN (COA 4-DIGIT) & NERACA SALDO (TRIAL BALANCE)",
+      docBadge: "Menu: COA & Neraca Saldo",
+      businessName,
+      periodLabel: tax.periodLabel,
+      npwp,
+      accentHex: "#0f766e",
+      kpis: [
+        { label: "Total Akun Aktif", value: `${report.coaTrialBalance.length} Akun`, sub: "COA 4-Digit PSAK" },
+        { label: "Total Debit", value: formatRpHtml(report.totalTrialDebit), sub: "Aset, HPP & Beban" },
+        { label: "Total Kredit", value: formatRpHtml(report.totalTrialCredit), sub: "Liabilitas, Ekuitas & Omzet" },
+        { label: "Validasi Balance", value: report.isTrialBalanced ? "SEIMBANG" : "SELISIH", sub: `Selisih: ${formatRpHtml(diff)}` },
+      ],
+      bodyHtml,
+    });
+  }
+
+  // 3. ARUS KAS & RINGKASAN PAJAK MASA (PSAK 2)
+  if (context === "cashflow_tax") {
+    const openingCashEst = Math.max(0, bs.cashAndBankIdr - cf.netCashChangeIdr);
+    const bodyHtml = `
+      <h2>1. Laporan Arus Kas — Metode Langsung (Cash Flow Statement — PSAK 2)</h2>
+      <table>
+        <thead><tr><th>Aktivitas Arus Kas</th><th>Keterangan</th><th class="num">Nominal (Rp)</th></tr></thead>
+        <tbody>
+          <tr><td><strong>A. Aktivitas Operasi</strong></td><td>Penerimaan kas dari penjualan &amp; pelunasan pelanggan</td><td class="num">${formatRpHtml(cf.cashFromCustomersIdr)}</td></tr>
+          <tr><td></td><td>Pembayaran kas untuk persediaan barang &amp; beban operasional</td><td class="num">(${formatRpHtml(cf.cashPaidForInventoryAndOpsIdr)})</td></tr>
+          <tr class="subtotal"><td></td><td>Arus Kas Bersih dari Aktivitas Operasi</td><td class="num">${formatRpHtml(cf.operatingCashFlowIdr)}</td></tr>
+          <tr><td><strong>B. Aktivitas Investasi</strong></td><td>Pembelian / pelepasan aset tetap &amp; peralatan outlet</td><td class="num">${formatRpHtml(cf.investingCashFlowIdr)}</td></tr>
+          <tr><td><strong>C. Aktivitas Pendanaan</strong></td><td>Penambahan modal disetor / pelunasan pinjaman</td><td class="num">${formatRpHtml(cf.financingCashFlowIdr)}</td></tr>
+          <tr class="subtotal"><td><strong>Kenaikan / (Penurunan) Kas Bersih</strong></td><td>Total perubahan kas periode berjalan</td><td class="num">${formatRpHtml(cf.netCashChangeIdr)}</td></tr>
+          <tr><td>Saldo Kas &amp; Bank Awal Periode</td><td>Estimasi saldo kas pembuka</td><td class="num">${formatRpHtml(openingCashEst)}</td></tr>
+          <tr class="total"><td>SALDO KAS &amp; BANK AKHIR PERIODE (AKUN 1101)</td><td>Cocok dengan Neraca Posisi Keuangan</td><td class="num">${formatRpHtml(bs.cashAndBankIdr)}</td></tr>
+        </tbody>
+      </table>
+
+      <h2>2. Ringkasan Pajak Masa (e-Faktur &amp; e-Billing DJP Ready)</h2>
+      <table>
+        <thead><tr><th>Komponen Pajak Masa</th><th>Kode KAP/KJS Referensi</th><th>Dasar Perhitungan</th><th class="num">Nominal (Rp)</th></tr></thead>
+        <tbody>
+          <tr><td>Dasar Pengenaan Pajak (DPP)</td><td>Omzet Netto / 1,11</td><td>Penjualan Kotor ${formatRpHtml(inc.grossRevenueIdr)}</td><td class="num">${formatRpHtml(report.taxSummary.dppIdr)}</td></tr>
+          <tr><td>PPN Keluaran (11% — UU HPP)</td><td>411211 / 100</td><td>11% × DPP Penjualan</td><td class="num">${formatRpHtml(report.taxSummary.ppn11Idr)}</td></tr>
+          <tr><td>PPh Final UMKM (0,5% — PP 55/2022)</td><td>411128 / 420</td><td>0,5% × Omzet Bruto</td><td class="num">${formatRpHtml(report.taxSummary.pphFinal05Idr)}</td></tr>
+          <tr class="total"><td colspan="3">TOTAL ESTIMASI KEWAJIBAN SETOR PAJAK MASA</td><td class="num">${formatRpHtml(report.taxSummary.estimatedTotalTaxIdr)}</td></tr>
+        </tbody>
+      </table>
+      <div class="note">
+        <strong>Catatan Kepatuhan DJP:</strong> Penyetoran PPh Final UMKM 0,5% jatuh tempo tanggal 15 bulan berikutnya, sedangkan pelaporan &amp; penyetoran SPT Masa PPN (bagi PKP) jatuh tempo akhir bulan berikutnya.
+      </div>
+    `;
+    return buildAccountingPrintShell({
+      docTitle: "LAPORAN ARUS KAS (PSAK 2) & RINGKASAN PAJAK MASA",
+      docBadge: "Menu: Arus Kas & Ringkasan Pajak",
+      businessName,
+      periodLabel: tax.periodLabel,
+      npwp,
+      accentHex: "#0369a1",
+      kpis: [
+        { label: "Kas Masuk Pelanggan", value: formatRpHtml(cf.cashFromCustomersIdr), sub: "Penjualan Tunai & Lunas" },
+        { label: "Arus Kas Operasi", value: formatRpHtml(cf.operatingCashFlowIdr), sub: "Net Operating Cash Flow" },
+        { label: "Saldo Kas Akhir (1101)", value: formatRpHtml(bs.cashAndBankIdr), sub: "Likuiditas Tersedia" },
+        { label: "Estimasi Pajak Masa", value: formatRpHtml(report.taxSummary.estimatedTotalTaxIdr), sub: "PPN 11% + PPh Final 0,5%" },
+      ],
+      bodyHtml,
+    });
+  }
+
+  // 4. SPT PAJAK LENGKAP & RASIO KEUANGAN EKSEKUTIF
+  if (context === "tax_ratios") {
+    const bodyHtml = `
+      <h2>1. Ikhtisar Perpajakan Indonesia Lengkap (SPT Masa &amp; Tahunan)</h2>
+      <table>
+        <thead><tr><th>Jenis Pajak / Regulasi</th><th>Dasar Pengenaan Pajak (DPP)</th><th>Tarif</th><th class="num">Nominal Pajak (Rp)</th></tr></thead>
+        <tbody>
+          <tr><td>PPN Keluaran (UU HPP)</td><td class="num">${formatRpHtml(tax.taxableRevenueIdr)}</td><td>11%</td><td class="num">${formatRpHtml(tax.ppnKeluaran11Idr)}</td></tr>
+          <tr><td>PPN Masukan (Pembelian/HPP)</td><td class="num">${formatRpHtml(tax.purchaseInputBaseIdr)}</td><td>11%</td><td class="num">(${formatRpHtml(tax.ppnMasukan11Idr)})</td></tr>
+          <tr class="subtotal"><td>PPN Kurang / (Lebih) Bayar (SPT Masa 1111)</td><td>Keluaran − Masukan</td><td>Netto</td><td class="num">${formatRpHtml(tax.ppnNetPayableIdr)}</td></tr>
+          <tr><td>PPh Final UMKM (PP 55/2022)</td><td class="num">${formatRpHtml(tax.taxableRevenueIdr)}</td><td>0,5%</td><td class="num">${formatRpHtml(tax.pphFinalUmkm05Idr)}</td></tr>
+          <tr><td>Simulasi PPh Badan Fasilitas Pasal 31E (Omzet ≤ Rp 4,8M)</td><td class="num">${formatRpHtml(tax.fiscalNetProfitIdr)}</td><td>11%</td><td class="num">${formatRpHtml(tax.pphBadanPasal31EIdr)}</td></tr>
+          <tr><td>Simulasi PPh Badan Tarif Umum Pasal 17</td><td class="num">${formatRpHtml(tax.fiscalNetProfitIdr)}</td><td>22%</td><td class="num">${formatRpHtml(tax.pphBadanNormal22Idr)}</td></tr>
+          <tr><td>PPh Pasal 21 Karyawan (TER PP 58/2023)</td><td>Payroll Bulanan</td><td>TER</td><td class="num">${formatRpHtml(tax.pph21PayrollIdr)}</td></tr>
+          <tr><td>PPh Pasal 23 Jasa/Vendor (2%) &amp; Pasal 4(2) Sewa (10%)</td><td>Withholding &amp; Final</td><td>2% / 10%</td><td class="num">${formatRpHtml(tax.pph23Services2Idr + tax.pph4Ayat2Rent10Idr)}</td></tr>
+          <tr class="total"><td colspan="3">TOTAL ESTIMASI KEWAJIBAN SETOR PAJAK PERIODE INI</td><td class="num">${formatRpHtml(tax.totalEstimatedTaxLiabilityIdr)}</td></tr>
+        </tbody>
+      </table>
+
+      <h2>2. Laporan Perubahan Ekuitas &amp; Analisis Rasio Keuangan Eksekutif</h2>
+      <table>
+        <thead><tr><th>Metrik / Rasio Keuangan</th><th class="num">Nilai</th><th>Interpretasi Kesehatan Bisnis</th></tr></thead>
+        <tbody>
+          <tr><td>Ekuitas Awal + Laba Periode Berjalan − Prive</td><td class="num"><strong>${formatRpHtml(tax.closingEquityIdr)}</strong></td><td>Modal Awal ${formatRpHtml(tax.openingEquityIdr)} + Laba ${formatRpHtml(tax.currentNetIncomeIdr)}</td></tr>
+          <tr><td>Gross Profit Margin (GPM) / Net Profit Margin (NPM)</td><td class="num">${tax.grossMarginPct}% / ${tax.netMarginPct}%</td><td>${tax.netMarginPct >= 15 ? "Profitabilitas sangat sehat (>15%)" : "Fokus efisiensi HPP & biaya operasional"}</td></tr>
+          <tr><td>Current Ratio (Likuiditas Jangka Pendek)</td><td class="num">${tax.currentRatio}x</td><td>${tax.currentRatio >= 1.5 ? "Sangat likuid (mampu menutup kewajiban jangka pendek)" : "Perlu penguatan kas lancar"}</td></tr>
+          <tr><td>Debt-to-Equity Ratio (DER) / Return on Assets (ROA)</td><td class="num">${tax.debtToEquityRatio}x / ${tax.returnOnAssetsPct}%</td><td>${tax.debtToEquityRatio <= 1 ? "Struktur permodalan konservatif & aman bagi bank" : "Pantau rasio utang terhadap modal"}</td></tr>
+          <tr><td>Estimasi Break-Even Point (BEP Omzet)</td><td class="num"><strong>${formatRpHtml(tax.breakEvenRevenueIdr)}</strong></td><td>Omzet minimum bulanan untuk mencapai titik impas operasional</td></tr>
+        </tbody>
+      </table>
+    `;
+    return buildAccountingPrintShell({
+      docTitle: "IKHTISAR SPT PAJAK INDONESIA, PERUBAHAN EKUITAS & RASIO EKSEKUTIF",
+      docBadge: "Menu: SPT Pajak Lengkap & Rasio",
+      businessName,
+      periodLabel: tax.periodLabel,
+      npwp,
+      accentHex: "#b45309",
+      kpis: [
+        { label: "PPN Netto (SPT 1111)", value: formatRpHtml(tax.ppnNetPayableIdr), sub: "Keluaran − Masukan" },
+        { label: "Total Estimasi Pajak", value: formatRpHtml(tax.totalEstimatedTaxLiabilityIdr), sub: "PPN + PPh 0,5%/21/23/4(2)" },
+        { label: "Current Ratio / DER", value: `${tax.currentRatio}x / ${tax.debtToEquityRatio}x`, sub: `ROA ${tax.returnOnAssetsPct}%` },
+        { label: "Estimasi BEP Omzet", value: formatRpHtml(tax.breakEvenRevenueIdr), sub: `Ekuitas ${formatRpHtml(tax.closingEquityIdr)}` },
+      ],
+      bodyHtml,
+    });
+  }
+
+  // 5. AGING PIUTANG COD (ACCOUNTS RECEIVABLE AGING SCHEDULE)
+  if (context === "ar_aging") {
+    const totalAr = report.arAging.reduce((s, b) => s + b.amountIdr, 0);
+    const totalCount = report.arAging.reduce((s, b) => s + b.count, 0);
+    const overdueAmount = report.arAging
+      .slice(2)
+      .reduce((s, b) => s + b.amountIdr, 0);
+    const ckpnEstimate = Math.round(
+      (report.arAging[1]?.amountIdr ?? 0) * 0.05 +
+        (report.arAging[2]?.amountIdr ?? 0) * 0.15 +
+        (report.arAging[3]?.amountIdr ?? 0) * 0.5,
+    );
+    const collectibilityPct =
+      inc.grossRevenueIdr > 0
+        ? Math.max(0, Math.min(100, Math.round(((inc.grossRevenueIdr - totalAr) / inc.grossRevenueIdr) * 100)))
+        : 100;
+
+    const actionByBucket = [
+      "Lancar — Pantau konfirmasi pengiriman kurir otomatis",
+      "Kirim pengingat WhatsApp AI & cek status transit kurir COD",
+      "Prioritas penagihan PIC Finance & rekonsiliasi ekspedisi",
+      "Kritis — Eskalasi klaim retur COD / pencadangan piutang (CKPN)",
+    ];
+
+    const bucketRows = report.arAging
+      .map((b, idx) => {
+        const pct = totalAr > 0 ? ((b.amountIdr / totalAr) * 100).toFixed(1) : "0.0";
+        return `<tr>
+          <td><strong>${escapeCorpHtml(b.label)}</strong></td>
+          <td class="num">${b.count} order</td>
+          <td class="num">${formatRpHtml(b.amountIdr)}</td>
+          <td class="num">${pct}%</td>
+          <td>${actionByBucket[idx] || "Monitor berkala"}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const unpaidOrders = orders.filter((o) => o.paymentStatus !== "paid" && o.orderStatus !== "cancelled");
+    const orderDetailRows =
+      unpaidOrders.length > 0
+        ? unpaidOrders
+            .map((o) => {
+              const ageDays = Math.max(
+                0,
+                Math.floor((Date.now() - new Date(o.createdAt).getTime()) / (1000 * 60 * 60 * 24)),
+              );
+              return `<tr>
+                <td><strong>${escapeCorpHtml(o.invoiceNumber)}</strong></td>
+                <td>${escapeCorpHtml(o.customerName)}</td>
+                <td>${escapeCorpHtml((o.paymentMethod || "COD").toUpperCase())}</td>
+                <td>${escapeCorpHtml(o.orderStatus)}</td>
+                <td class="num">${ageDays} hari</td>
+                <td class="num">${formatRpHtml(o.totalAmount)}</td>
+              </tr>`;
+            })
+            .join("")
+        : `<tr><td colspan="6" style="text-align:center;color:#64748b">Seluruh transaksi saat ini berstatus lunas — tidak ada faktur COD/piutang terbuka.</td></tr>`;
+
+    const bodyHtml = `
+      <h2>1. Rekapitulasi Umur Piutang Usaha &amp; COD (Aging Schedule)</h2>
+      <table>
+        <thead><tr><th>Kelompok Umur Piutang</th><th class="num">Jumlah Faktur/COD</th><th class="num">Nominal (Rp)</th><th class="num">Porsi (%)</th><th>Rekomendasi Tindakan Penagihan</th></tr></thead>
+        <tbody>
+          ${bucketRows}
+          <tr class="total">
+            <td>TOTAL PIUTANG USAHA &amp; COD TERBUKA</td>
+            <td class="num">${totalCount} order</td>
+            <td class="num">${formatRpHtml(totalAr)}</td>
+            <td class="num">100,0%</td>
+            <td>Estimasi Cadangan Kerugian Piutang (CKPN): ${formatRpHtml(ckpnEstimate)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>2. Rincian Daftar Faktur / Transaksi COD Belum Lunas</h2>
+      <table>
+        <thead><tr><th>No. Order</th><th>Nama Pelanggan</th><th>Metode Bayar</th><th>Status Kirim</th><th class="num">Umur</th><th class="num">Tagihan (Rp)</th></tr></thead>
+        <tbody>${orderDetailRows}</tbody>
+      </table>
+      <div class="note">
+        <strong>Analisis Risiko Piutang COD:</strong> Rasio kolektibilitas kas saat ini <strong>${collectibilityPct}%</strong>.
+        Total piutang berumur &gt;14 hari sebesar <strong>${formatRpHtml(overdueAmount)}</strong> memerlukan tindak lanjut rekonsiliasi ekspedisi / follow-up WhatsApp otomatis.
+      </div>
+    `;
+    return buildAccountingPrintShell({
+      docTitle: "LAPORAN UMUR PIUTANG USAHA & COD (AR AGING SCHEDULE)",
+      docBadge: "Menu: Aging Piutang COD",
+      businessName,
+      periodLabel: tax.periodLabel,
+      npwp,
+      accentHex: "#7c3aed",
+      kpis: [
+        { label: "Total Piutang & COD", value: formatRpHtml(totalAr), sub: `${totalCount} faktur terbuka` },
+        { label: "Piutang > 14 Hari", value: formatRpHtml(overdueAmount), sub: "Prioritas penagihan" },
+        { label: "Rasio Kolektibilitas", value: `${collectibilityPct}%`, sub: "Tertagih terhadap omzet" },
+        { label: "Estimasi CKPN", value: formatRpHtml(ckpnEstimate), sub: "Cadangan piutang ragu" },
+      ],
+      bodyHtml,
+    });
+  }
+
+  // 6. FULL 5-IN-1 CORPORATE AUDIT BUNDLE
+  return renderCorporateTaxAndAccountingPrintHtml(report, tax, businessName, npwp);
+}
+
 export function renderCorporateTaxAndAccountingPrintHtml(
   report: CorporateFinancialStatements,
   tax: EnterpriseTaxReport,
