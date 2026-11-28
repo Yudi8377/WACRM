@@ -163,4 +163,14 @@ class WacrmJsBridge(
             activity.showServerSettingsDialog()
         }
     }
+
+    @JavascriptInterface
+    fun openPrivacyPolicy() {
+        activity.runOnUiThread {
+            activity.openPrivacyPolicy()
+        }
+    }
+
+    @JavascriptInterface
+    fun getServerBaseUrl(): String = activity.getCurrentBaseUrl()
 }

@@ -3,7 +3,7 @@ import type { MetadataRoute } from "next";
 const APP_BASE_URL = (
   process.env.APP_BASE_URL ||
   process.env.NEXT_PUBLIC_APP_BASE_URL ||
-  "https://wacrm-seven-dusky.vercel.app"
+  "https://wacrm-commercial.dwahyudi8377.workers.dev"
 ).replace(/\/$/, "");
 
 export default function robots(): MetadataRoute.Robots {
@@ -11,7 +11,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: "*",
-        allow: ["/", "/katalog", "/android", "/demo"],
+        allow: ["/", "/katalog", "/android", "/demo", "/privacy", "/terms", "/refund"],
         disallow: ["/api/", "/dashboard/", "/super-admin/"],
       },
     ],

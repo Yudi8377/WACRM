@@ -10,15 +10,15 @@ class UrlValidatorTest {
     @Test
     fun acceptsHttpsUrlsAndTrimsTrailingSlash() {
         assertEquals(
-            "https://wacrm-seven-dusky.vercel.app",
-            UrlValidator.normalizeBaseUrl("https://wacrm-seven-dusky.vercel.app/")
+            "https://wacrm-commercial.dwahyudi8377.workers.dev",
+            UrlValidator.normalizeBaseUrl("https://wacrm-commercial.dwahyudi8377.workers.dev/")
         )
     }
 
     @Test
     fun rejectsInsecureRemoteHttpAndEmbeddedCredentials() {
         assertNull(UrlValidator.normalizeBaseUrl("http://example.com"))
-        assertNull(UrlValidator.normalizeBaseUrl("https://user:pass@wacrm-seven-dusky.vercel.app"))
+        assertNull(UrlValidator.normalizeBaseUrl("https://user:pass@wacrm-commercial.dwahyudi8377.workers.dev"))
         assertNull(UrlValidator.normalizeBaseUrl("javascript:alert(1)"))
     }
 
@@ -32,12 +32,29 @@ class UrlValidatorTest {
 
     @Test
     fun matchesSameOriginHostsSafely() {
-        assertTrue(UrlValidator.isSameOriginHost("https://wacrm-seven-dusky.vercel.app/demo", "https://wacrm-seven-dusky.vercel.app"))
-        assertFalse(UrlValidator.isSameOriginHost("https://evil.example.com/demo", "https://wacrm-seven-dusky.vercel.app"))
+        assertTrue(
+            UrlValidator.isSameOriginHost(
+                "https://wacrm-commercial.dwahyudi8377.workers.dev/privacy",
+                "https://wacrm-commercial.dwahyudi8377.workers.dev"
+            )
+        )
+        assertTrue(
+            UrlValidator.isSameOriginHost(
+                "https://wacrm-commercial.dwahyudi8377.workers.dev/demo",
+                "https://wacrm-commercial.dwahyudi8377.workers.dev"
+            )
+        )
+        assertFalse(
+            UrlValidator.isSameOriginHost(
+                "https://evil.example.com/demo",
+                "https://wacrm-commercial.dwahyudi8377.workers.dev"
+            )
+        )
     }
 
     @Test
     fun sanitizesDeepLinkPaths() {
+        assertEquals("/privacy", UrlValidator.safeDeepLinkPath("/privacy"))
         assertEquals("/demo", UrlValidator.safeDeepLinkPath("/demo"))
         assertEquals("", UrlValidator.safeDeepLinkPath("//evil.com/phish"))
         assertEquals("", UrlValidator.safeDeepLinkPath("/../etc/passwd"))

@@ -874,6 +874,54 @@ export function SettingsView({
           )}
         </section>
 
+        {/* Official Legal & Privacy Policy Section (UU PDP No. 27/2022) */}
+        <section className="rounded-2xl border border-[#00A885]/35 bg-[#E6F7F3]/60 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h3 className="flex items-center gap-2 font-heading text-sm font-extrabold text-[#222222]">
+                <ShieldCheck className="h-4 w-4 text-[#00A885]" />
+                Kepatuhan Hukum &amp; Kebijakan Privasi Resmi (UU PDP No. 27/2022)
+              </h3>
+              <p className="mt-1 text-xs leading-relaxed text-[#444444]">
+                WACRM Commercial OS mematuhi UU No. 27 Tahun 2022 (UU PDP), kebijakan penghapusan data
+                Meta WhatsApp Cloud API, serta standar keamanan Google Play &amp; isolasi tenant
+                PostgreSQL RLS + enkripsi AES-256-GCM.
+              </p>
+              <p className="mt-2 text-[11px] text-[#555555]">
+                Tautan Privasi Resmi:{" "}
+                <a
+                  href="https://wacrm-commercial.dwahyudi8377.workers.dev/privacy"
+                  className="font-mono font-bold text-[#008C6F] underline hover:text-[#00A885]"
+                >
+                  https://wacrm-commercial.dwahyudi8377.workers.dev/privacy
+                </a>{" "}
+                · DPO: <strong>privacy@wacrm.id</strong>
+              </p>
+            </div>
+          </div>
+          <div className="mt-3.5 flex flex-wrap gap-2">
+            <a
+              href="/privacy"
+              className="inline-flex items-center gap-1.5 rounded bg-[#00A885] px-4 py-2 font-heading text-xs font-extrabold uppercase tracking-wider text-white transition hover:bg-[#008C6F]"
+            >
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Buka Kebijakan Privasi (UU PDP)
+            </a>
+            <a
+              href="/terms"
+              className="inline-flex items-center gap-1.5 rounded border border-zinc-300 bg-white px-3.5 py-2 text-xs font-bold text-[#333333] hover:border-[#00A885] hover:text-[#00A885]"
+            >
+              Syarat &amp; Ketentuan
+            </a>
+            <a
+              href="/refund"
+              className="inline-flex items-center gap-1.5 rounded border border-zinc-300 bg-white px-3.5 py-2 text-xs font-bold text-[#333333] hover:border-[#00A885] hover:text-[#00A885]"
+            >
+              Kebijakan Refund
+            </a>
+          </div>
+        </section>
+
         {/* Reset / Danger Zone */}
         <section className="rounded-2xl border border-red-200 bg-red-50/50 p-5">
           <h3 className="text-sm font-bold text-red-900">

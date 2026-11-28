@@ -567,6 +567,14 @@ export function WorkspaceApp({
               {voiceCompanionUnlocked ? "Asisten Suara 24/7" : "Asisten Suara AI"}
             </span>
           </button>
+          <Link
+            href="/privacy"
+            title="Kebijakan Privasi Resmi WACRM (UU PDP No. 27/2022)"
+            className="hidden items-center gap-1.5 rounded border border-[#00A885]/35 bg-[#E6F7F3] px-2.5 py-1.5 font-heading text-[11px] font-bold text-[#008C6F] transition hover:bg-[#00A885] hover:text-white lg:inline-flex"
+          >
+            <ShieldCheck className="h-3.5 w-3.5" />
+            <span>Privasi (UU PDP)</span>
+          </Link>
           <button
             type="button"
             onClick={() => void refresh()}
@@ -788,6 +796,18 @@ export function WorkspaceApp({
                 </div>
               </div>
             )}
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-1 border-t border-[#00A885]/20 pt-2 text-[10px]">
+              <Link
+                href="/privacy"
+                className="inline-flex items-center gap-1 font-bold text-[#008C6F] hover:text-[#00A885] hover:underline"
+              >
+                <ShieldCheck className="h-3 w-3 text-[#00A885]" />
+                Privasi (UU PDP)
+              </Link>
+              <Link href="/terms" className="text-[#555555] hover:text-[#00A885] hover:underline">
+                Syarat &amp; Legal
+              </Link>
+            </div>
           </div>
         </nav>
 

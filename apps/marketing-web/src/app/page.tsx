@@ -203,10 +203,17 @@ export default function MadeCorporateEnterprisePage() {
             </span>
           </div>
           <div className="flex items-center gap-4">
+            <a
+              href="https://wacrm-commercial.dwahyudi8377.workers.dev/privacy"
+              className="inline-flex items-center gap-1 font-semibold text-[#008C6F] transition hover:text-[#00A885] hover:underline"
+            >
+              <ShieldCheck className="h-3.5 w-3.5 text-[#00A885]" />
+              Kebijakan Privasi (UU PDP No. 27/2022)
+            </a>
             <span className="inline-flex items-center gap-1 font-semibold text-[#00A885]">
               <Lock className="h-3.5 w-3.5" /> Akses Aplikasi Privat Terlindungi
             </span>
-            <span className="text-[#888888]">WACRM Commercial OS v5.3.2</span>
+            <span className="text-[#888888]">WACRM Commercial OS v5.3.3</span>
           </div>
         </div>
       </div>
@@ -239,6 +246,13 @@ export default function MadeCorporateEnterprisePage() {
                 {link.label}
               </a>
             ))}
+            <a
+              href="https://wacrm-commercial.dwahyudi8377.workers.dev/privacy"
+              className="inline-flex items-center gap-1 font-heading text-xs font-bold uppercase tracking-wider text-[#008C6F] transition hover:text-[#00A885]"
+            >
+              <ShieldCheck className="h-3.5 w-3.5 text-[#00A885]" />
+              Privasi
+            </a>
             <button
               type="button"
               onClick={() => scrollToRegister(selectedEdition)}
@@ -286,6 +300,14 @@ export default function MadeCorporateEnterprisePage() {
                   {link.label}
                 </a>
               ))}
+              <a
+                href="https://wacrm-commercial.dwahyudi8377.workers.dev/privacy"
+                onClick={() => setMobileMenuOpen(false)}
+                className="inline-flex items-center gap-1.5 py-3 font-heading text-xs font-bold uppercase tracking-wider text-[#008C6F] hover:text-[#00A885]"
+              >
+                <ShieldCheck className="h-3.5 w-3.5 text-[#00A885]" />
+                Kebijakan Privasi (UU PDP)
+              </a>
             </div>
             <button
               type="button"
@@ -1088,6 +1110,13 @@ export default function MadeCorporateEnterprisePage() {
             <div className="flex flex-wrap items-center justify-center gap-3 text-[11px]">
               <a href="/privacy" className="text-zinc-300 transition hover:text-[#00D4A8]">
                 Kebijakan Privasi (UU PDP)
+              </a>
+              <span className="text-zinc-600">·</span>
+              <a
+                href="https://wacrm-commercial.dwahyudi8377.workers.dev/privacy"
+                className="font-semibold text-[#00D4A8] transition hover:underline"
+              >
+                Privasi Aplikasi Commercial OS
               </a>
               <span className="text-zinc-600">·</span>
               <a href="/terms" className="text-zinc-300 transition hover:text-[#00D4A8]">

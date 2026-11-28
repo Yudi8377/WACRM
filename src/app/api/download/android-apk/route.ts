@@ -6,7 +6,7 @@ const APK_RELEASE_URL =
   process.env.WACRM_ANDROID_APK_URL ||
   "https://github.com/Yudi8377/WACRM/releases/latest/download/wacrm-android.apk";
 
-const APK_FILENAME = "WACRM-v5.3.2-Android.apk";
+const APK_FILENAME = "WACRM-v5.3.3-Android.apk";
 const APK_CONTENT_TYPE = "application/vnd.android.package-archive";
 
 function buildDownloadHeaders(upstream: Response, isPartial = false): Headers {
@@ -99,8 +99,10 @@ export async function GET(request: NextRequest) {
           filename: APK_FILENAME,
           contentType: APK_CONTENT_TYPE,
           packageId: "com.wacrm.android",
-          versionName: "5.3.2",
-          versionCode: 10,
+          versionName: "5.3.3",
+          versionCode: 11,
+          targetBaseUrl: "https://wacrm-commercial.dwahyudi8377.workers.dev",
+          privacyPolicyUrl: "https://wacrm-commercial.dwahyudi8377.workers.dev/privacy",
           signingSchemes: ["v1", "v2", "v3"],
           totalBytes,
           totalMB: Number((totalBytes / (1024 * 1024)).toFixed(2)),

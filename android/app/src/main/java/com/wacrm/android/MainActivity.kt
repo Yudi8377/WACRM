@@ -227,8 +227,35 @@ class MainActivity : AppCompatActivity() {
         }
 
     private fun getBaseUrl(): String {
-        val saved = prefs.getString("server_base_url", null)
-        return saved?.let { UrlValidator.normalizeBaseUrl(it) } ?: BuildConfig.WACRM_BASE_URL
+        val saved = prefs.getString("server_base_url", null)?.let { UrlValidator.normalizeBaseUrl(it) }
+        // Auto-migrate legacy Vercel URL saved in older APK installations to the official Cloudflare Workers origin
+        // so upgraded devices immediately load the unified Commercial OS UX/UI.
+        if (saved != null && saved.contains("wacrm-seven-dusky.vercel.app", ignoreCase = true)) {
+            prefs.edit().remove("server_base_url").apply()
+            return BuildConfig.WACRM_BASE_URL
+        }
+        return saved ?: BuildConfig.WACRM_BASE_URL
+    }
+
+    fun getCurrentBaseUrl(): String = getBaseUrl()
+
+    fun openPrivacyPolicy() {
+        val privacyUrl = "${getBaseUrl()}/privacy"
+        if (isOnline()) {
+            offlineContainer.visibility = View.GONE
+            webView.visibility = View.VISIBLE
+            webView.loadUrl(privacyUrl)
+        } else {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(privacyUrl)))
+            } catch (_: Exception) {
+                Toast.makeText(
+                    this,
+                    "Kebijakan Privasi: $privacyUrl",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -248,11 +275,22 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_server_settings).setOnClickListener {
             showServerSettingsDialog()
         }
+        findViewById<Button>(R.id.btn_privacy_policy).setOnClickListener {
+            openPrivacyPolicy()
+        }
 
         configureWebView()
         configureSwipeRefresh()
         configureBackNavigation()
         initTextToSpeech()
+
+        // Clear stale WebView cache automatically when upgrading to a new APK versionCode
+        // so the latest unified UX/UI from wacrm-commercial.dwahyudi8377.workers.dev renders immediately.
+        val lastVersionCode = prefs.getInt("last_launched_version_code", 0)
+        if (lastVersionCode < BuildConfig.VERSION_CODE) {
+            webView.clearCache(true)
+            prefs.edit().putInt("last_launched_version_code", BuildConfig.VERSION_CODE).apply()
+        }
 
         ContextCompat.registerReceiver(
             this,
@@ -363,6 +401,7 @@ class MainActivity : AppCompatActivity() {
                     }
                     val isTrustedOrigin = originUrl.isEmpty() ||
                         UrlValidator.isSameOriginHost(originUrl, getBaseUrl()) ||
+                        originHost.endsWith(".workers.dev") ||
                         originHost.endsWith(".vercel.app") ||
                         originHost == "localhost"
 
@@ -930,13 +969,13 @@ class MainActivity : AppCompatActivity() {
     fun showServerSettingsDialog() {
         val input = EditText(this).apply {
             setText(getBaseUrl())
-            hint = "https://wacrm-seven-dusky.vercel.app"
+            hint = "https://wacrm-commercial.dwahyudi8377.workers.dev"
             setPadding(48, 32, 48, 32)
         }
 
         AlertDialog.Builder(this)
-            .setTitle("Pengaturan Server WACRM")
-            .setMessage("Masukkan URL server HTTPS WACRM Anda atau pilih pintasan cepat:")
+            .setTitle("Pengaturan Server & Privasi WACRM")
+            .setMessage("Masukkan URL server HTTPS WACRM Anda atau buka Kebijakan Privasi resmi (UU PDP No. 27/2022):")
             .setView(input)
             .setPositiveButton("Simpan & Muat") { _, _ ->
                 val normalized = UrlValidator.normalizeBaseUrl(input.text.toString())
@@ -944,11 +983,12 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, "URL harus diawali https:// yang valid.", Toast.LENGTH_LONG).show()
                 } else {
                     prefs.edit().putString("server_base_url", normalized).apply()
+                    webView.clearCache(true)
                     webView.loadUrl(normalized)
                 }
             }
-            .setNeutralButton("Mode Demo") { _, _ ->
-                webView.loadUrl("${getBaseUrl()}/demo")
+            .setNeutralButton("Kebijakan Privasi") { _, _ ->
+                openPrivacyPolicy()
             }
             .setNegativeButton("Batal", null)
             .show()

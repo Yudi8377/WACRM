@@ -15,7 +15,7 @@ on:
       base_url:
         description: "WACRM production HTTPS base URL"
         required: false
-        default: "https://wacrm-seven-dusky.vercel.app"
+        default: "https://wacrm-commercial.dwahyudi8377.workers.dev"
 
 permissions:
   contents: write
@@ -95,8 +95,16 @@ jobs:
 
       - name: Build, ZipAlign, Sign (v1+v2+v3) & Verify Production Release APK
         env:
-          WACRM_BASE_URL: ${{ inputs.base_url || vars.WACRM_BASE_URL || 'https://wacrm-seven-dusky.vercel.app' }}
+          INPUT_BASE_URL: ${{ inputs.base_url }}
+          VAR_BASE_URL: ${{ vars.WACRM_BASE_URL }}
         run: |
+          # Guarantee production Android APK always loads the unified Cloudflare Workers UX/UI
+          # (never stale legacy Vercel URL unless explicitly passed via workflow_dispatch input).
+          WACRM_BASE_URL="${INPUT_BASE_URL:-${VAR_BASE_URL}}"
+          if [ -z "${WACRM_BASE_URL}" ] || echo "${WACRM_BASE_URL}" | grep -qi "wacrm-seven-dusky.vercel.app"; then
+            WACRM_BASE_URL="https://wacrm-commercial.dwahyudi8377.workers.dev"
+          fi
+          echo "=== COMPILING ANDROID APK FOR BASE URL: ${WACRM_BASE_URL} ==="
           gradle assembleRelease --no-daemon -PWACRM_BASE_URL="${WACRM_BASE_URL}"
           mkdir -p dist
 
@@ -121,7 +129,7 @@ jobs:
             --out dist/wacrm-android.apk \
             dist/wacrm-aligned.apk
 
-          cp dist/wacrm-android.apk dist/wacrm-android-v5.3.2-signed.apk
+          cp dist/wacrm-android.apk dist/wacrm-android-v5.3.3-signed.apk
           rm -f dist/wacrm-aligned.apk
 
           echo "=== VERIFYING APK SIGNATURE (v1/v2/v3) ==="
@@ -131,24 +139,24 @@ jobs:
           BADGING=$("${BUILD_TOOLS}/aapt2" dump badging dist/wacrm-android.apk)
           echo "$BADGING" | head -n 25
           echo "$BADGING" | grep -q "package: name='com.wacrm.android'"
-          echo "$BADGING" | grep -q "versionCode='10'"
-          echo "$BADGING" | grep -q "versionName='5.3.2'"
+          echo "$BADGING" | grep -q "versionCode='11'"
+          echo "$BADGING" | grep -q "versionName='5.3.3'"
           if echo "$BADGING" | grep -q "application-debuggable"; then
             echo "::error::Release APK must NOT have application-debuggable set!"
             exit 1
           fi
 
-          (cd dist && sha256sum wacrm-android.apk wacrm-android-v5.3.2-signed.apk > SHA256SUMS-android.txt)
+          (cd dist && sha256sum wacrm-android.apk wacrm-android-v5.3.3-signed.apk > SHA256SUMS-android.txt)
           cat dist/SHA256SUMS-android.txt
           ls -lh dist/
 
       - name: Upload Signed Release APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wacrm-android-v5.3.2-signed-apk
+          name: wacrm-android-v5.3.3-signed-apk
           path: |
             android/dist/wacrm-android.apk
-            android/dist/wacrm-android-v5.3.2-signed.apk
+            android/dist/wacrm-android-v5.3.3-signed.apk
             android/dist/SHA256SUMS-android.txt
           retention-days: 30
 
@@ -157,34 +165,36 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="android-v5.3.2"
-          TITLE="WACRM Android v5.3.2 — Signed Release APK (v1/v2/v3) + Auto-Izin Kamera, Mikrofon, USB & Bluetooth"
+          TAG="android-v5.3.3"
+          TITLE="WACRM Android v5.3.3 — Unified Commercial OS UX/UI + Kebijakan Privasi (UU PDP) + Signed Release APK"
           NOTES=$(cat <<'EOF'
-          Aplikasi Android native Kotlin **WACRM v5.3.2** (Package ID resmi `com.wacrm.android`, `versionCode 10`, `minSdk 24 / Android 7.0+`, `targetSdk 34 / Android 14–15`) yang terhubung ke https://wacrm-seven-dusky.vercel.app.
+          Aplikasi Android native Kotlin **WACRM v5.3.3** (Package ID resmi `com.wacrm.android`, `versionCode 11`, `minSdk 24 / Android 7.0+`, `targetSdk 34 / Android 14–15`) yang terhubung langsung ke **https://wacrm-commercial.dwahyudi8377.workers.dev/**.
 
-          Perbaikan Kritis Instalasi v5.3.2:
-          - **Production Signed Release APK (Non-Debuggable):** Ditandatangani dengan APK Signature Scheme v1 + v2 + v3 (`apksigner verify` PASS) dan 4-byte `zipalign`, sehingga lolos Google Play Protect, Samsung, Xiaomi/MIUI, OPPO, dan Vivo.
-          - **Package ID Resmi `com.wacrm.android`:** Tidak bentrok dengan build debug uji coba lama (`com.wacrm.android.debug`).
-          - **Optimasi Mipmap Multi-DPI (`mdpi`–`xxxhdpi`):** Memangkas ~3,8 MB bloat ikon sehingga parsing PackageInstaller jauh lebih cepat dan stabil di semua tipe HP Android.
-          - **Auto-Permission Hardware Bridge:** Meminta dan meneruskan izin Kamera Belakang QR/FIFO, Mikrofon Voice AI 24/7, Notifikasi, Bluetooth Thermal & USB OTG secara otomatis.
+          Pembaruan Utama v5.3.3:
+          - **Sinkronisasi Penuh UX/UI Commercial OS:** Sekarang langsung memuat landing page & portal resmi `https://wacrm-commercial.dwahyudi8377.workers.dev/` (tema korporat `#00A885` / `#222222` / `#F5F5F5`, Raleway + Open Sans) beserta auto-migrasi dari URL lama & pembersihan cache otomatis saat upgrade.
+          - **Integrasi Resmi Kebijakan Privasi (UU PDP No. 27/2022):** Akses langsung ke `https://wacrm-commercial.dwahyudi8377.workers.dev/privacy` tersedia di layar aplikasi, menu Pengaturan Server Android, layar offline, maupun di dalam portal & ruang kerja WACRM.
+          - **Production Signed Release APK (Non-Debuggable):** Ditandatangani dengan APK Signature Scheme v1 + v2 + v3 (`apksigner verify` PASS) dan 4-byte `zipalign`, menggunakan keystore rilis persisten yang sama sehingga aman untuk upgrade langsung dari v5.3.2.
+          - **Auto-Permission Hardware Bridge:** Izin Kamera Belakang QR/FIFO, Mikrofon Voice AI 24/7, Notifikasi, Bluetooth Thermal & USB OTG aktif di domain `*.workers.dev`.
 
           - **wacrm-android.apk**: APK Release Signed resmi siap instal langsung di HP Android.
-          - **wacrm-android-v5.3.2-signed.apk**: Salinan berversi untuk arsip distribusi.
+          - **wacrm-android-v5.3.3-signed.apk**: Salinan berversi untuk arsip distribusi.
           - **SHA256SUMS-android.txt**: Checksum integritas resmi.
           EOF
           )
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/wacrm-android.apk dist/wacrm-android-v5.3.2-signed.apk dist/SHA256SUMS-android.txt --clobber
+            gh release upload "$TAG" dist/wacrm-android.apk dist/wacrm-android-v5.3.3-signed.apk dist/SHA256SUMS-android.txt --clobber
             gh release edit "$TAG" --title "$TITLE" --notes "$NOTES" --latest
           else
-            gh release create "$TAG" dist/wacrm-android.apk dist/wacrm-android-v5.3.2-signed.apk dist/SHA256SUMS-android.txt \
+            gh release create "$TAG" dist/wacrm-android.apk dist/wacrm-android-v5.3.3-signed.apk dist/SHA256SUMS-android.txt \
               --title "$TITLE" \
               --notes "$NOTES" \
               --latest \
               --target "${{ github.sha }}"
           fi
 
-          # Also refresh legacy v4.0.0 asset so older bookmarks download the fixed signed release APK
-          if gh release view "android-v4.0.0" >/dev/null 2>&1; then
-            gh release upload "android-v4.0.0" dist/wacrm-android.apk --clobber || true
-          fi
+          # Also refresh legacy v5.3.2 and v4.0.0 release assets so older bookmarks get the unified v5.3.3 APK
+          for LEGACY_TAG in android-v5.3.2 android-v4.0.0; do
+            if gh release view "$LEGACY_TAG" >/dev/null 2>&1; then
+              gh release upload "$LEGACY_TAG" dist/wacrm-android.apk --clobber || true
+            fi
+          done

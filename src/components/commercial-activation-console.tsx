@@ -154,7 +154,7 @@ export function CommercialActivationConsole() {
   const origin =
     typeof window !== "undefined"
       ? window.location.origin
-      : "https://wacrm-seven-dusky.vercel.app";
+      : "https://wacrm-commercial.dwahyudi8377.workers.dev";
 
   const envSnippet = [
     "# 1) Email OTP Gratis (pilih Resend 3.000/bln atau Brevo 300/hari)",

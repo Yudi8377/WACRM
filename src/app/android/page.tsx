@@ -74,16 +74,17 @@ export default function AndroidPage() {
             <div>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[#00A885]/20 px-3 py-1 font-heading text-xs font-bold text-[#00D4A8]">
                 <Smartphone className="h-3.5 w-3.5" />
-                Go-Commercial Suite v5.3.2 · Signed Release APK (v1/v2/v3) &amp; Auto-Fix Izin
+                Go-Commercial Suite v5.3.3 · Unified Commercial OS UX/UI + Signed Release APK (v1/v2/v3)
               </span>
               <h1 className="font-heading mt-2.5 text-2xl font-extrabold sm:text-3xl">
-                Pusat Installer Resmi WACRM v5.3.2 (Android APK &amp; Windows Offline Bundle)
+                Pusat Installer Resmi WACRM v5.3.3 (Android APK &amp; Windows Offline Bundle)
               </h1>
               <p className="mt-1.5 text-sm text-zinc-300">
-                APK Release resmi <strong>com.wacrm.android v5.3.2</strong> telah ditandatangani
-                penuh (Signature v1 + v2 + v3, 4-byte zipalign, non-debuggable) dan dialirkan
-                langsung dari server HTTPS WACRM agar bebas korupsi unduhan di Chrome/MIUI/Samsung
-                serta langsung menuntaskan izin Kamera QR, Mikrofon AI, USB &amp; Bluetooth.
+                APK Release resmi <strong>com.wacrm.android v5.3.3</strong> terhubung langsung ke{" "}
+                <strong className="text-[#00D4A8]">https://wacrm-commercial.dwahyudi8377.workers.dev/</strong>{" "}
+                sehingga tampilan landing page, portal login, hingga ruang kerja 100% identik dengan
+                versi Web Commercial OS, disertai akses resmi Kebijakan Privasi (UU PDP No. 27/2022),
+                tanda tangan v1+v2+v3, serta auto-izin Kamera QR, Mikrofon AI, USB &amp; Bluetooth.
               </p>
             </div>
           </div>
@@ -91,11 +92,11 @@ export default function AndroidPage() {
           <div className="mt-6 flex flex-wrap gap-3">
             <a
               href="/api/download/android-apk"
-              download="WACRM-v5.3.2-Android.apk"
+              download="WACRM-v5.3.3-Android.apk"
               className="inline-flex items-center gap-2 rounded bg-[#00A885] px-5 py-3 font-heading text-xs font-extrabold uppercase tracking-wider text-white shadow-lg transition hover:bg-[#008C6F]"
             >
               <Download className="h-4 w-4" />
-              Unduh APK Android Resmi (Signed Release v5.3.2)
+              Unduh APK Android Resmi (Signed Release v5.3.3)
             </a>
             <a
               href="/downloads/WACRM-v5.3-Commercial-Offline-Installer-Bundle.zip"
@@ -120,6 +121,13 @@ export default function AndroidPage() {
                 WACRM sudah terpasang di perangkat ini!
               </span>
             ) : null}
+            <Link
+              href="/privacy"
+              className="inline-flex items-center gap-2 rounded border border-[#00A885]/50 bg-[#00A885]/15 px-4 py-3 text-xs font-bold text-[#00D4A8] hover:bg-[#00A885] hover:text-white"
+            >
+              <Shield className="h-3.5 w-3.5" />
+              Kebijakan Privasi (UU PDP)
+            </Link>
             <a
               href="https://github.com/Yudi8377/WACRM/releases/latest/download/wacrm-android.apk"
               target="_blank"
@@ -138,15 +146,15 @@ export default function AndroidPage() {
             </div>
             <div>
               <div className="text-zinc-400">Versi / Build</div>
-              <div className="font-mono font-bold text-white">v5.3.2 (code 10)</div>
+              <div className="font-mono font-bold text-white">v5.3.3 (code 11)</div>
             </div>
             <div>
-              <div className="text-zinc-400">Tanda Tangan APK</div>
-              <div className="font-bold text-[#00D4A8]">Release v1 + v2 + v3</div>
+              <div className="text-zinc-400">Server UX/UI Resmi</div>
+              <div className="truncate font-mono font-bold text-[#00D4A8]">wacrm-commercial.workers.dev</div>
             </div>
             <div>
-              <div className="text-zinc-400">Kompatibilitas OS</div>
-              <div className="font-bold text-white">Android 7.0 – 15</div>
+              <div className="text-zinc-400">Privasi &amp; OS</div>
+              <div className="font-bold text-white">UU PDP · Android 7–15</div>
             </div>
           </div>
         </section>
@@ -169,9 +177,9 @@ export default function AndroidPage() {
                 </li>
                 <li>
                   <strong>Unduh melalui browser Chrome (bukan browser dalam WhatsApp):</strong>{" "}
-                  Ketuk tombol hijau <em>&ldquo;Unduh APK Android Resmi (Signed Release v5.3.2)&rdquo;</em> di atas, lalu buka berkas{" "}
+                  Ketuk tombol hijau <em>&ldquo;Unduh APK Android Resmi (Signed Release v5.3.3)&rdquo;</em> di atas, lalu buka berkas{" "}
                   <code className="rounded bg-white px-1.5 py-0.5 font-mono text-[#008C6F]">
-                    WACRM-v5.3.2-Android.apk
+                    WACRM-v5.3.3-Android.apk
                   </code>{" "}
                   dari menu <strong>Download</strong>.
                 </li>
@@ -216,7 +224,7 @@ export default function AndroidPage() {
               <Shield className="h-5 w-5" />
             </div>
             <h2 className="font-heading mt-4 text-lg font-extrabold text-[#222222]">
-              2. Native Kotlin APK v5.3.2 (Signed Release)
+              2. Native Kotlin APK v5.3.3 (Signed Release)
             </h2>
             <p className="mt-1.5 text-sm text-[#666666]">
               Proyek Android Studio native berbasis Kotlin + Material 3 + Hardware Permission Bridge

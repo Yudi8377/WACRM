@@ -5,7 +5,7 @@ plugins {
 
 val wacrmBaseUrl: String = (project.findProperty("WACRM_BASE_URL") as String?)
     ?: System.getenv("WACRM_BASE_URL")
-    ?: "https://wacrm-seven-dusky.vercel.app"
+    ?: "https://wacrm-commercial.dwahyudi8377.workers.dev"
 
 val releaseKeystorePath: String? = (project.findProperty("ANDROID_KEYSTORE_PATH") as String?)
     ?: System.getenv("ANDROID_KEYSTORE_PATH")
@@ -24,8 +24,8 @@ android {
         applicationId = "com.wacrm.android"
         minSdk = 24
         targetSdk = 34
-        versionCode = 10
-        versionName = "5.3.2"
+        versionCode = 11
+        versionName = "5.3.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WACRM_BASE_URL", "\"$wacrmBaseUrl\"")
