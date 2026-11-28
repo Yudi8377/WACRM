@@ -1085,9 +1085,19 @@ export default function MadeCorporateEnterprisePage() {
               © {new Date().getFullYear()} PT WACRM Digital Nusantara · Pure-Free Original Enterprise
               UI
             </span>
-            <span className="text-[11px] text-zinc-500">
-              TLS 1.3 · AES-256-GCM · PSAK 72 · Zero Public Client Link
-            </span>
+            <div className="flex flex-wrap items-center justify-center gap-3 text-[11px]">
+              <a href="/privacy" className="text-zinc-300 transition hover:text-[#00D4A8]">
+                Kebijakan Privasi (UU PDP)
+              </a>
+              <span className="text-zinc-600">·</span>
+              <a href="/terms" className="text-zinc-300 transition hover:text-[#00D4A8]">
+                Syarat &amp; Ketentuan
+              </a>
+              <span className="text-zinc-600">·</span>
+              <a href="/refund" className="text-zinc-300 transition hover:text-[#00D4A8]">
+                Kebijakan Refund
+              </a>
+            </div>
           </div>
         </div>
       </footer>

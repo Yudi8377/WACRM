@@ -1,4 +1,4 @@
-import { createHash, randomInt } from "node:crypto";
+import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { isAuthConfigured } from "@/lib/auth";
@@ -9,6 +9,11 @@ import {
   evaluatePasswordStrength,
   getClientIpFromRequest,
 } from "@/lib/security";
+import {
+  buildPasswordResetOtpEmail,
+  detectConfiguredEmailProvider,
+  sendTransactionalEmail,
+} from "@/lib/transactional-email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,11 +40,25 @@ function getTokenStore(): Map<string, ResetTokenRecord> {
   return globalResetStore.__wacrmPasswordResetTokens;
 }
 
+function isProductionRuntime(): boolean {
+  return process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
+}
+
 function hashToken(email: string, code: string): string {
-  const secret = process.env.BETTER_AUTH_SECRET || "wacrm-reset-token-pepper-v1";
+  const secret =
+    process.env.AUTH_SECRET ||
+    process.env.BETTER_AUTH_SECRET ||
+    "wacrm-reset-token-pepper-v1";
   return createHash("sha256")
     .update(`${secret}:${email.trim().toLowerCase()}:${code.trim()}`)
     .digest("hex");
+}
+
+function secureCompareHex(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, "utf8");
+  const bufB = Buffer.from(b, "utf8");
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
 }
 
 const requestSchema = z.discriminatedUnion("action", [
@@ -97,7 +116,65 @@ export async function POST(request: Request) {
       );
     }
 
+    const provider = detectConfiguredEmailProvider();
+    const isProd = isProductionRuntime();
+
+    // CRITICAL SECURITY LOCK: Never expose OTP in production responses when no email provider is configured.
+    if (isProd && provider === "none") {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "EMAIL_PROVIDER_NOT_CONFIGURED",
+          error:
+            "Demi keamanan akun, reset kata sandi mandiri membutuhkan layanan email OTP (Resend/Brevo gratis). Silakan hubungi Admin Support untuk verifikasi reset manual.",
+        },
+        { status: 503 },
+      );
+    }
+
     const otpCode = String(randomInt(100000, 999999));
+
+    if (provider !== "none") {
+      const emailPayload = buildPasswordResetOtpEmail({
+        email: emailKey,
+        otpCode,
+        expiresInMinutes: 15,
+      });
+      const sent = await sendTransactionalEmail({
+        to: emailKey,
+        ...emailPayload,
+      });
+      if (!sent.ok) {
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "EMAIL_DELIVERY_FAILED",
+            error:
+              "Gagal mengirim email OTP saat ini. Silakan coba lagi beberapa saat atau hubungi Admin Support.",
+          },
+          { status: 502 },
+        );
+      }
+
+      store.set(emailKey, {
+        email: emailKey,
+        tokenHash: hashToken(emailKey, otpCode),
+        expiresAt: now + TOKEN_TTL_MS,
+        attempts: 0,
+        used: false,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        deliveryMethod: "email",
+        provider: sent.provider,
+        message:
+          "Kode verifikasi 6 digit telah dikirim ke email terdaftar Anda (berlaku 15 menit). Periksa folder Inbox atau Spam.",
+        expiresInMinutes: 15,
+      });
+    }
+
+    // Local development / automated test environment ONLY (NODE_ENV !== "production")
     store.set(emailKey, {
       email: emailKey,
       tokenHash: hashToken(emailKey, otpCode),
@@ -106,15 +183,13 @@ export async function POST(request: Request) {
       used: false,
     });
 
-    const smtpConfigured = Boolean(process.env.SMTP_HOST?.trim());
     return NextResponse.json({
       ok: true,
-      message: smtpConfigured
-        ? "Kode verifikasi 6 digit telah dikirim ke email terdaftar Anda (berlaku 15 menit)."
-        : "Kode verifikasi 6 digit berhasil dibuat (berlaku 15 menit). Gunakan kode di bawah untuk menyelesaikan reset kata sandi.",
+      deliveryMethod: "dev_preview",
+      message:
+        "Mode pengembangan lokal: kode verifikasi 6 digit berhasil dibuat (berlaku 15 menit).",
       expiresInMinutes: 15,
-      // Only return preview code when external SMTP relay is not configured (commercial trial / demo / self-hosted without SMTP)
-      ...(smtpConfigured ? {} : { verificationCodePreview: otpCode }),
+      verificationCodePreview: otpCode,
     });
   }
 
@@ -169,7 +244,7 @@ export async function POST(request: Request) {
   }
 
   const expectedHash = hashToken(emailKey, data.code);
-  if (expectedHash !== record.tokenHash) {
+  if (!secureCompareHex(expectedHash, record.tokenHash)) {
     return NextResponse.json(
       {
         ok: false,

@@ -1248,12 +1248,21 @@ export function CommercialAuthGate({
               </div>
             )}
 
-            <div className="mt-5 flex items-center justify-between border-t border-slate-800 pt-3 text-[11px] text-slate-400">
-              <span className="inline-flex items-center gap-1">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-                Enkripsi SSL &amp; Proteksi Rate-Limit
-              </span>
-              <span className="font-mono text-slate-500">WACRM v5.0</span>
+            <div className="mt-5 space-y-2 border-t border-slate-800 pt-3 text-[11px] text-slate-400">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+                  Enkripsi SSL &amp; Proteksi Rate-Limit
+                </span>
+                <span className="font-mono text-slate-500">WACRM v5.3.2</span>
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-3 text-[10px] text-slate-500">
+                <a href="/privacy" className="hover:text-emerald-400">Kebijakan Privasi (UU PDP)</a>
+                <span>·</span>
+                <a href="/terms" className="hover:text-emerald-400">Syarat &amp; Ketentuan</a>
+                <span>·</span>
+                <a href="/refund" className="hover:text-emerald-400">Kebijakan Refund</a>
+              </div>
             </div>
           </div>
         </section>

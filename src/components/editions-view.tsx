@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   Building2,
   Check,
+  CreditCard,
   Crown,
+  ExternalLink,
   KeyRound,
   Layers,
   Lock,
@@ -26,6 +28,12 @@ import {
   type StoredClientLicense,
   type VerifiedLicensePayload,
 } from "@/lib/license-crypto";
+import type {
+  BillingCycle,
+  CheckoutCreationResult,
+  PaidEditionId,
+  PaymentGatewayProvider,
+} from "@/lib/payment-gateway";
 
 interface EditionsViewProps {
   tenantId: string;
@@ -84,6 +92,57 @@ export function EditionsView({
     ok: boolean;
     message: string;
   } | null>(null);
+
+  // Payment Gateway Checkout State (Midtrans / Xendit / Tripay + Rp 0 Manual Transfer)
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
+  const [selectedPaidPlan, setSelectedPaidPlan] = useState<PaidEditionId>("pro");
+  const [activeGateway, setActiveGateway] = useState<PaymentGatewayProvider>("manual_transfer");
+  const [configuredGateways, setConfiguredGateways] = useState<string[]>([]);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [checkoutResult, setCheckoutResult] = useState<CheckoutCreationResult | null>(null);
+
+  useEffect(() => {
+    fetch("/api/billing/checkout")
+      .then((r) => r.json())
+      .then((data: { activeProvider?: PaymentGatewayProvider; configuredProviders?: string[] }) => {
+        if (data.activeProvider) setActiveGateway(data.activeProvider);
+        if (Array.isArray(data.configuredProviders)) setConfiguredGateways(data.configuredProviders);
+      })
+      .catch(() => {
+        // Safe fallback to Rp 0 manual mode
+      });
+  }, []);
+
+  async function handleStartCheckout() {
+    setCheckoutBusy(true);
+    setCheckoutResult(null);
+    try {
+      const res = await fetch("/api/billing/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenantId,
+          editionId: selectedPaidPlan,
+          billingCycle,
+          customerName: workspaceName || "Pemilik Usaha WACRM",
+          customerEmail: accountEmail || "billing@wacrm.id",
+        }),
+      });
+      const data = (await res.json()) as CheckoutCreationResult;
+      setCheckoutResult(data);
+      if (data.ok && data.paymentUrl) {
+        onToast?.(`Link pembayaran ${data.provider.toUpperCase()} siap! Silakan selesaikan pembayaran.`, "success");
+      } else if (data.ok) {
+        onToast?.(`Invoice ${data.orderId} berhasil dibuat (Mode Transfer Manual Rp 0).`, "success");
+      } else {
+        onToast?.(data.error || "Gagal membuat transaksi checkout.", "error");
+      }
+    } catch {
+      onToast?.("Gagal menghubungi server checkout pembayaran.", "error");
+    } finally {
+      setCheckoutBusy(false);
+    }
+  }
 
   async function handleActivateLicense(e: FormEvent) {
     e.preventDefault();
@@ -261,6 +320,161 @@ export function EditionsView({
             <span>{verifyFeedback.message}</span>
           </div>
         )}
+      </div>
+
+      {/* PAYMENT GATEWAY CHECKOUT HUB (MIDTRANS / XENDIT / TRIPAY + RP 0 MANUAL MODE) */}
+      <div className="rounded-2xl border border-cyan-500/30 bg-slate-900/95 p-5 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-cyan-300">
+              <CreditCard className="h-4 w-4" /> Checkout Upgrade Paket — Payment Gateway (Midtrans · Xendit · Tripay) &amp; Transfer Manual Rp 0
+            </div>
+            <p className="mt-1 max-w-2xl text-xs text-slate-300">
+              Pilih paket &amp; periode penagihan untuk membuat tagihan resmi QRIS / Virtual Account otomatis atau konfirmasi Transfer Manual Rp 0,- dengan penerbitan License Key instan.
+            </p>
+          </div>
+          <span className="rounded-full border border-cyan-400/35 bg-cyan-500/15 px-3 py-1 text-[11px] font-bold text-cyan-200">
+            {activeGateway === "manual_transfer"
+              ? "Mode Aktif: Transfer Manual Rp 0 (Gateway Siap Pakai)"
+              : `Gateway Aktif: ${activeGateway.toUpperCase()} (${configuredGateways.join(", ")})`}
+          </span>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="space-y-1.5">
+            <div className="text-[11px] font-semibold text-slate-400">1. Pilih Edisi Upgrade</div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(
+                [
+                  { id: "pro" as const, label: "Growth Pro", price: 249_000 },
+                  { id: "enterprise" as const, label: "Enterprise", price: 699_000 },
+                  { id: "sovereign" as const, label: "Sovereign", price: 1_950_000 },
+                ]
+              ).map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setSelectedPaidPlan(p.id)}
+                  className={`rounded-xl border px-2.5 py-2 text-left text-[11px] transition ${
+                    selectedPaidPlan === p.id
+                      ? "border-cyan-400 bg-cyan-500/20 text-white font-extrabold"
+                      : "border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-800"
+                  }`}
+                >
+                  <div>{p.label}</div>
+                  <div className="font-mono text-[10px] text-emerald-300">
+                    {formatIdr(billingCycle === "annual" ? p.price * 10 : p.price)}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="text-[11px] font-semibold text-slate-400">2. Periode Langganan</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={() => setBillingCycle("monthly")}
+                className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${
+                  billingCycle === "monthly"
+                    ? "border-emerald-400 bg-emerald-500/20 text-emerald-200"
+                    : "border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                Bulanan (1 Bln)
+              </button>
+              <button
+                type="button"
+                onClick={() => setBillingCycle("annual")}
+                className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${
+                  billingCycle === "annual"
+                    ? "border-amber-400 bg-amber-500/20 text-amber-200"
+                    : "border-slate-700 bg-slate-950 text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                Tahunan (Hemat 2 Bln)
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col justify-end">
+            <button
+              type="button"
+              disabled={checkoutBusy}
+              onClick={() => void handleStartCheckout()}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-xs font-extrabold text-slate-950 shadow-lg shadow-cyan-500/20 transition hover:bg-cyan-400 disabled:opacity-50"
+            >
+              <CreditCard className="h-4 w-4" />
+              {checkoutBusy
+                ? "Membuat Tagihan..."
+                : activeGateway === "manual_transfer"
+                  ? "Buat Invoice & Bayar (Mode Rp 0)"
+                  : `Bayar Otomatis via ${activeGateway.toUpperCase()}`}
+            </button>
+          </div>
+        </div>
+
+        {checkoutResult && checkoutResult.ok && (
+          <div className="rounded-xl border border-emerald-500/35 bg-emerald-950/25 p-4 text-xs space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="font-mono font-extrabold text-emerald-300">
+                  Invoice: {checkoutResult.orderId}
+                </div>
+                <div className="text-slate-200">
+                  {checkoutResult.plan.planName} · Total:{" "}
+                  <strong className="font-mono text-white">
+                    {formatIdr(checkoutResult.plan.amountIdr)}
+                  </strong>
+                </div>
+              </div>
+              {checkoutResult.paymentUrl && (
+                <a
+                  href={checkoutResult.paymentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 font-extrabold text-slate-950 hover:bg-emerald-400"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Lanjut Bayar ({checkoutResult.provider.toUpperCase()})
+                </a>
+              )}
+              {checkoutResult.manualInstructions && (
+                <a
+                  href={checkoutResult.manualInstructions.whatsappConfirmUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 font-extrabold text-slate-950 hover:bg-emerald-400"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Konfirmasi Pembayaran via WhatsApp
+                </a>
+              )}
+            </div>
+            {checkoutResult.manualInstructions && (
+              <div className="rounded-lg border border-slate-800 bg-slate-950/80 p-3 text-[11px] text-slate-300">
+                <div>
+                  <strong>Tujuan Transfer:</strong> {checkoutResult.manualInstructions.bankName} · No. Rek:{" "}
+                  <strong className="font-mono text-white">
+                    {checkoutResult.manualInstructions.accountNumber}
+                  </strong>{" "}
+                  a.n. {checkoutResult.manualInstructions.accountHolder}
+                </div>
+                <div className="mt-1 text-slate-400">{checkoutResult.manualInstructions.note}</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2 text-[11px] text-slate-400">
+          <span>
+            Webhook Otomatis siap: <code className="text-cyan-300">/api/webhooks/payment?provider=midtrans|xendit|tripay</code>
+          </span>
+          <div className="flex gap-3">
+            <a href="/privacy" className="hover:text-emerald-400">Privasi (UU PDP)</a>
+            <a href="/terms" className="hover:text-emerald-400">Syarat &amp; Ketentuan</a>
+            <a href="/refund" className="hover:text-emerald-400">Kebijakan Refund</a>
+          </div>
+        </div>
       </div>
 
       {/* Live Quota Meters (100% synced with active License Key & Edition Matrix) */}

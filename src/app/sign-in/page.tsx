@@ -528,6 +528,13 @@ export default function SignInPage() {
             ← Portal Utama
           </Link>
         </div>
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-[11px] text-slate-500">
+          <Link href="/privacy" className="hover:text-emerald-400">Kebijakan Privasi (UU PDP)</Link>
+          <span>·</span>
+          <Link href="/terms" className="hover:text-emerald-400">Syarat &amp; Ketentuan</Link>
+          <span>·</span>
+          <Link href="/refund" className="hover:text-emerald-400">Refund</Link>
+        </div>
       </section>
     </main>
   );
