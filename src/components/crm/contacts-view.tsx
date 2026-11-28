@@ -1,16 +1,29 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Building2, Download, Mail, MessageCircle, Pencil, Phone, Plus, Trash2, X } from "lucide-react";
+import { Building2, Download, KeyRound, Mail, MessageCircle, Pencil, Phone, Plus, Trash2, X } from "lucide-react";
 import { CrudToolbar, PaginationBar } from "@/components/crud-toolbar";
-import { LIFECYCLE_LABELS, type ContactRecord, type LifecycleStage } from "@/lib/crm-types";
+import { SovereignCrmSuite } from "@/components/sovereign-corporate-panels";
+import { evaluateEditionQuota } from "@/lib/access-control";
+import {
+  LIFECYCLE_LABELS,
+  type AppEditionId,
+  type ContactRecord,
+  type LifecycleStage,
+  type PosOrderRecord,
+} from "@/lib/crm-types";
+import { getEditionById } from "@/lib/editions";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 const PAGE_SIZE = 6;
 
 interface ContactsViewProps {
   adapter: WorkspaceAdapter;
+  editionId?: AppEditionId;
+  businessName?: string;
   contacts: ContactRecord[];
+  orders?: PosOrderRecord[];
+  onUpgradeRequest?: () => void;
   onRefresh: () => Promise<void>;
   onStartChat: (contact: ContactRecord) => Promise<void>;
   onToast: (message: string, tone?: "success" | "error") => void;
@@ -26,7 +39,19 @@ const emptyForm = {
   notes: "",
 };
 
-export function ContactsView({ adapter, contacts, onRefresh, onStartChat, onToast }: ContactsViewProps) {
+export function ContactsView({
+  adapter,
+  editionId = "starter",
+  businessName = "WACRM Workspace",
+  contacts,
+  orders = [],
+  onUpgradeRequest,
+  onRefresh,
+  onStartChat,
+  onToast,
+}: ContactsViewProps) {
+  const activeEdition = getEditionById(editionId);
+  const contactQuota = evaluateEditionQuota(editionId, "contacts", contacts.length);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
@@ -48,6 +73,14 @@ export function ContactsView({ adapter, contacts, onRefresh, onStartChat, onToas
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   function openCreate() {
+    if (!contactQuota.canAddMore) {
+      onToast(
+        `Kuota kontak edisi ${activeEdition.name} telah mencapai batas maksimal (${contacts.length.toLocaleString("id-ID")}/${contactQuota.limit.toLocaleString("id-ID")} kontak). Aktifkan License Key edisi lebih tinggi.`,
+        "error",
+      );
+      onUpgradeRequest?.();
+      return;
+    }
     setEditing(null);
     setForm(emptyForm);
     setModalOpen(true);
@@ -87,6 +120,15 @@ export function ContactsView({ adapter, contacts, onRefresh, onStartChat, onToas
         });
         onToast("Kontak berhasil diperbarui.");
       } else {
+        if (!contactQuota.canAddMore) {
+          onToast(
+            `Batas maksimal ${contactQuota.limit.toLocaleString("id-ID")} kontak pada ${activeEdition.name} telah penuh.`,
+            "error",
+          );
+          onUpgradeRequest?.();
+          setSaving(false);
+          return;
+        }
         await adapter.createContact({
           displayName: form.displayName.trim(),
           phoneE164: form.phoneE164.trim() || undefined,
@@ -156,6 +198,25 @@ export function ContactsView({ adapter, contacts, onRefresh, onStartChat, onToas
             <p className="text-sm text-slate-500">Tambah, ubah, kelompokkan tahap pelanggan, dan mulai percakapan langsung.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`rounded-xl border px-3 py-2 text-xs font-bold ${
+                contactQuota.canAddMore
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-amber-300 bg-amber-50 text-amber-800"
+              }`}
+            >
+              Kuota {activeEdition.name}: {contacts.length.toLocaleString("id-ID")} /{" "}
+              {contactQuota.isUnlimited ? "∞" : contactQuota.limit.toLocaleString("id-ID")} kontak
+            </span>
+            {!contactQuota.canAddMore && onUpgradeRequest && (
+              <button
+                type="button"
+                onClick={onUpgradeRequest}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700"
+              >
+                <KeyRound className="h-3.5 w-3.5" /> Upgrade Kuota
+              </button>
+            )}
             <button
               type="button"
               onClick={exportCsv}
@@ -337,6 +398,18 @@ export function ContactsView({ adapter, contacts, onRefresh, onStartChat, onToas
       </div>
 
       {/* CREATE / EDIT MODAL */}
+      {/* Sovereign Corporate Deep CRM Suite (Sales Pipeline Kanban, RFM & CLV) */}
+      <div className="px-4 pb-6 md:px-6">
+        <SovereignCrmSuite
+          editionId={editionId}
+          businessName={businessName}
+          contacts={contacts}
+          orders={orders}
+          onOpenEditions={onUpgradeRequest}
+          onToast={(msg, tone) => onToast(msg, tone === "error" ? "error" : "success")}
+        />
+      </div>
+
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">

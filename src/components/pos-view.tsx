@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Bluetooth,
   CheckCircle2,
+  LayoutTemplate,
   Minus,
   Package,
   Plus,
@@ -16,10 +17,14 @@ import {
   X,
 } from "lucide-react";
 import { CrudToolbar, PaginationBar } from "@/components/crud-toolbar";
+import { CodTrackingHub } from "@/components/cod-tracking-hub";
+import { InvoiceLayoutStudio } from "@/components/invoice-layout-studio";
 import { UniversalPrintPanel } from "@/components/universal-print-panel";
+import { SovereignPosSuite } from "@/components/sovereign-corporate-panels";
 import {
   formatIdr,
   PAYMENT_METHOD_LABELS,
+  type AppEditionId,
   type ChannelType,
   type ErpProductRecord,
   type OrderStatus,
@@ -27,6 +32,8 @@ import {
   type PosOrderRecord,
   type StoreBusinessProfile,
 } from "@/lib/crm-types";
+import { editionHasFeature } from "@/lib/editions";
+import { parseScannedQrCode } from "@/lib/fifo-inventory";
 import {
   buildEscPosEdcCompact,
   buildEscPosReceipt,
@@ -42,9 +49,15 @@ import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 interface PosViewProps {
   adapter: WorkspaceAdapter;
+  editionId?: AppEditionId;
   storeProfile: StoreBusinessProfile;
   products: ErpProductRecord[];
   orders: PosOrderRecord[];
+  highlightOrderId?: string | null;
+  onClearHighlight?: () => void;
+  initialScannedSku?: string | null;
+  onClearScannedSku?: () => void;
+  onOpenEditions?: () => void;
   onRefresh: () => Promise<void>;
   onToast: (message: string, tone?: "ok" | "error") => void;
 }
@@ -58,24 +71,53 @@ const PAGE_SIZE = 5;
 
 export function PosView({
   adapter,
+  editionId = "starter",
   storeProfile,
   products,
   orders,
+  highlightOrderId,
+  onClearHighlight,
+  initialScannedSku,
+  onClearScannedSku,
+  onOpenEditions,
   onRefresh,
   onToast,
 }: PosViewProps) {
+  const isWhiteLabel = editionHasFeature(editionId, "white_label_store");
+  const effectivePrintProfile: StoreBusinessProfile = useMemo(
+    () =>
+      isWhiteLabel
+        ? storeProfile
+        : {
+            ...storeProfile,
+            invoiceFooter: `${storeProfile.invoiceFooter ? `${storeProfile.invoiceFooter} · ` : ""}Powered by WACRM Starter UMKM`,
+          },
+    [isWhiteLabel, storeProfile],
+  );
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [posSubView, setPosSubView] = useState<"pos" | "cod_tracking" | "invoice_layout">("pos");
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(highlightOrderId ?? null);
+
+  const initialScannedProduct = initialScannedSku
+    ? products.find((p) => p.sku.toUpperCase() === initialScannedSku.trim().toUpperCase()) ?? null
+    : null;
 
   // Sub-Module Modals: "none" | "create" | "edit"
-  const [formModal, setFormModal] = useState<"none" | "create" | "edit">("none");
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [formModal, setFormModal] = useState<"none" | "create" | "edit">(() =>
+    initialScannedProduct ? "create" : "none",
+  );
+  const [cart, setCart] = useState<CartItem[]>(() =>
+    initialScannedProduct ? [{ product: initialScannedProduct, quantity: 1 }] : [],
+  );
   const [productSearch, setProductSearch] = useState("");
+  const [qrScanInput, setQrScanInput] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [shippingAddress, setShippingAddress] = useState("");
-  const [shippingCourier, setShippingCourier] = useState(storeProfile.defaultCourier || "JNE Reguler");
+  const [shippingCourier, setShippingCourier] = useState(storeProfile.defaultCourier || "JNE Express");
+  const [shippingService, setShippingService] = useState("");
+  const [shippingCost, setShippingCost] = useState<number>(0);
   const [channel, setChannel] = useState<ChannelType>("whatsapp");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("qris");
   const [paymentStatus, setPaymentStatus] = useState<"paid" | "unpaid">("paid");
@@ -84,13 +126,69 @@ export function PosView({
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Invoice & Shipping Label QR Studio Modal
-  const [studioOrder, setStudioOrder] = useState<PosOrderRecord | null>(null);
-  const [studioTab, setStudioTab] = useState<"invoice" | "label">("invoice");
+  const [studioOrder, setStudioOrder] = useState<PosOrderRecord | null>(() =>
+    highlightOrderId ? (orders.find((o) => o.id === highlightOrderId) ?? null) : null,
+  );
+  const [studioTab, setStudioTab] = useState<"invoice" | "label">(() =>
+    highlightOrderId ? "label" : "invoice",
+  );
   const [qrState, setQrState] = useState<{ payload: string; url: string }>({ payload: "", url: "" });
   const [printingMode, setPrintingMode] = useState<"wifi" | "bluetooth" | null>(null);
 
   const couriers = useMemo(() => loadLocalMasterData(adapter.tenantId).couriers, [adapter.tenantId]);
+
+  const courierServiceOptions = useMemo(() => {
+    const opts: Array<{
+      key: string;
+      courierName: string;
+      serviceName: string;
+      ratePerKg: number;
+      estimatedDays: string;
+      minWeightKg: number;
+    }> = [];
+    for (const c of couriers.filter((x) => x.isActive)) {
+      const tiers =
+        c.serviceTiers && c.serviceTiers.length > 0
+          ? c.serviceTiers
+          : [
+              {
+                id: c.id,
+                serviceName: c.serviceType || "Reguler",
+                ratePerKg: c.baseRate,
+                minWeightKg: 1,
+                maxWeightKg: 50,
+                estimatedDays: c.estimatedDays,
+                coverageZones: "Seluruh Indonesia",
+                codSupported: Boolean(c.codSupported),
+                codFeePct: 0,
+                insuranceAvailable: Boolean(c.insuranceSupported),
+                insuranceFeePct: 0.2,
+              },
+            ];
+      for (const t of tiers) {
+        opts.push({
+          key: `${c.name} — ${t.serviceName}`,
+          courierName: c.name,
+          serviceName: `${c.name} ${t.serviceName}`,
+          ratePerKg: t.ratePerKg,
+          estimatedDays: t.estimatedDays,
+          minWeightKg: t.minWeightKg ?? 1,
+        });
+      }
+    }
+    return opts;
+  }, [couriers]);
+
+  // Clear highlight & scanned SKU flags cleanly once consumed
+  useEffect(() => {
+    if (!highlightOrderId) return;
+    onClearHighlight?.();
+  }, [highlightOrderId, onClearHighlight]);
+
+  useEffect(() => {
+    if (!initialScannedSku) return;
+    onClearScannedSku?.();
+  }, [initialScannedSku, onClearScannedSku]);
 
   useEffect(() => {
     let active = true;
@@ -130,20 +228,41 @@ export function PosView({
   const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalSales = orders.reduce((s, o) => s + o.totalAmount, 0);
   const paidOrdersCount = orders.filter((o) => o.paymentStatus === "paid").length;
-  const aiOrdersCount = orders.filter((o) => o.aiGenerated).length;
+  const aiOrders = useMemo(() => orders.filter((o) => o.aiGenerated), [orders]);
+  const aiOrdersCount = aiOrders.length;
 
   const subtotal = cart.reduce((s, c) => s + c.product.unitPrice * c.quantity, 0);
+  const cartWeightKg = Math.max(
+    1,
+    Math.ceil(cart.reduce((s, c) => s + (c.product.weightGrams ?? 500) * c.quantity, 0) / 1000),
+  );
   const effectiveDiscount = Math.min(subtotal, Math.max(0, discountAmount));
   const taxable = Math.max(0, subtotal - effectiveDiscount);
   const tax = Math.round(taxable * 0.11);
-  const total = taxable + tax;
+  const total = taxable + tax + Math.max(0, shippingCost);
+
+  function applyCourierOption(optionKey: string) {
+    const matched = courierServiceOptions.find((o) => o.key === optionKey);
+    if (!matched) {
+      setShippingCourier(optionKey);
+      setShippingService(optionKey);
+      return;
+    }
+    setShippingCourier(matched.courierName);
+    setShippingService(matched.serviceName);
+    const billableKg = Math.max(matched.minWeightKg, cartWeightKg);
+    setShippingCost(matched.ratePerKg * billableKg);
+  }
 
   function openCreateSubModule() {
     setCart([]);
     setCustomerName("");
     setCustomerPhone("");
     setShippingAddress("");
-    setShippingCourier(storeProfile.defaultCourier || couriers[0]?.name || "JNE Reguler");
+    const firstOpt = courierServiceOptions[0];
+    setShippingCourier(firstOpt?.courierName || storeProfile.defaultCourier || "JNE Express");
+    setShippingService(firstOpt?.serviceName || "");
+    setShippingCost(firstOpt?.ratePerKg ?? 0);
     setChannel("whatsapp");
     setPaymentMethod("qris");
     setPaymentStatus("paid");
@@ -157,8 +276,12 @@ export function PosView({
     const ord = orders.find((o) => o.id === id);
     if (!ord) return;
     setSelectedOrderId(ord.id);
+    setCustomerName(ord.customerName);
+    setCustomerPhone(ord.customerPhone ?? "");
     setShippingAddress(ord.shippingAddress);
-    setShippingCourier(ord.shippingCourier || storeProfile.defaultCourier || "JNE Reguler");
+    setShippingCourier(ord.shippingCourier || storeProfile.defaultCourier || "JNE Express");
+    setShippingService(ord.shippingService || ord.shippingCourier || "");
+    setShippingCost(ord.shippingCost ?? 0);
     setPaymentStatus(ord.paymentStatus === "paid" ? "paid" : "unpaid");
     setOrderStatus(ord.orderStatus);
     setNotes(ord.notes ?? "");
@@ -202,6 +325,9 @@ export function PosView({
           customerPhone: customerPhone.trim() || null,
           shippingAddress: shippingAddress.trim(),
           shippingCourier,
+          shippingService: shippingService || shippingCourier,
+          shippingCost: Math.max(0, shippingCost),
+          shippingWeightKg: cartWeightKg,
           channel,
           paymentMethod,
           paymentStatus,
@@ -228,15 +354,19 @@ export function PosView({
         );
       } else if (formModal === "edit" && selectedOrderId) {
         await adapter.updatePosOrder(selectedOrderId, {
+          customerName: customerName.trim() || undefined,
+          customerPhone: customerPhone.trim() || null,
           shippingAddress: shippingAddress.trim(),
           shippingCourier,
+          shippingService: shippingService || shippingCourier,
+          shippingCost: Math.max(0, shippingCost),
           paymentStatus,
           orderStatus,
           notes: notes.trim(),
         });
         setFormModal("none");
         await onRefresh();
-        onToast("Data pesanan & pengiriman berhasil diperbarui.");
+        onToast("Data pesanan, alamat & Label QR berhasil diperbarui.");
       }
     } catch (err) {
       onToast(err instanceof Error ? err.message : "Gagal menyimpan pesanan POS.", "error");
@@ -285,16 +415,16 @@ export function PosView({
       if (via === "bluetooth") {
         const escpos =
           docType === "label"
-            ? buildEscPosShippingLabel(order, storeProfile)
-            : buildEscPosReceipt(order, storeProfile);
+            ? buildEscPosShippingLabel(order, effectivePrintProfile)
+            : buildEscPosReceipt(order, effectivePrintProfile);
         const res = await printViaBluetooth(escpos);
         onToast(res.message, res.ok ? "ok" : "error");
       } else {
         const qr = qrDataUrl || (await generateQrDataUrl(order.qrPayload, 260));
         const html =
           docType === "label"
-            ? renderShippingLabelPrintHtml(order, storeProfile, qr)
-            : renderInvoicePrintHtml(order, storeProfile, qr);
+            ? renderShippingLabelPrintHtml(order, effectivePrintProfile, qr)
+            : renderInvoicePrintHtml(order, effectivePrintProfile, qr);
         const res = printViaWifiHtml(
           docType === "label"
             ? `Label Pengiriman ${order.invoiceNumber}`
@@ -341,6 +471,195 @@ export function PosView({
           </div>
         </div>
       </div>
+
+      {/* Sub-view Switcher: POS Kasir vs COD Marketplace & Lacak Pengiriman AI */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setPosSubView("pos")}
+          className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold transition ${
+            posSubView === "pos"
+              ? "bg-emerald-500 text-slate-950 shadow"
+              : "border border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-700"
+          }`}
+        >
+          <Receipt className="h-3.5 w-3.5" /> Kasir POS, Invoice &amp; Cetak Universal
+        </button>
+        <button
+          type="button"
+          onClick={() => setPosSubView("cod_tracking")}
+          className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold transition ${
+            posSubView === "cod_tracking"
+              ? "bg-cyan-500 text-slate-950 shadow"
+              : "border border-cyan-500/35 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20"
+          }`}
+        >
+          <Truck className="h-3.5 w-3.5" /> COD Marketplace &amp; Lacak Kiriman AI ({orders.filter((o) => o.paymentMethod === "cod").length} COD)
+        </button>
+        <button
+          type="button"
+          onClick={() => setPosSubView("invoice_layout")}
+          className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-extrabold transition ${
+            posSubView === "invoice_layout"
+              ? "bg-amber-400 text-slate-950 shadow"
+              : "border border-amber-500/35 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+          }`}
+        >
+          <LayoutTemplate className="h-3.5 w-3.5" /> Atur Bentuk Invoice (Header / Tata Letak / Footer)
+        </button>
+      </div>
+
+      {posSubView === "invoice_layout" ? (
+        <InvoiceLayoutStudio
+          storeProfile={effectivePrintProfile}
+          sampleOrder={orders[0] ?? null}
+          onToast={onToast}
+        />
+      ) : posSubView === "cod_tracking" ? (
+        <CodTrackingHub
+          tenantId={adapter.tenantId}
+          orders={orders}
+          storeProfile={effectivePrintProfile}
+          onSettleCodToAccounting={async (order, tracking) => {
+            try {
+              await adapter.updatePosOrder(order.id, {
+                paymentStatus: "paid",
+                orderStatus: "completed",
+                notes: `${order.notes ? `${order.notes} · ` : ""}COD Cair · Resi ${tracking.awbNumber} (${tracking.courierName})`,
+              });
+              const netCash = Math.max(
+                0,
+                tracking.codCollectAmountIdr - tracking.codHandlingFeeIdr,
+              );
+              await adapter.createAccountingEntry({
+                kind: "income",
+                categoryName: "Kas & Bank (Settlement COD)",
+                amount: netCash,
+                description: `Dana COD cair ${order.invoiceNumber} via ${tracking.courierName} (Resi ${tracking.awbNumber})`,
+              });
+              if (tracking.codHandlingFeeIdr > 0) {
+                await adapter.createAccountingEntry({
+                  kind: "expense",
+                  categoryName: "Beban Biaya Admin COD",
+                  amount: tracking.codHandlingFeeIdr,
+                  description: `Biaya penanganan COD ${order.invoiceNumber} via ${tracking.courierName}`,
+                });
+              }
+              await onRefresh();
+            } catch {
+              // keep UI responsive even if remote partial sync fails
+            }
+          }}
+          onToast={onToast}
+        />
+      ) : (
+        <>
+
+      {/* AI AUTO-POPULATED CHECKOUT & QR QUEUE PANEL */}
+      {aiOrders.length > 0 && (
+        <div className="rounded-2xl border border-cyan-500/35 bg-gradient-to-r from-cyan-950/60 via-slate-900 to-emerald-950/50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-300">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">
+                  Checkout Otomatis Multi-Agent AI (Siap Verifikasi &amp; Cetak QR)
+                </h3>
+                <p className="text-[11px] text-slate-300">
+                  Terisi otomatis dari percakapan pelanggan — lengkap dengan nama penerima, alamat kirim, item, ongkir kurir &amp; QR Code pengiriman.
+                </p>
+              </div>
+            </div>
+            <span className="rounded-full bg-cyan-500/20 px-2.5 py-1 text-[11px] font-bold text-cyan-200">
+              {aiOrders.length} Order Terisi AI
+            </span>
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {aiOrders.slice(0, 3).map((ord) => {
+              const addressPending = ord.shippingAddress.startsWith("Alamat menyusul");
+              return (
+                <div
+                  key={ord.id}
+                  className="flex flex-col justify-between rounded-xl border border-slate-700/80 bg-slate-950/85 p-3.5 text-xs"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono font-bold text-cyan-300">{ord.invoiceNumber}</span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+                          ord.paymentStatus === "paid"
+                            ? "bg-emerald-500/20 text-emerald-300"
+                            : "bg-amber-500/20 text-amber-300"
+                        }`}
+                      >
+                        {ord.paymentStatus === "paid" ? "LUNAS" : "UNPAID"}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 font-bold text-white">
+                      {ord.customerName}
+                      {ord.customerPhone && (
+                        <span className="ml-1.5 font-mono text-[10px] font-normal text-slate-400">
+                          {ord.customerPhone}
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className={`mt-1 line-clamp-2 text-[11px] ${
+                        addressPending ? "text-amber-300" : "text-slate-300"
+                      }`}
+                    >
+                      {ord.shippingAddress}
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]">
+                      <span className="rounded bg-slate-800 px-2 py-0.5 font-semibold text-slate-200">
+                        {ord.shippingService || ord.shippingCourier || storeProfile.defaultCourier}
+                        {ord.shippingCost ? ` (${formatIdr(ord.shippingCost)})` : ""}
+                      </span>
+                      <span className="rounded bg-emerald-500/15 px-2 py-0.5 font-bold text-emerald-300">
+                        {formatIdr(ord.totalAmount)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-1.5 border-t border-slate-800 pt-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedOrderId(ord.id);
+                        setStudioTab("label");
+                        setStudioOrder(ord);
+                      }}
+                      className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-cyan-500 px-2.5 py-1.5 text-[11px] font-bold text-slate-950 hover:bg-cyan-400"
+                    >
+                      <QrCode className="h-3.5 w-3.5" />
+                      Cetak Label QR
+                    </button>
+                    {ord.paymentStatus === "unpaid" && (
+                      <button
+                        type="button"
+                        onClick={() => void handleConfirmPayment(ord)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2.5 py-1.5 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/30"
+                      >
+                        <CheckCircle2 className="h-3 w-3" />
+                        Lunas
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => openEditSubModule(ord.id)}
+                      className="rounded-lg bg-slate-800 px-2.5 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-slate-700"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Standard Business CRUD Toolbar */}
       <CrudToolbar
@@ -408,9 +727,14 @@ export function PosView({
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="text-slate-200">{order.shippingCourier || storeProfile.defaultCourier}</div>
+                    <div className="text-slate-200">
+                      {order.shippingService || order.shippingCourier || storeProfile.defaultCourier}
+                    </div>
                     <div className="text-[11px] text-slate-400">
                       {PAYMENT_METHOD_LABELS[order.paymentMethod]}
+                      {order.shippingCost && order.shippingCost > 0
+                        ? ` · Ongkir ${formatIdr(order.shippingCost)}`
+                        : ""}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right font-bold text-emerald-400">
@@ -499,16 +823,62 @@ export function PosView({
             <form onSubmit={handleSubmitOrder} className="mt-4 space-y-4 text-xs">
               {formModal === "create" && (
                 <>
-                  {/* Product Picker */}
+                  {/* Product Picker + Direct Arrival/Batch QR Scanner */}
                   <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-emerald-300">1. Pilih Produk dari Master Barang</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-bold text-emerald-300">1. Pilih Produk / Scan Stiker QR Barang</span>
                       <input
                         value={productSearch}
                         onChange={(e) => setProductSearch(e.target.value)}
-                        placeholder="Filter barang..."
+                        placeholder="Filter nama / SKU..."
                         className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-white"
                       />
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        value={qrScanInput}
+                        onChange={(e) => setQrScanInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const parsed = parseScannedQrCode(qrScanInput);
+                            const lookupSku = (parsed.sku || qrScanInput).trim().toUpperCase();
+                            const match = products.find(
+                              (p) => p.sku.toUpperCase() === lookupSku,
+                            );
+                            if (match) {
+                              addToCart(match);
+                              setQrScanInput("");
+                              onToast(`QR ${match.sku} (${match.name}) masuk keranjang POS!`);
+                            } else if (lookupSku) {
+                              onToast(`SKU "${lookupSku}" belum ada di Master Barang.`, "error");
+                            }
+                          }
+                        }}
+                        placeholder="Tembak Scanner USB / tempel kode Stiker QR (WACRM-IN|... / SKU) lalu Enter"
+                        className="flex-1 rounded-lg border border-cyan-500/40 bg-slate-900 px-2.5 py-1.5 font-mono text-[11px] text-cyan-200 placeholder:text-slate-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const parsed = parseScannedQrCode(qrScanInput);
+                          const lookupSku = (parsed.sku || qrScanInput).trim().toUpperCase();
+                          const match = products.find(
+                            (p) => p.sku.toUpperCase() === lookupSku,
+                          );
+                          if (match) {
+                            addToCart(match);
+                            setQrScanInput("");
+                            onToast(`QR ${match.sku} (${match.name}) masuk keranjang POS!`);
+                          } else if (lookupSku) {
+                            onToast(`SKU "${lookupSku}" belum ada di Master Barang.`, "error");
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg bg-cyan-500/20 px-3 py-1.5 text-[11px] font-bold text-cyan-200 hover:bg-cyan-500/30"
+                      >
+                        <QrCode className="h-3.5 w-3.5" />
+                        Scan
+                      </button>
                     </div>
                     <div className="grid max-h-44 gap-2 overflow-y-auto sm:grid-cols-2">
                       {filteredProducts.map((p) => (
@@ -563,15 +933,38 @@ export function PosView({
                 <input required value={shippingAddress} onChange={(e) => setShippingAddress(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
               </label>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  Ekspedisi / Kurir Pengiriman
-                  <select value={shippingCourier} onChange={(e) => setShippingCourier(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white">
-                    {couriers.map((c) => (
-                      <option key={c.id} value={c.name}>{c.name} ({c.estimatedDays})</option>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="block sm:col-span-2">
+                  Pilihan Ekspedisi &amp; Paket Biaya Kirim
+                  <select
+                    value={
+                      courierServiceOptions.find(
+                        (o) => o.serviceName === shippingService || o.courierName === shippingCourier,
+                      )?.key ?? ""
+                    }
+                    onChange={(e) => applyCourierOption(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white"
+                  >
+                    {courierServiceOptions.map((opt) => (
+                      <option key={opt.key} value={opt.key}>
+                        {opt.serviceName} — {formatIdr(opt.ratePerKg)}/kg ({opt.estimatedDays})
+                      </option>
                     ))}
                   </select>
                 </label>
+                <label className="block">
+                  Biaya Ongkir (Rp)
+                  <input
+                    type="number"
+                    min={0}
+                    value={shippingCost}
+                    onChange={(e) => setShippingCost(Math.max(0, Number(e.target.value) || 0))}
+                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-emerald-300 font-semibold"
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
                   Status Pembayaran
                   <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value as "paid" | "unpaid")} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white">
@@ -579,6 +972,12 @@ export function PosView({
                     <option value="unpaid">Menunggu Pembayaran (Unpaid)</option>
                   </select>
                 </label>
+                {formModal === "edit" && (
+                  <label className="block">
+                    Nama Penerima
+                    <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white" />
+                  </label>
+                )}
               </div>
 
               {formModal === "create" ? (
@@ -627,6 +1026,10 @@ export function PosView({
                 <div className="rounded-xl bg-slate-950 p-3">
                   <div className="flex justify-between text-slate-400"><span>Subtotal</span><span>{formatIdr(subtotal)}</span></div>
                   <div className="flex justify-between text-slate-400"><span>PPN 11%</span><span>{formatIdr(tax)}</span></div>
+                  <div className="flex justify-between text-slate-400">
+                    <span>Ongkir ({shippingService || shippingCourier}, est. {cartWeightKg} kg)</span>
+                    <span>{formatIdr(shippingCost)}</span>
+                  </div>
                   <div className="mt-1 flex justify-between border-t border-slate-800 pt-1 text-sm font-bold text-emerald-400">
                     <span>TOTAL TAGIHAN</span><span>{formatIdr(total)}</span>
                   </div>
@@ -739,12 +1142,17 @@ export function PosView({
 
                   <div className="space-y-1 text-right">
                     <div className="text-slate-500">PPN 11%: {formatIdr(studioOrder.taxAmount)}</div>
+                    {studioOrder.shippingCost && studioOrder.shippingCost > 0 ? (
+                      <div className="text-slate-500">
+                        Ongkir ({studioOrder.shippingService || studioOrder.shippingCourier}): {formatIdr(studioOrder.shippingCost)}
+                      </div>
+                    ) : null}
                     <div className="text-sm font-extrabold text-emerald-700">
                       TOTAL: {formatIdr(studioOrder.totalAmount)} ({PAYMENT_METHOD_LABELS[studioOrder.paymentMethod]})
                     </div>
                   </div>
                   <div className="border-t border-dashed border-slate-300 pt-2 text-[11px] text-slate-500">
-                    {storeProfile.invoiceFooter}
+                    {effectivePrintProfile.invoiceFooter}
                   </div>
                 </div>
               ) : (
@@ -835,15 +1243,15 @@ export function PosView({
                 buildHtml={async () => {
                   const qr = qrDataUrl || (await generateQrDataUrl(studioOrder.qrPayload, 260));
                   return studioTab === "label"
-                    ? renderShippingLabelPrintHtml(studioOrder, storeProfile, qr)
-                    : renderInvoicePrintHtml(studioOrder, storeProfile, qr);
+                    ? renderShippingLabelPrintHtml(studioOrder, effectivePrintProfile, qr)
+                    : renderInvoicePrintHtml(studioOrder, effectivePrintProfile, qr);
                 }}
                 buildEscPos={() =>
                   studioTab === "label"
-                    ? buildEscPosShippingLabel(studioOrder, storeProfile)
-                    : buildEscPosReceipt(studioOrder, storeProfile)
+                    ? buildEscPosShippingLabel(studioOrder, effectivePrintProfile)
+                    : buildEscPosReceipt(studioOrder, effectivePrintProfile)
                 }
-                buildEdcEscPos={() => buildEscPosEdcCompact(studioOrder, storeProfile)}
+                buildEdcEscPos={() => buildEscPosEdcCompact(studioOrder, effectivePrintProfile)}
                 onResult={(res) => onToast(res.message, res.ok ? "ok" : "error")}
                 compact
               />
@@ -873,6 +1281,17 @@ export function PosView({
           </div>
         </div>
       )}
+        </>
+      )}
+
+      {/* Sovereign Corporate POS Register (Cashier Z-Report, Split Bill & VIP Loyalty) */}
+      <SovereignPosSuite
+        editionId={editionId}
+        businessName={storeProfile.businessName}
+        orders={orders}
+        onOpenEditions={onOpenEditions}
+        onToast={onToast}
+      />
     </div>
   );
 }

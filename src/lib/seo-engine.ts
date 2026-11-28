@@ -5,6 +5,7 @@ import {
   type ProductSeoAudit,
   type StoreBusinessProfile,
 } from "@/lib/crm-types";
+import { normalizeSocialChannelAccount } from "@/lib/store-profile";
 
 export function slugifySeo(input: string): string {
   return input
@@ -119,6 +120,21 @@ export function generateOmnichannelSeoPack(
     product.description || "Kualitas terjamin, pengiriman cepat & pembayaran QRIS/Transfer."
   } Pesan langsung via WhatsApp!`.slice(0, 160);
 
+  const waAcc = normalizeSocialChannelAccount(
+    "whatsapp",
+    storeProfile.socialHandles?.whatsapp || storeProfile.phone,
+  );
+  const igAcc = normalizeSocialChannelAccount("instagram", storeProfile.socialHandles?.instagram);
+  const fbAcc = normalizeSocialChannelAccount("facebook", storeProfile.socialHandles?.facebook);
+  const ttAcc = normalizeSocialChannelAccount("tiktok", storeProfile.socialHandles?.tiktok);
+  const ytAcc = normalizeSocialChannelAccount("youtube", storeProfile.socialHandles?.youtube);
+  const sameAsLinks = [igAcc.url, fbAcc.url, ttAcc.url, ytAcc.url].filter(
+    (u): u is string => Boolean(u),
+  );
+  const waOrderLink = waAcc.url
+    ? `${waAcc.url}?text=${encodeURIComponent(`Halo ${store}, saya mau pesan ${product.name} (${product.sku})`)}`
+    : null;
+
   const jsonLdObj = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -141,7 +157,8 @@ export function generateOmnichannelSeoPack(
       seller: {
         "@type": "Organization",
         name: store,
-        telephone: storeProfile.phone,
+        telephone: waAcc.handle || storeProfile.phone,
+        ...(sameAsLinks.length > 0 ? { sameAs: sameAsLinks } : {}),
       },
     },
   };
@@ -188,7 +205,9 @@ export function generateOmnichannelSeoPack(
         `Harga spesial hari ini: *${priceText}/${product.unit}*`,
         product.description ? `✅ ${product.description}` : "✅ Kualitas pilihan, siap kirim hari ini!",
         `🚚 Kirim cepat dari ${city} (${storeProfile.defaultCourier}) · Bayar QRIS / Transfer / COD.`,
-        `Balas chat ini dengan *"Pesan ${product.name}"* — Invoice & Label QR langsung terbit otomatis!`,
+        waOrderLink
+          ? `📲 Klik untuk langsung pesan: ${waOrderLink}`
+          : `Balas chat ini dengan *"Pesan ${product.name}"* — Invoice & Label QR langsung terbit otomatis!`,
       ].join("\n"),
       ctaLine: `Balas "Pesan 1 ${product.name}" sekarang sebelum stok ${product.stockQty} ${product.unit} habis!`,
     },
@@ -199,13 +218,15 @@ export function generateOmnichannelSeoPack(
         "",
         product.description || `Pilihan terlaris dari ${store} untuk kebutuhan harian maupun grosir Anda.`,
         `📦 Status: ${stockBadge} | 🚚 Pengiriman Same-Day & Ekspedisi Nasional.`,
-        `💬 Cara Order Cepat: DM kata "${product.sku}" atau klik link WhatsApp di bio — AI CS kami langsung balas 24 jam!`,
+        igAcc.connected
+          ? `💬 Follow & DM ${igAcc.handle} dengan kata "${product.sku}" atau klik link WA ${waAcc.handle || "di bio"}!`
+          : `💬 Cara Order Cepat: DM kata "${product.sku}" atau klik link WhatsApp di bio — AI CS kami langsung balas 24 jam!`,
       ].join("\n"),
       hashtags,
     },
     tiktok: {
       videoHook: `[0-3 detik] "Banyak yang nanya di mana beli ${product.name} harga ${priceText} yang kualitasnya juara? Cek ini!"`,
-      seoCaption: `Review jujur ${product.name} (${product.category}) dari ${store} ${city}! Harga ${priceText}, ${stockBadge}. Klik keranjang kuning atau DM untuk order cepat! ${hashtags.slice(0, 6).join(" ")}`,
+      seoCaption: `Review jujur ${product.name} (${product.category}) dari ${store} ${city}${ttAcc.connected ? ` (${ttAcc.handle})` : ""}! Harga ${priceText}, ${stockBadge}. Klik keranjang kuning atau order WA ${waAcc.handle || "di bio"}! ${hashtags.slice(0, 6).join(" ")}`,
       searchTags: [
         product.name.toLowerCase(),
         `rekomendasi ${product.category.toLowerCase()}`,
@@ -224,7 +245,11 @@ export function generateOmnichannelSeoPack(
         `- Harga: ${priceText}/${product.unit}`,
         `- Ketersediaan: ${stockBadge}`,
         "",
-        `📲 Pesan Resmi via WhatsApp: ${storeProfile.phone || "Hubungi admin toko"}`,
+        `📲 Pesan Resmi via WhatsApp: ${waOrderLink || storeProfile.phone || "Hubungi admin toko"}`,
+        ...(igAcc.url ? [`📸 Instagram: ${igAcc.url}`] : []),
+        ...(fbAcc.url ? [`👍 Facebook: ${fbAcc.url}`] : []),
+        ...(ttAcc.url ? [`🎵 TikTok: ${ttAcc.url}`] : []),
+        ...(ytAcc.url ? [`▶️ Subscribe Channel: ${ytAcc.url}`] : []),
         `📍 Lokasi Pengiriman: ${storeProfile.address || city}`,
       ].join("\n"),
       tags: [
@@ -240,7 +265,9 @@ export function generateOmnichannelSeoPack(
       postCopy: [
         `READY STOCK! ${product.name} hanya ${priceText}/${product.unit}.`,
         product.description || `Produk unggulan ${store} siap kirim ke seluruh Indonesia.`,
-        `Pembayaran mudah via QRIS, Transfer Bank, atau COD. Klik "Kirim Pesan" untuk pemesanan instan!`,
+        `Pembayaran mudah via QRIS, Transfer Bank, atau COD.${
+          fbAcc.url ? ` Kunjungi halaman resmi kami: ${fbAcc.url}` : ""
+        }${waOrderLink ? `\n📲 Order instan WhatsApp: ${waOrderLink}` : ' Klik "Kirim Pesan" untuk pemesanan instan!'}`,
       ].join("\n\n"),
     },
   };

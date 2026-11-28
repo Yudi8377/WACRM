@@ -10,15 +10,17 @@ export function WorkspaceClient({
   name,
   slug,
   role,
+  accountEmail,
 }: {
   tenantId: string;
   name: string;
   slug: string;
   role: MemberRole;
+  accountEmail?: string | null;
 }) {
   const adapter = useMemo(
     () => createApiWorkspaceAdapter(tenantId, { name, slug, role }),
     [tenantId, name, slug, role],
   );
-  return <WorkspaceApp adapter={adapter} />;
+  return <WorkspaceApp key={`${tenantId}-${accountEmail ?? "anon"}`} adapter={adapter} accountEmail={accountEmail} />;
 }

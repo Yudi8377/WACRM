@@ -7,7 +7,7 @@ import {
   computeTaxSummary,
   computeTrialBalance,
 } from "./accounting-engine";
-import { issueSignedLicenseKey, verifySignedLicenseKey } from "./license-engine";
+import { issueSignedLicenseKey, PUBLISHER_EDITIONS, verifySignedLicenseKey } from "./license-engine";
 import {
   buildInitialPublisherState,
   computePublisherOverview,
@@ -151,5 +151,25 @@ describe("WACRM Publisher HQ — Standalone Super Admin Enterprise Management Sy
         ],
       }),
     ).toThrow(/tidak seimbang/i);
+  });
+
+  it("aligns v5.3 edition entitlements with Client App (Enterprise Operational Accounting vs Sovereign Full Corporate OS + Marketing Strategy 5-Agent AI)", () => {
+    expect(PUBLISHER_EDITIONS.starter.entitlements).toContain("erp_warehouse");
+    expect(PUBLISHER_EDITIONS.starter.entitlements).not.toContain("qr_camera_fifo_scanner");
+    expect(PUBLISHER_EDITIONS.pro.entitlements).toContain("erp_warehouse");
+    expect(PUBLISHER_EDITIONS.pro.entitlements).toContain("qr_camera_fifo_scanner");
+    expect(PUBLISHER_EDITIONS.pro.entitlements).not.toContain("ai_product_recommender");
+    expect(PUBLISHER_EDITIONS.enterprise.entitlements).toContain("ai_product_recommender");
+    expect(PUBLISHER_EDITIONS.enterprise.entitlements).toContain("double_entry_accounting");
+    expect(PUBLISHER_EDITIONS.enterprise.entitlements).not.toContain("buyer_interest_forecast");
+    expect(PUBLISHER_EDITIONS.enterprise.entitlements).not.toContain("hrd_payroll_corporate");
+    expect(PUBLISHER_EDITIONS.enterprise.entitlements).not.toContain("sovereign_corporate_accounting");
+    expect(PUBLISHER_EDITIONS.enterprise.entitlements).not.toContain("enterprise_marketing_strategy");
+    expect(PUBLISHER_EDITIONS.sovereign.entitlements).toContain("buyer_interest_forecast");
+    expect(PUBLISHER_EDITIONS.sovereign.entitlements).toContain("hrd_payroll_corporate");
+    expect(PUBLISHER_EDITIONS.sovereign.entitlements).toContain("sovereign_corporate_accounting");
+    expect(PUBLISHER_EDITIONS.sovereign.entitlements).toContain("sovereign_corporate_erp");
+    expect(PUBLISHER_EDITIONS.sovereign.entitlements).toContain("sovereign_corporate_crm_pos_seo");
+    expect(PUBLISHER_EDITIONS.sovereign.entitlements).toContain("enterprise_marketing_strategy");
   });
 });

@@ -229,7 +229,7 @@ export function buildInitialPublisherState(): PublisherEmsState {
       defaultPpnRate: 0.11,
       defaultPph23Rate: 0.02,
       invoicePrefix: "PUB-INV",
-      licenseApiUrl: "https://publisher.wacrm.id/api/licenses/verify",
+      licenseApiUrl: "https://wacrm-publisher-hq.vercel.app/api/licenses/verify",
     },
     tenants: [
       {
@@ -342,12 +342,12 @@ export function buildInitialPublisherState(): PublisherEmsState {
       },
     ],
     skus: [
-      { id: "sku-01", sku: "LIC-STR-M", name: "Lisensi WACRM Starter UMKM (Gratis)", category: "license", editionId: "starter", billingCycle: "monthly", unitPriceIdr: 0, costPriceIdr: 35_000, stockQty: 9999, minStock: 0, isActive: true },
-      { id: "sku-02", sku: "LIC-PRO-M", name: "Lisensi WACRM Growth Pro (Bulanan)", category: "license", editionId: "pro", billingCycle: "monthly", unitPriceIdr: 499_000, costPriceIdr: 130_000, stockQty: 9999, minStock: 0, isActive: true },
-      { id: "sku-03", sku: "LIC-PRO-Y", name: "Lisensi WACRM Growth Pro (Tahunan)", category: "license", editionId: "pro", billingCycle: "annual", unitPriceIdr: 4_990_000, costPriceIdr: 1_560_000, stockQty: 9999, minStock: 0, isActive: true },
-      { id: "sku-04", sku: "LIC-ENT-M", name: "Lisensi WACRM Enterprise AI Suite (Bulanan)", category: "license", editionId: "enterprise", billingCycle: "monthly", unitPriceIdr: 1_990_000, costPriceIdr: 520_000, stockQty: 9999, minStock: 0, isActive: true },
-      { id: "sku-05", sku: "LIC-ENT-Y", name: "Lisensi WACRM Enterprise AI Suite (Tahunan)", category: "license", editionId: "enterprise", billingCycle: "annual", unitPriceIdr: 19_900_000, costPriceIdr: 6_240_000, stockQty: 9999, minStock: 0, isActive: true },
-      { id: "sku-06", sku: "LIC-SOV-Y", name: "Lisensi WACRM Sovereign Corporate (Tahunan)", category: "license", editionId: "sovereign", billingCycle: "annual", unitPriceIdr: 59_900_000, costPriceIdr: 14_400_000, stockQty: 9999, minStock: 0, isActive: true },
+      { id: "sku-01", sku: "LIC-STR-M", name: "Lisensi WACRM Starter UMKM (Gratis Selamanya)", category: "license", editionId: "starter", billingCycle: "monthly", unitPriceIdr: 0, costPriceIdr: 15_000, stockQty: 9999, minStock: 0, isActive: true },
+      { id: "sku-02", sku: "LIC-PRO-M", name: "Lisensi WACRM Growth Pro v5.3 (Bulanan · Trial 14h)", category: "license", editionId: "pro", billingCycle: "monthly", unitPriceIdr: 249_000, costPriceIdr: 65_000, stockQty: 9999, minStock: 0, isActive: true },
+      { id: "sku-03", sku: "LIC-PRO-Y", name: "Lisensi WACRM Growth Pro v5.3 (Tahunan)", category: "license", editionId: "pro", billingCycle: "annual", unitPriceIdr: 2_390_000, costPriceIdr: 720_000, stockQty: 9999, minStock: 0, isActive: true },
+      { id: "sku-04", sku: "LIC-ENT-M", name: "Lisensi WACRM Enterprise AI Suite v5.3 (Bulanan · Trial 7h)", category: "license", editionId: "enterprise", billingCycle: "monthly", unitPriceIdr: 699_000, costPriceIdr: 185_000, stockQty: 9999, minStock: 0, isActive: true },
+      { id: "sku-05", sku: "LIC-ENT-Y", name: "Lisensi WACRM Enterprise AI Suite v5.3 (Tahunan)", category: "license", editionId: "enterprise", billingCycle: "annual", unitPriceIdr: 6_790_000, costPriceIdr: 2_100_000, stockQty: 9999, minStock: 0, isActive: true },
+      { id: "sku-06", sku: "LIC-SOV-Y", name: "Lisensi WACRM Sovereign Corporate v5.3 (Tahunan · Full OS + Strategi Marketing AI)", category: "license", editionId: "sovereign", billingCycle: "annual", unitPriceIdr: 18_900_000, costPriceIdr: 4_800_000, stockQty: 9999, minStock: 0, isActive: true },
       { id: "sku-07", sku: "ADD-AI-2M", name: "Add-On Paket 2 Juta Token AI Multi-Agent", category: "addon", billingCycle: "one_time", unitPriceIdr: 1_000_000, costPriceIdr: 320_000, stockQty: 9999, minStock: 0, isActive: true },
       { id: "sku-08", sku: "SVC-APK-WL", name: "Jasa Build Android APK White-Label + Signing", category: "service", billingCycle: "one_time", unitPriceIdr: 4_500_000, costPriceIdr: 1_200_000, stockQty: 9999, minStock: 0, isActive: true },
       { id: "sku-09", sku: "HW-PRN-80", name: "Printer Thermal 80mm USB-OTG/Bluetooth/WiFi", category: "hardware", billingCycle: "one_time", unitPriceIdr: 1_300_000, costPriceIdr: 750_000, stockQty: 28, minStock: 10, isActive: true },

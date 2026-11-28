@@ -24,10 +24,15 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.provider.MediaStore
+import android.provider.Settings
 import android.print.PrintAttributes
 import android.print.PrintManager
+import androidx.core.content.FileProvider
+import java.io.File
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Base64
 import org.json.JSONObject
 import java.util.Locale
@@ -50,7 +55,10 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
+import android.webkit.PermissionRequest
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import java.util.UUID
@@ -63,6 +71,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var offlineContainer: LinearLayout
 
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var pendingCameraCaptureUri: Uri? = null
+    private var pendingWebPermissionRequest: PermissionRequest? = null
+    private var pendingJsPermissionCallback: Boolean = false
     private var printWebView: WebView? = null
     private var pendingBluetoothPrint: Pair<String, String>? = null
     private var pendingUsbPrint: Pair<ByteArray, String>? = null
@@ -108,7 +119,53 @@ class MainActivity : AppCompatActivity() {
                         "window.__wacrmOnVoiceResult && window.__wacrmOnVoiceResult($quoted);",
                         null
                     )
+                    return@registerForActivityResult
                 }
+            }
+            webView.evaluateJavascript(
+                "window.__wacrmOnVoiceError && window.__wacrmOnVoiceError('cancelled');",
+                null
+            )
+        }
+
+    private val mediaPermissionsLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+            val req = pendingWebPermissionRequest
+            pendingWebPermissionRequest = null
+            val notifyJs = pendingJsPermissionCallback
+            pendingJsPermissionCallback = false
+
+            val camGranted = hasCameraPermission()
+            val micGranted = hasMicrophonePermission()
+
+            if (req != null) {
+                val allowedResources = mutableListOf<String>()
+                for (res in req.resources) {
+                    if (res == PermissionRequest.RESOURCE_VIDEO_CAPTURE && camGranted) {
+                        allowedResources.add(res)
+                    } else if (res == PermissionRequest.RESOURCE_AUDIO_CAPTURE && micGranted) {
+                        allowedResources.add(res)
+                    } else if (res != PermissionRequest.RESOURCE_VIDEO_CAPTURE &&
+                        res != PermissionRequest.RESOURCE_AUDIO_CAPTURE
+                    ) {
+                        allowedResources.add(res)
+                    }
+                }
+                if (allowedResources.isNotEmpty()) {
+                    req.grant(allowedResources.toTypedArray())
+                } else {
+                    req.deny()
+                    showOpenPermissionSettingsDialog()
+                }
+            } else if (!camGranted && results.containsKey(Manifest.permission.CAMERA)) {
+                showOpenPermissionSettingsDialog()
+            }
+
+            if (notifyJs || req != null) {
+                webView.evaluateJavascript(
+                    "window.__wacrmOnMediaPermissionsResult && window.__wacrmOnMediaPermissionsResult($camGranted, $micGranted);",
+                    null
+                )
             }
         }
 
@@ -135,8 +192,16 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val callback = filePathCallback ?: return@registerForActivityResult
             filePathCallback = null
+            val captureUri = pendingCameraCaptureUri
+            pendingCameraCaptureUri = null
             val uris = if (result.resultCode == Activity.RESULT_OK) {
-                WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+                val parsed = WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
+                when {
+                    parsed != null && parsed.isNotEmpty() -> parsed
+                    result.data?.data != null -> arrayOf(result.data!!.data!!)
+                    captureUri != null -> arrayOf(captureUri)
+                    else -> null
+                }
             } else {
                 null
             }
@@ -169,6 +234,7 @@ class MainActivity : AppCompatActivity() {
         configureWebView()
         configureSwipeRefresh()
         configureBackNavigation()
+        initTextToSpeech()
 
         ContextCompat.registerReceiver(
             this,
@@ -200,6 +266,7 @@ class MainActivity : AppCompatActivity() {
             loadWithOverviewMode = true
             allowFileAccess = false
             allowContentAccess = true
+            mediaPlaybackRequiresUserGesture = false
             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             userAgentString = "$userAgentString WACRM-Android/${BuildConfig.VERSION_NAME}"
         }
@@ -240,13 +307,82 @@ class MainActivity : AppCompatActivity() {
             ): Boolean {
                 this@MainActivity.filePathCallback?.onReceiveValue(null)
                 this@MainActivity.filePathCallback = filePathCallback
-                val intent = fileChooserParams?.createIntent() ?: return false
+                this@MainActivity.pendingCameraCaptureUri = null
+
+                val acceptTypes = fileChooserParams?.acceptTypes?.joinToString(",")?.lowercase() ?: ""
+                val wantsImage = acceptTypes.contains("image") || fileChooserParams?.isCaptureEnabled == true
+                val wantsDirectCapture = fileChooserParams?.isCaptureEnabled == true
+
+                val cameraIntent: Intent? = if (wantsImage) createRearCameraCaptureIntent() else null
+                val galleryIntent = try {
+                    fileChooserParams?.createIntent()
+                } catch (_: Exception) {
+                    Intent(Intent.ACTION_GET_CONTENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = if (wantsImage) "image/*" else "*/*"
+                    }
+                }
+
                 return try {
-                    fileChooserLauncher.launch(intent)
-                    true
+                    if (wantsDirectCapture && cameraIntent != null) {
+                        fileChooserLauncher.launch(cameraIntent)
+                        true
+                    } else if (cameraIntent != null && galleryIntent != null) {
+                        val chooser = Intent.createChooser(galleryIntent, "Pilih Kamera atau Galeri Foto QR")
+                        chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(cameraIntent))
+                        fileChooserLauncher.launch(chooser)
+                        true
+                    } else if (galleryIntent != null) {
+                        fileChooserLauncher.launch(galleryIntent)
+                        true
+                    } else {
+                        this@MainActivity.filePathCallback = null
+                        false
+                    }
                 } catch (_: Exception) {
                     this@MainActivity.filePathCallback = null
+                    this@MainActivity.pendingCameraCaptureUri = null
                     false
+                }
+            }
+
+            override fun onPermissionRequest(request: PermissionRequest?) {
+                if (request == null) return
+                runOnUiThread {
+                    val originUrl = request.origin?.toString() ?: ""
+                    val originHost = try {
+                        Uri.parse(originUrl).host?.lowercase() ?: ""
+                    } catch (_: Exception) {
+                        ""
+                    }
+                    val isTrustedOrigin = originUrl.isEmpty() ||
+                        UrlValidator.isSameOriginHost(originUrl, getBaseUrl()) ||
+                        originHost.endsWith(".vercel.app") ||
+                        originHost == "localhost"
+
+                    if (!isTrustedOrigin) {
+                        request.deny()
+                        return@runOnUiThread
+                    }
+
+                    val needed = mutableListOf<String>()
+                    if (request.resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE) &&
+                        !hasCameraPermission()
+                    ) {
+                        needed.add(Manifest.permission.CAMERA)
+                    }
+                    if (request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE) &&
+                        !hasMicrophonePermission()
+                    ) {
+                        needed.add(Manifest.permission.RECORD_AUDIO)
+                    }
+                    if (needed.isNotEmpty()) {
+                        pendingWebPermissionRequest?.deny()
+                        pendingWebPermissionRequest = request
+                        mediaPermissionsLauncher.launch(needed.toTypedArray())
+                    } else {
+                        request.grant(request.resources)
+                    }
                 }
             }
         }
@@ -618,6 +754,69 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    fun hasCameraPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+
+    fun hasMicrophonePermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+
+    fun requestCameraAndMicPermissionsFromJs() {
+        val needed = mutableListOf<String>()
+        if (!hasCameraPermission()) needed.add(Manifest.permission.CAMERA)
+        if (!hasMicrophonePermission()) needed.add(Manifest.permission.RECORD_AUDIO)
+        if (needed.isEmpty()) {
+            webView.evaluateJavascript(
+                "window.__wacrmOnMediaPermissionsResult && window.__wacrmOnMediaPermissionsResult(true, true);",
+                null
+            )
+            return
+        }
+        pendingJsPermissionCallback = true
+        mediaPermissionsLauncher.launch(needed.toTypedArray())
+    }
+
+    fun openAppPermissionSettings() {
+        try {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", packageName, null)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(this, "Buka Pengaturan HP → Aplikasi → WACRM → Izin.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun showOpenPermissionSettingsDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Izinkan Kamera & Mikrofon WACRM")
+            .setMessage(
+                "Agar Scanner QR Belakang & Suara AI 24/7 berfungsi lancar, izinkan Kamera dan Mikrofon pada Pengaturan Aplikasi WACRM."
+            )
+            .setPositiveButton("Buka Pengaturan Izin") { _, _ ->
+                openAppPermissionSettings()
+            }
+            .setNegativeButton("Nanti", null)
+            .show()
+    }
+
+    private fun createRearCameraCaptureIntent(): Intent? {
+        return try {
+            val dir = File(cacheDir, "qr_captures").apply { mkdirs() }
+            val photoFile = File(dir, "qr_${System.currentTimeMillis()}.jpg")
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", photoFile)
+            pendingCameraCaptureUri = uri
+            Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     fun showServerSettingsDialog() {
         val input = EditText(this).apply {
             setText(getBaseUrl())
@@ -645,19 +844,61 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun initTextToSpeech() {
+        if (textToSpeech != null) return
+        textToSpeech = TextToSpeech(this) { status ->
+            ttsReady = status == TextToSpeech.SUCCESS
+            if (ttsReady) {
+                textToSpeech?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {}
+                    override fun onDone(utteranceId: String?) {
+                        runOnUiThread {
+                            webView.evaluateJavascript(
+                                "window.__wacrmOnSpeechEnd && window.__wacrmOnSpeechEnd();",
+                                null
+                            )
+                        }
+                    }
+
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) {
+                        runOnUiThread {
+                            webView.evaluateJavascript(
+                                "window.__wacrmOnSpeechEnd && window.__wacrmOnSpeechEnd();",
+                                null
+                            )
+                        }
+                    }
+                })
+                val queued = pendingSpeech
+                pendingSpeech = null
+                if (queued != null) {
+                    runOnUiThread { speakCompanionText(queued.first, queued.second) }
+                }
+            }
+        }
+    }
+
+    private fun resolveBestTtsLocale(tts: TextToSpeech, lang: String) {
+        val candidates = listOf(
+            Locale.forLanguageTag(lang),
+            Locale("id", "ID"),
+            Locale("in", "ID"),
+            Locale("ms", "MY"),
+            Locale.getDefault()
+        )
+        for (loc in candidates) {
+            val res = tts.setLanguage(loc)
+            if (res != TextToSpeech.LANG_MISSING_DATA && res != TextToSpeech.LANG_NOT_SUPPORTED) {
+                return
+            }
+        }
+    }
+
     fun speakCompanionText(text: String, lang: String) {
         if (textToSpeech == null) {
             pendingSpeech = Pair(text, lang)
-            textToSpeech = TextToSpeech(this) { status ->
-                ttsReady = status == TextToSpeech.SUCCESS
-                if (ttsReady) {
-                    val queued = pendingSpeech
-                    pendingSpeech = null
-                    if (queued != null) {
-                        speakCompanionText(queued.first, queued.second)
-                    }
-                }
-            }
+            initTextToSpeech()
             return
         }
         if (!ttsReady) {
@@ -665,11 +906,16 @@ class MainActivity : AppCompatActivity() {
             return
         }
         try {
-            val locale = Locale.forLanguageTag(lang)
-            textToSpeech?.language = locale
-            textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "wacrm-companion")
+            val tts = textToSpeech ?: return
+            resolveBestTtsLocale(tts, lang)
+            tts.setSpeechRate(0.96f)
+            tts.setPitch(1.03f)
+            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "wacrm-companion-${System.currentTimeMillis()}")
         } catch (_: Exception) {
-            // ignore TTS fallback errors
+            webView.evaluateJavascript(
+                "window.__wacrmOnSpeechEnd && window.__wacrmOnSpeechEnd();",
+                null
+            )
         }
     }
 
@@ -681,16 +927,75 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun allowedBiometricAuthenticators(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        } else {
+            BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        }
+    }
+
+    fun isBiometricAuthAvailable(): Boolean {
+        val manager = BiometricManager.from(this)
+        val status = manager.canAuthenticate(allowedBiometricAuthenticators())
+        return status == BiometricManager.BIOMETRIC_SUCCESS
+    }
+
+    fun showBiometricLoginPrompt(title: String, subtitle: String) {
+        val executor = ContextCompat.getMainExecutor(this)
+        val callback = object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                webView.evaluateJavascript(
+                    "window.__wacrmBiometricResult && window.__wacrmBiometricResult(true, 'verified');",
+                    null
+                )
+            }
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                val quoted = JSONObject.quote(errString.toString())
+                webView.evaluateJavascript(
+                    "window.__wacrmBiometricResult && window.__wacrmBiometricResult(false, $quoted);",
+                    null
+                )
+            }
+
+            override fun onAuthenticationFailed() {
+                Toast.makeText(
+                    this@MainActivity,
+                    "Sidik jari atau wajah tidak cocok. Silakan coba lagi.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+
+        val prompt = BiometricPrompt(this, executor, callback)
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle(title)
+            .setSubtitle(subtitle)
+            .setAllowedAuthenticators(allowedBiometricAuthenticators())
+            .build()
+        prompt.authenticate(info)
+    }
+
     fun startVoiceRecognition(lang: String) {
         try {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, lang)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, lang)
                 putExtra(RecognizerIntent.EXTRA_PROMPT, "Bicara dengan AI Companion WACRM...")
             }
             voiceRecognizerLauncher.launch(intent)
         } catch (_: Exception) {
-            Toast.makeText(this, "Layanan pengenalan suara tidak tersedia di perangkat ini.", Toast.LENGTH_LONG).show()
+            val msg = JSONObject.quote("Layanan Google Voice / Pengenalan Suara belum aktif di HP ini.")
+            webView.evaluateJavascript(
+                "window.__wacrmOnVoiceError && window.__wacrmOnVoiceError($msg);",
+                null
+            )
+            Toast.makeText(this, "Layanan pengenalan suara belum aktif di HP ini.", Toast.LENGTH_LONG).show()
         }
     }
 

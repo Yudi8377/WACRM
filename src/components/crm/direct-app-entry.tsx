@@ -1,10 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { createDemoWorkspaceAdapter } from "@/lib/demo-store";
-import { WorkspaceApp } from "@/components/crm/workspace-app";
+import { CommercialAuthGate } from "@/components/auth/commercial-auth-gate";
 
 export function DirectAppEntry() {
-  const adapter = useMemo(() => createDemoWorkspaceAdapter(), []);
-  return <WorkspaceApp adapter={adapter} />;
+  return <CommercialAuthGate initialMode="signin" />;
 }

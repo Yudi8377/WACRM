@@ -80,6 +80,11 @@ class WacrmJsBridge(
     fun getAppVersion(): String = BuildConfig.VERSION_NAME
 
     @JavascriptInterface
+    fun speakText(text: String?) {
+        speakText(text, "id-ID")
+    }
+
+    @JavascriptInterface
     fun speakText(text: String?, lang: String?) {
         val safe = text?.trim()?.take(1800) ?: return
         if (safe.isEmpty()) return
@@ -97,10 +102,48 @@ class WacrmJsBridge(
     }
 
     @JavascriptInterface
+    fun startVoiceInput() {
+        startVoiceInput("id-ID")
+    }
+
+    @JavascriptInterface
     fun startVoiceInput(lang: String?) {
         val safeLang = lang?.trim()?.ifEmpty { "id-ID" } ?: "id-ID"
         activity.runOnUiThread {
             activity.startVoiceRecognition(safeLang)
+        }
+    }
+
+    @JavascriptInterface
+    fun isBiometricAvailable(): Boolean = activity.isBiometricAuthAvailable()
+
+    @JavascriptInterface
+    fun authenticateBiometric(title: String?, subtitle: String?) {
+        val safeTitle = title?.trim()?.take(80)?.ifEmpty { "Login Biometrik WACRM" } ?: "Login Biometrik WACRM"
+        val safeSub = subtitle?.trim()?.take(160)?.ifEmpty { "Verifikasi Sidik Jari atau Pengenalan Wajah Anda" }
+            ?: "Verifikasi Sidik Jari atau Pengenalan Wajah Anda"
+        activity.runOnUiThread {
+            activity.showBiometricLoginPrompt(safeTitle, safeSub)
+        }
+    }
+
+    @JavascriptInterface
+    fun hasCameraPermission(): Boolean = activity.hasCameraPermission()
+
+    @JavascriptInterface
+    fun hasMicrophonePermission(): Boolean = activity.hasMicrophonePermission()
+
+    @JavascriptInterface
+    fun requestCameraAndMicPermissions() {
+        activity.runOnUiThread {
+            activity.requestCameraAndMicPermissionsFromJs()
+        }
+    }
+
+    @JavascriptInterface
+    fun openAppPermissionSettings() {
+        activity.runOnUiThread {
+            activity.openAppPermissionSettings()
         }
     }
 

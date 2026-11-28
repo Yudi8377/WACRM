@@ -6,6 +6,8 @@ import {
   Brain,
   CheckCircle2,
   DatabaseZap,
+  KeyRound,
+  Lock,
   Plus,
   RefreshCw,
   ShieldAlert,
@@ -14,18 +16,27 @@ import {
   Trash2,
   Wrench,
 } from "lucide-react";
+import {
+  getEditionMatrixCapabilities,
+  getRequiredEditionForAiAgent,
+  isAiAgentAllowedInEdition,
+} from "@/lib/access-control";
 import type {
   AiAgentRecord,
   AiKnowledgeItemRecord,
   AiSecurityIncidentRecord,
+  AppEditionId,
 } from "@/lib/crm-types";
+import { getEditionById } from "@/lib/editions";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 interface AiAgentsViewProps {
   adapter: WorkspaceAdapter;
+  editionId?: AppEditionId;
   agents: AiAgentRecord[];
   knowledge: AiKnowledgeItemRecord[];
   incidents: AiSecurityIncidentRecord[];
+  onUpgradeRequest?: () => void;
   onRefresh: () => Promise<void>;
   onToast: (message: string, tone?: "ok" | "error") => void;
 }
@@ -52,12 +63,16 @@ const SOURCE_LABELS: Record<string, string> = {
 
 export function AiAgentsView({
   adapter,
+  editionId = "starter",
   agents,
   knowledge,
   incidents,
+  onUpgradeRequest,
   onRefresh,
   onToast,
 }: AiAgentsViewProps) {
+  const caps = getEditionMatrixCapabilities(editionId);
+  const knowledgeLearnerUnlocked = isAiAgentAllowedInEdition(editionId, "knowledge_learner");
   const [tab, setTab] = useState<"agents" | "knowledge" | "security">("agents");
   const [syncingKb, setSyncingKb] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -70,18 +85,28 @@ export function AiAgentsView({
   const [kbTags, setKbTags] = useState("sop, kebijakan");
   const [addingKb, setAddingKb] = useState(false);
 
-  const activeAgentsCount = agents.filter((a) => a.enabled).length;
+  const unlockedAgents = agents.filter((a) => isAiAgentAllowedInEdition(editionId, a.agentKey));
+  const activeAgentsCount = unlockedAgents.filter((a) => a.enabled).length;
   const totalActions = agents.reduce((sum, a) => sum + a.actionsExecuted, 0);
   const openIncidents = incidents.filter((i) => i.status === "open").length;
   const selfHealedCount = incidents.filter((i) => i.selfHealed).length;
 
   async function toggleAgent(agent: AiAgentRecord) {
+    if (!isAiAgentAllowedInEdition(editionId, agent.agentKey)) {
+      const reqEd = getEditionById(getRequiredEditionForAiAgent(agent.agentKey));
+      onToast(
+        `${agent.name} membutuhkan minimal lisensi ${reqEd.name}. Aktifkan License Key di menu Edisi & Lisensi.`,
+        "error",
+      );
+      onUpgradeRequest?.();
+      return;
+    }
     setBusyAgent(agent.agentKey);
     try {
       await adapter.updateAiAgent(agent.agentKey, { enabled: !agent.enabled });
       await onRefresh();
       onToast(
-        `${agent.name} ${!agent.enabled ? "diaktifkan (otonom penuh)" : "dinonaktifkan sementara"}.`,
+        `${agent.name} ${!agent.enabled ? "diaktifkan" : "dinonaktifkan sementara"}.`,
       );
     } catch (err) {
       onToast(err instanceof Error ? err.message : "Gagal mengubah status agen AI.", "error");
@@ -91,6 +116,18 @@ export function AiAgentsView({
   }
 
   async function toggleAutonomy(agent: AiAgentRecord) {
+    if (!caps.zeroClickAiAutoReply) {
+      onToast(
+        "Mode Otonom 24/7 Tanpa Klik (Zero-Click AI) membutuhkan minimal lisensi Growth Pro. Starter UMKM menggunakan mode Terbantu 1-Klik.",
+        "error",
+      );
+      onUpgradeRequest?.();
+      return;
+    }
+    if (!isAiAgentAllowedInEdition(editionId, agent.agentKey)) {
+      onUpgradeRequest?.();
+      return;
+    }
     setBusyAgent(agent.agentKey);
     try {
       const next = !agent.autoReplyEnabled;
@@ -111,6 +148,14 @@ export function AiAgentsView({
   }
 
   async function handleSyncKnowledge() {
+    if (!knowledgeLearnerUnlocked) {
+      onToast(
+        "Pembelajar Pengetahuan Otonom (Knowledge Learner AI) tersedia mulai edisi Growth Pro (6 Agen AI). Starter UMKM mencakup 2 Agen AI Dasar (CS & Order Extractor).",
+        "error",
+      );
+      onUpgradeRequest?.();
+      return;
+    }
     setSyncingKb(true);
     try {
       const res = await adapter.runAiKnowledgeSync();
@@ -159,6 +204,14 @@ export function AiAgentsView({
   }
 
   async function handleGuardianScan() {
+    if (!caps.fraudSentinelHealing) {
+      onToast(
+        "Fraud Sentinel & Self-Healing Guardian tersedia mulai edisi Enterprise AI Suite. Aktifkan License Key Enterprise untuk memindai & memperbaiki anomali otomatis.",
+        "error",
+      );
+      onUpgradeRequest?.();
+      return;
+    }
     setScanning(true);
     try {
       const res = await adapter.runAiGuardianScan();
@@ -191,13 +244,17 @@ export function AiAgentsView({
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
             <Sparkles className="h-3.5 w-3.5" />
-            Multi-Agent AI Swarm — Zero Manual Reply & Self-Healing
+            {caps.editionName} · {caps.limits.maxAiAgents} dari 9 Agen AI Terbuka
           </div>
           <h2 className="mt-2 text-xl font-bold text-white md:text-2xl">
-            Pusat Kendali Multi-Agent AI Otonom
+            Pusat Kendali Multi-Agent AI
           </h2>
           <p className="mt-1 text-sm text-slate-300">
-            5 agen AI bekerja serentak 24/7: membalas chat otomatis, membuat order POS &amp; QR invoice, memperbarui pengetahuan dari ERP, menangkal fraud, dan memperbaiki anomali secara mandiri.
+            {editionId === "starter"
+              ? "Lisensi Starter UMKM membuka 2 Agen AI Dasar (CS & Order Extractor) dalam mode Terbantu 1-Klik. 7 Agen AI lanjutan, Auto-Reply 24/7 Zero-Click & Fraud Sentinel dapat dibuka kapan saja dengan License Key."
+              : editionId === "pro"
+                ? "Lisensi Growth Pro membuka 6 Agen AI + Auto-Reply 24/7 Zero-Click & SEO AI. 3 Agen Enterprise (Fraud Sentinel, Self-Healing Guardian & Voice Companion 24/7) dapat dibuka dengan License Key Enterprise."
+                : "Seluruh 9 Agen AI Otonom, Fraud Sentinel, Self-Healing Guardian & Asisten Suara 24/7 aktif penuh sesuai Lisensi Anda."}
           </p>
         </div>
 
@@ -206,19 +263,43 @@ export function AiAgentsView({
             type="button"
             onClick={handleSyncKnowledge}
             disabled={syncingKb}
-            className="inline-flex items-center gap-2 rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-4 py-2.5 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-500/25 disabled:opacity-50"
+            className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50 ${
+              knowledgeLearnerUnlocked
+                ? "border-cyan-500/40 bg-cyan-500/15 text-cyan-200 hover:bg-cyan-500/25"
+                : "border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+            }`}
           >
-            <DatabaseZap className={`h-4 w-4 ${syncingKb ? "animate-spin" : ""}`} />
-            {syncingKb ? "Belajar Otonom..." : "Perbarui Pengetahuan AI"}
+            {knowledgeLearnerUnlocked ? (
+              <DatabaseZap className={`h-4 w-4 ${syncingKb ? "animate-spin" : ""}`} />
+            ) : (
+              <Lock className="h-4 w-4" />
+            )}
+            {syncingKb
+              ? "Belajar Otonom..."
+              : knowledgeLearnerUnlocked
+                ? "Perbarui Pengetahuan AI"
+                : "Auto-Learn AI (Growth Pro)"}
           </button>
           <button
             type="button"
             onClick={handleGuardianScan}
             disabled={scanning}
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50 ${
+              caps.fraudSentinelHealing
+                ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
+                : "border border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+            }`}
           >
-            <ShieldCheck className={`h-4 w-4 ${scanning ? "animate-pulse" : ""}`} />
-            {scanning ? "Memindai..." : "Pindai Fraud & Self-Healing"}
+            {caps.fraudSentinelHealing ? (
+              <ShieldCheck className={`h-4 w-4 ${scanning ? "animate-pulse" : ""}`} />
+            ) : (
+              <Lock className="h-4 w-4" />
+            )}
+            {scanning
+              ? "Memindai..."
+              : caps.fraudSentinelHealing
+                ? "Pindai Fraud & Self-Healing"
+                : "Fraud & Self-Healing (Enterprise)"}
           </button>
         </div>
       </div>
@@ -226,12 +307,14 @@ export function AiAgentsView({
       {/* KPI Strip */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
-          <div className="text-xs text-slate-400">Agen AI Aktif</div>
+          <div className="text-xs text-slate-400">Agen AI Terbuka ({caps.editionName})</div>
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-emerald-400">
-              {activeAgentsCount}/{agents.length}
+              {activeAgentsCount}/{caps.limits.maxAiAgents}
             </span>
-            <span className="text-xs text-emerald-300">24/7 Otonom</span>
+            <span className="text-xs text-emerald-300">
+              {caps.zeroClickAiAutoReply ? "24/7 Otonom" : "Mode Terbantu"}
+            </span>
           </div>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4">
@@ -285,78 +368,141 @@ export function AiAgentsView({
       {/* Tab 1: Multi-Agent Fleet */}
       {tab === "agents" && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {agents.map((agent) => (
-            <div
-              key={agent.agentKey}
-              className={`flex flex-col justify-between rounded-2xl border p-5 transition ${
-                agent.enabled
-                  ? "border-emerald-500/30 bg-slate-900/90"
-                  : "border-slate-800 bg-slate-950/80 opacity-75"
-              }`}
-            >
-              <div>
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-800 px-2.5 py-0.5 text-[11px] font-medium text-cyan-300">
-                      <Bot className="h-3 w-3" />
-                      {ROLE_LABELS[agent.agentKey] ?? agent.agentKey}
-                    </span>
-                    <h3 className="mt-2 text-base font-bold text-white">{agent.name}</h3>
+          {agents.map((agent) => {
+            const unlocked = isAiAgentAllowedInEdition(editionId, agent.agentKey);
+            const reqEd = getEditionById(getRequiredEditionForAiAgent(agent.agentKey));
+            return (
+              <div
+                key={agent.agentKey}
+                className={`flex flex-col justify-between rounded-2xl border p-5 transition ${
+                  !unlocked
+                    ? "border-amber-500/25 bg-slate-950/70 opacity-80"
+                    : agent.enabled
+                      ? "border-emerald-500/30 bg-slate-900/90"
+                      : "border-slate-800 bg-slate-950/80 opacity-75"
+                }`}
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-800 px-2.5 py-0.5 text-[11px] font-medium text-cyan-300">
+                        <Bot className="h-3 w-3" />
+                        {ROLE_LABELS[agent.agentKey] ?? agent.agentKey}
+                      </span>
+                      <h3 className="mt-2 text-base font-bold text-white">{agent.name}</h3>
+                    </div>
+                    {unlocked ? (
+                      <button
+                        type="button"
+                        disabled={busyAgent === agent.agentKey}
+                        onClick={() => toggleAgent(agent)}
+                        className={`rounded-full px-3 py-1 text-xs font-bold transition ${
+                          agent.enabled
+                            ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40 hover:bg-emerald-500/30"
+                            : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                        }`}
+                      >
+                        {agent.enabled ? "AKTIF" : "NONAKTIF"}
+                      </button>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-[10px] font-bold text-amber-300">
+                        <Lock className="h-3 w-3" /> {reqEd.name}
+                      </span>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    disabled={busyAgent === agent.agentKey}
-                    onClick={() => toggleAgent(agent)}
-                    className={`rounded-full px-3 py-1 text-xs font-bold transition ${
-                      agent.enabled
-                        ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40 hover:bg-emerald-500/30"
-                        : "bg-slate-800 text-slate-400 hover:bg-slate-700"
-                    }`}
-                  >
-                    {agent.enabled ? "AKTIF" : "NONAKTIF"}
-                  </button>
-                </div>
 
-                <p className="mt-2 text-xs leading-relaxed text-slate-300">{agent.roleDescription}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-300">{agent.roleDescription}</p>
 
-                <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-950/80 p-3 text-xs">
-                  <div>
-                    <div className="text-slate-500">Ambang Kepercayaan</div>
-                    <div className="font-bold text-emerald-300">
-                      {Math.round(agent.confidenceThreshold * 100)}%
+                  <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-950/80 p-3 text-xs">
+                    <div>
+                      <div className="text-slate-500">Ambang Kepercayaan</div>
+                      <div className="font-bold text-emerald-300">
+                        {Math.round(agent.confidenceThreshold * 100)}%
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-500">Aksi Terlaksana</div>
+                      <div className="font-bold text-white">{agent.actionsExecuted}</div>
                     </div>
                   </div>
-                  <div>
-                    <div className="text-slate-500">Aksi Terlaksana</div>
-                    <div className="font-bold text-white">{agent.actionsExecuted}</div>
-                  </div>
+                </div>
+
+                <div className="mt-4 flex items-center justify-between border-t border-slate-800 pt-3">
+                  {unlocked ? (
+                    <>
+                      <span className="text-[11px] text-slate-400">
+                        Mode:{" "}
+                        <strong className="text-slate-200">
+                          {caps.zeroClickAiAutoReply && agent.autoReplyEnabled
+                            ? "Otonom 24/7"
+                            : "Terbantu 1-Klik"}
+                        </strong>
+                      </span>
+                      <button
+                        type="button"
+                        disabled={busyAgent === agent.agentKey}
+                        onClick={() => toggleAutonomy(agent)}
+                        className={`inline-flex items-center gap-1 text-xs font-semibold ${
+                          caps.zeroClickAiAutoReply
+                            ? "text-cyan-400 hover:text-cyan-300"
+                            : "text-amber-300 hover:text-amber-200"
+                        }`}
+                      >
+                        {!caps.zeroClickAiAutoReply && <Lock className="h-3 w-3" />}
+                        {caps.zeroClickAiAutoReply ? "Ubah Mode" : "Otonom (Pro)"}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-[11px] text-amber-300/90">
+                        Pratinjau — butuh lisensi {reqEd.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onUpgradeRequest?.()}
+                        className="inline-flex items-center gap-1 rounded-lg bg-amber-500/20 px-2.5 py-1 text-[11px] font-bold text-amber-200 hover:bg-amber-500/30"
+                      >
+                        <KeyRound className="h-3 w-3" /> Buka Lisensi
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
-
-              <div className="mt-4 flex items-center justify-between border-t border-slate-800 pt-3">
-                <span className="text-[11px] text-slate-400">
-                  Mode:{" "}
-                  <strong className="text-slate-200">
-                    {agent.autoReplyEnabled ? "Otonom Penuh" : "Terbantu"}
-                  </strong>
-                </span>
-                <button
-                  type="button"
-                  disabled={busyAgent === agent.agentKey}
-                  onClick={() => toggleAutonomy(agent)}
-                  className="text-xs font-semibold text-cyan-400 hover:text-cyan-300"
-                >
-                  Ubah Mode
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
       {/* Tab 2: Autonomous Knowledge Base */}
       {tab === "knowledge" && (
-        <div className="grid gap-5 lg:grid-cols-3">
+        <div className="space-y-4">
+          {!knowledgeLearnerUnlocked && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/40 bg-amber-950/35 p-4 text-xs">
+              <div className="flex items-start gap-2.5">
+                <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                <div>
+                  <div className="font-bold text-amber-200">
+                    Mode Pratinjau — Basis Pengetahuan Generatif AI (Khusus Growth Pro+)
+                  </div>
+                  <p className="mt-0.5 text-slate-300">
+                    Lisensi Starter UMKM Anda mencakup 2 Agen AI Dasar (CS &amp; Order Extractor). Aktifkan License Key <strong>Growth Pro</strong> untuk membuka Pembelajar Pengetahuan Otonom &amp; 6 Agen AI.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onUpgradeRequest?.()}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 font-extrabold text-slate-950 hover:bg-emerald-400"
+              >
+                <KeyRound className="h-3.5 w-3.5" /> Aktivasi License Key
+              </button>
+            </div>
+          )}
+        <div
+          className={`grid gap-5 lg:grid-cols-3 ${
+            !knowledgeLearnerUnlocked ? "pointer-events-none select-none opacity-70" : ""
+          }`}
+        >
           <form
             onSubmit={handleAddKnowledge}
             className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/80 p-5 lg:col-span-1"
@@ -470,11 +616,35 @@ export function AiAgentsView({
             ))}
           </div>
         </div>
+        </div>
       )}
 
       {/* Tab 3: Fraud Sentinel & Self-Healing */}
       {tab === "security" && (
         <div className="space-y-3">
+          {!caps.fraudSentinelHealing && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/40 bg-amber-950/35 p-4 text-xs">
+              <div className="flex items-start gap-2.5">
+                <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                <div>
+                  <div className="font-bold text-amber-200">
+                    Mode Pratinjau — Fraud Sentinel &amp; Self-Healing Guardian (Khusus Enterprise AI Suite)
+                  </div>
+                  <p className="mt-0.5 text-slate-300">
+                    Lisensi aktif Anda ({caps.editionName}) dapat melihat tampilan log keamanan ini, namun pemindaian aktif anti-injection &amp; self-healing membutuhkan License Key Enterprise AI Suite atau Sovereign Corporate.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onUpgradeRequest?.()}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 font-extrabold text-slate-950 hover:bg-emerald-400"
+              >
+                <KeyRound className="h-3.5 w-3.5" /> Aktivasi License Key
+              </button>
+            </div>
+          )}
+          <div className={!caps.fraudSentinelHealing ? "pointer-events-none select-none space-y-3 opacity-70" : "space-y-3"}>
           {incidents.length === 0 ? (
             <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-8 text-center">
               <ShieldCheck className="mx-auto h-10 w-10 text-emerald-400" />
@@ -544,6 +714,7 @@ export function AiAgentsView({
               </div>
             ))
           )}
+          </div>
         </div>
       )}
     </div>

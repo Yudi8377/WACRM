@@ -11,7 +11,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
-  Zap,
 } from "lucide-react";
 import { formatIdr, type AppEditionId } from "@/lib/crm-types";
 import {
@@ -30,12 +29,21 @@ import {
 
 interface EditionsViewProps {
   tenantId: string;
+  accountEmail?: string | null;
   workspaceName: string;
   currentEditionId: AppEditionId;
+  activeLicense?: StoredClientLicense | null;
+  isTrialActive?: boolean;
+  trialEndsAt?: string | null;
+  usedTrialEditions?: Array<"pro" | "enterprise">;
   activeAgentsCount: number;
+  membersCount?: number;
+  contactsCount?: number;
   productsCount: number;
   channelsCount: number;
-  onSelectEdition: (editionId: AppEditionId) => void;
+  onSelectEdition: (editionId: AppEditionId, verifiedLicenseKey?: string, maxSeats?: number) => void;
+  onStartTrial?: (editionId: "pro" | "enterprise") => void;
+  onClearLicense?: () => void;
   onToast?: (msg: string, tone?: "success" | "error") => void;
 }
 
@@ -47,18 +55,29 @@ function formatLimit(val: number, unit: string): string {
 
 export function EditionsView({
   tenantId,
+  accountEmail,
   workspaceName,
   currentEditionId,
+  activeLicense,
+  isTrialActive = false,
+  trialEndsAt = null,
+  usedTrialEditions = [],
   activeAgentsCount,
+  membersCount = 1,
+  contactsCount = 0,
   productsCount,
   channelsCount,
   onSelectEdition,
+  onStartTrial,
+  onClearLicense,
   onToast,
 }: EditionsViewProps) {
   const activeEdition = getEditionById(currentEditionId);
   const [storedLicense, setStoredLicense] = useState<StoredClientLicense | null>(() =>
-    loadStoredClientLicense(tenantId),
+    activeLicense !== undefined ? activeLicense : loadStoredClientLicense(tenantId, accountEmail),
   );
+  const effectiveStoredLicense =
+    activeLicense !== undefined ? activeLicense : storedLicense;
   const [licenseInput, setLicenseInput] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [verifyFeedback, setVerifyFeedback] = useState<{
@@ -98,15 +117,16 @@ export function EditionsView({
         expiresAt: data.expiresAt,
         activatedAt: new Date().toISOString().slice(0, 10),
         licensedTo: workspaceName,
+        licensedEmail: accountEmail?.trim().toLowerCase() ?? null,
         verificationMode: data.verificationMode,
         status: "active",
       };
 
-      saveStoredClientLicense(tenantId, nextLicense);
+      saveStoredClientLicense(tenantId, nextLicense, accountEmail);
       setStoredLicense(nextLicense);
-      onSelectEdition(data.editionId);
+      onSelectEdition(data.editionId, data.normalizedKey, data.maxSeats);
       setLicenseInput("");
-      const okMsg = `Lisensi resmi ${data.editionName} aktif (${data.isUnlimitedSeats ? "Unlimited" : data.maxSeats} kursi, berlaku hingga ${data.expiresAt}).`;
+      const okMsg = `Lisensi resmi ${data.editionName} aktif (${data.isUnlimitedSeats ? "Unlimited" : data.maxSeats} kursi, berlaku hingga ${data.expiresAt}). Seluruh menu & kuota langsung disesuaikan dengan Matriks Fitur!`;
       setVerifyFeedback({ ok: true, message: okMsg });
       onToast?.(okMsg, "success");
     } catch (err) {
@@ -119,10 +139,11 @@ export function EditionsView({
   }
 
   function handleClearLicense() {
-    clearStoredClientLicense(tenantId);
+    clearStoredClientLicense(tenantId, accountEmail);
     setStoredLicense(null);
     setVerifyFeedback(null);
-    onToast?.("Ikatan License Key lokal dilepas dari browser ini.");
+    onClearLicense?.();
+    onToast?.("Ikatan License Key dilepas — workspace kembali ke batasan Starter UMKM.");
   }
 
   return (
@@ -172,21 +193,21 @@ export function EditionsView({
             </p>
           </div>
 
-          {storedLicense ? (
+          {effectiveStoredLicense ? (
             <div className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-500/40 bg-emerald-950/40 px-4 py-3 text-xs">
               <div>
                 <div className="text-[10px] uppercase tracking-wider text-emerald-300">
-                  Lisensi Terverifikasi ({storedLicense.verificationMode === "publisher_live" ? "Live API" : "Signed Offline"})
+                  Lisensi Terverifikasi ({effectiveStoredLicense.verificationMode === "publisher_live" ? "Live API" : "Signed Offline"})
                 </div>
                 <div className="font-mono text-sm font-bold text-white">
-                  {storedLicense.licenseKey}
+                  {effectiveStoredLicense.licenseKey}
                 </div>
                 <div className="text-[11px] text-slate-300">
                   Kuota:{" "}
                   <strong>
-                    {storedLicense.maxSeats >= 9999 ? "Unlimited" : `${storedLicense.maxSeats} kursi`}
+                    {effectiveStoredLicense.maxSeats >= 9999 ? "Unlimited" : `${effectiveStoredLicense.maxSeats} kursi`}
                   </strong>{" "}
-                  · Berlaku s/d <strong>{storedLicense.expiresAt}</strong>
+                  · Berlaku s/d <strong>{effectiveStoredLicense.expiresAt}</strong>
                 </div>
               </div>
               <button
@@ -200,13 +221,14 @@ export function EditionsView({
           ) : (
             <div className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-xs text-slate-400">
               <Building2 className="h-4 w-4 text-indigo-400" />
-              Belum ada License Key terikat (Mode Evaluasi / Lokal)
+              Belum ada License Key terikat (Mode Starter UMKM Gratis Selamanya)
             </div>
           )}
         </div>
 
         <form onSubmit={handleActivateLicense} className="mt-4 flex flex-col gap-2.5 sm:flex-row">
           <input
+            id="wacrm-license-key-input"
             type="text"
             value={licenseInput}
             onChange={(e) => setLicenseInput(e.target.value.toUpperCase())}
@@ -241,20 +263,45 @@ export function EditionsView({
         )}
       </div>
 
-      {/* Live Quota Meters */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {/* Live Quota Meters (100% synced with active License Key & Edition Matrix) */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-xs">
           <div className="flex justify-between text-slate-400">
-            <span>Agen AI Aktif</span>
+            <span>Kursi Agen CS / Tim</span>
             <strong className="text-white">
-              {activeAgentsCount} / {activeEdition.limits.maxAiAgents}
+              {membersCount} /{" "}
+              {effectiveStoredLicense?.editionId === currentEditionId && effectiveStoredLicense.maxSeats > 0
+                ? effectiveStoredLicense.maxSeats >= 9999
+                  ? "∞"
+                  : effectiveStoredLicense.maxSeats
+                : activeEdition.limits.maxAgents < 0
+                  ? "∞"
+                  : activeEdition.limits.maxAgents}
             </strong>
           </div>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
             <div
-              className="h-full rounded-full bg-emerald-500"
+              className="h-full rounded-full bg-amber-400"
               style={{
-                width: `${Math.min(100, Math.round((activeAgentsCount / activeEdition.limits.maxAiAgents) * 100))}%`,
+                width: `${
+                  activeEdition.limits.maxAgents < 0 ||
+                  (effectiveStoredLicense?.editionId === currentEditionId && effectiveStoredLicense.maxSeats >= 9999)
+                    ? 25
+                    : Math.min(
+                        100,
+                        Math.round(
+                          (membersCount /
+                            Math.max(
+                              1,
+                              effectiveStoredLicense?.editionId === currentEditionId &&
+                                effectiveStoredLicense.maxSeats > 0
+                                ? effectiveStoredLicense.maxSeats
+                                : activeEdition.limits.maxAgents,
+                            )) *
+                            100,
+                        ),
+                      )
+                }%`,
               }}
             />
           </div>
@@ -262,14 +309,45 @@ export function EditionsView({
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-xs">
           <div className="flex justify-between text-slate-400">
-            <span>Produk &amp; Kapasitas Kontak</span>
+            <span>Agen AI Terbuka</span>
             <strong className="text-white">
-              {productsCount} SKU · {formatLimit(activeEdition.limits.maxContacts, "kontak")}
+              {Math.min(activeAgentsCount, activeEdition.limits.maxAiAgents)} /{" "}
+              {activeEdition.limits.maxAiAgents}
             </strong>
           </div>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
-            <div className="h-full w-1/3 rounded-full bg-cyan-500" />
+            <div
+              className="h-full rounded-full bg-emerald-500"
+              style={{
+                width: `${Math.min(100, Math.round((Math.min(activeAgentsCount, activeEdition.limits.maxAiAgents) / activeEdition.limits.maxAiAgents) * 100))}%`,
+              }}
+            />
           </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-xs">
+          <div className="flex justify-between text-slate-400">
+            <span>Kapasitas Kontak CRM</span>
+            <strong className="text-white">
+              {contactsCount.toLocaleString("id-ID")} /{" "}
+              {activeEdition.limits.maxContacts < 0
+                ? "∞"
+                : activeEdition.limits.maxContacts.toLocaleString("id-ID")}
+            </strong>
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
+            <div
+              className="h-full rounded-full bg-cyan-500"
+              style={{
+                width: `${
+                  activeEdition.limits.maxContacts < 0
+                    ? 20
+                    : Math.min(100, Math.max(4, Math.round((contactsCount / activeEdition.limits.maxContacts) * 100)))
+                }%`,
+              }}
+            />
+          </div>
+          <div className="mt-1 text-[10px] text-slate-500">{productsCount} SKU produk terdaftar</div>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 text-xs">
@@ -286,7 +364,7 @@ export function EditionsView({
               style={{
                 width: `${
                   activeEdition.limits.maxChannels < 0
-                    ? 40
+                    ? 35
                     : Math.min(100, Math.round((channelsCount / activeEdition.limits.maxChannels) * 100))
                 }%`,
               }}
@@ -362,29 +440,114 @@ export function EditionsView({
                 </ul>
               </div>
 
-              <button
-                type="button"
-                disabled={isCurrent}
-                onClick={() => onSelectEdition(ed.id)}
-                className={`mt-5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
-                  isCurrent
-                    ? "cursor-default bg-emerald-500/20 text-emerald-300"
-                    : "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
-                }`}
-              >
-                {isCurrent ? (
-                  <>
-                    <ShieldCheck className="h-4 w-4" /> Sedang Digunakan
-                  </>
-                ) : (
-                  <>
-                    <Zap className="h-4 w-4" /> Pratinjau {ed.name}
-                  </>
-                )}
-              </button>
+              <div className="mt-5 space-y-2">
+                {(ed.id === "pro" || ed.id === "enterprise") &&
+                  !isCurrent &&
+                  !effectiveStoredLicense &&
+                  onStartTrial &&
+                  !usedTrialEditions.includes(ed.id) && (
+                    <button
+                      type="button"
+                      onClick={() => onStartTrial(ed.id as "pro" | "enterprise")}
+                      className={`inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-extrabold transition ${
+                        ed.id === "enterprise"
+                          ? "bg-violet-500 text-white hover:bg-violet-400"
+                          : "bg-cyan-500 text-slate-950 hover:bg-cyan-400"
+                      }`}
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Mulai Trial Gratis {ed.trialDays} Hari
+                    </button>
+                  )}
+
+                <button
+                  type="button"
+                  disabled={isCurrent}
+                  onClick={() => {
+                    if (ed.id === "starter" || effectiveStoredLicense?.editionId === ed.id) {
+                      onSelectEdition(
+                        ed.id,
+                        effectiveStoredLicense?.editionId === ed.id
+                          ? effectiveStoredLicense.licenseKey
+                          : undefined,
+                        effectiveStoredLicense?.editionId === ed.id
+                          ? effectiveStoredLicense.maxSeats
+                          : undefined,
+                      );
+                    } else {
+                      const inputEl = document.getElementById("wacrm-license-key-input");
+                      inputEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      inputEl?.focus();
+                      onToast?.(
+                        `Edisi ${ed.name} memerlukan License Key resmi dari WACRM Publisher HQ. Masukkan kunci lisensi Anda di kolom aktivasi di atas.`,
+                        "error",
+                      );
+                    }
+                  }}
+                  className={`inline-flex w-full items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold transition ${
+                    isCurrent
+                      ? "cursor-default border border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
+                      : ed.id === "starter" || effectiveStoredLicense?.editionId === ed.id
+                        ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
+                        : "border border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+                  }`}
+                >
+                  {isCurrent ? (
+                    <>
+                      <Check className="h-3.5 w-3.5" />{" "}
+                      {isTrialActive && trialEndsAt
+                        ? `Trial Aktif (s.d. ${new Date(trialEndsAt).toLocaleDateString("id-ID")})`
+                        : ed.id === "starter"
+                          ? "Aktif · Gratis Selamanya"
+                          : "Edisi Aktif Saat Ini"}
+                    </>
+                  ) : ed.id === "starter" ? (
+                    "Kembali ke Starter UMKM (Gratis Selamanya)"
+                  ) : effectiveStoredLicense?.editionId === ed.id ? (
+                    `Aktifkan Lisensi ${ed.name}`
+                  ) : (
+                    <>
+                      <Lock className="h-3.5 w-3.5" /> Aktivasi License Key {ed.name}
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           );
         })}
+      </div>
+
+      {/* Commercial Positioning Ladder across 4 Editions */}
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/90 p-5">
+        <h3 className="text-sm font-bold text-white">
+          Strategi Diferensiasi 4 Edisi WACRM (Panduan Upgrade Bisnis)
+        </h3>
+        <div className="mt-3 grid gap-3 text-xs md:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-950/90 p-3.5">
+            <div className="font-extrabold text-slate-200">1. Starter UMKM · Gratis</div>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Mulai digitalisasi toko tanpa biaya: Inbox 2 kanal, POS COD, Label QR, Master Data, &amp; ERP Gudang dasar (2 agen, 300 kontak).
+            </p>
+          </div>
+          <div className="rounded-xl border border-cyan-500/30 bg-cyan-950/20 p-3.5">
+            <div className="font-extrabold text-cyan-200">2. Growth Pro · Scale-Up</div>
+            <p className="mt-1 text-[11px] text-slate-300">
+              Membuka <strong>AI Auto-Reply Zero-Click 24/7</strong>, <strong>Scanner QR Kamera FIFO Anti-Basi</strong>, <strong>SEO Growth AI 6 Kanal</strong>, &amp; <strong>100% White-Label</strong>.
+            </p>
+          </div>
+          <div className="rounded-xl border border-violet-500/35 bg-violet-950/20 p-3.5">
+            <div className="font-extrabold text-violet-200">3. Enterprise AI Suite · Otomasi 9 Agen</div>
+            <p className="mt-1 text-[11px] text-slate-300">
+              Membuka <strong>9 Agen AI Penuh</strong>, <strong>Otak AI Self-Learning Saran Produk &amp; Auto-Bundling</strong>, <strong>Suara AI 24/7</strong>, <strong>Fraud Sentinel</strong>, &amp; <strong>Pembukuan Operasional</strong> (Jurnal Harian, Kas &amp; Laba Rugi Ringkas).
+            </p>
+          </div>
+          <div className="rounded-xl border border-amber-500/40 bg-amber-950/25 p-3.5">
+            <div className="font-extrabold text-amber-200">4. Sovereign Corporate · Full OS</div>
+            <p className="mt-1 text-[11px] text-amber-100/90">
+              Eksklusif membuka <strong>Strategi Marketing Enterprise 5-Agen AI</strong>, <strong>Akuntansi PSAK &amp; SPT Pajak Lengkap</strong>, <strong>ERP Korporat (ABC/MRP/BOM/Opname)</strong>, <strong>HRD &amp; Payroll PPh 21 TER</strong>, <strong>Forecast 90h</strong>, &amp; <strong>Dedicated DB</strong>.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Feature Comparison Matrix */}
@@ -397,8 +560,18 @@ export function EditionsView({
             <tr className="border-b border-slate-800 text-slate-400">
               <th className="py-2.5 pr-4">Kapabilitas &amp; Modul</th>
               {APP_EDITIONS.map((ed) => (
-                <th key={ed.id} className="px-3 py-2.5 text-center font-bold text-white">
+                <th
+                  key={ed.id}
+                  className={`px-3 py-2.5 text-center font-bold ${
+                    ed.id === currentEditionId
+                      ? "rounded-t-lg bg-emerald-500/15 text-emerald-300"
+                      : "text-white"
+                  }`}
+                >
                   {ed.name}
+                  {ed.id === currentEditionId && (
+                    <div className="text-[10px] font-semibold text-emerald-400">Aktif</div>
+                  )}
                 </th>
               ))}
             </tr>
@@ -411,8 +584,14 @@ export function EditionsView({
                 </td>
                 {APP_EDITIONS.map((ed) => {
                   const has = ed.features.includes(feat);
+                  const isCurrentCol = ed.id === currentEditionId;
                   return (
-                    <td key={ed.id} className="px-3 py-2.5 text-center">
+                    <td
+                      key={ed.id}
+                      className={`px-3 py-2.5 text-center ${
+                        isCurrentCol ? "bg-emerald-500/10" : ""
+                      }`}
+                    >
                       {has ? (
                         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
                           <Check className="h-3.5 w-3.5" />

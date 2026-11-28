@@ -28,6 +28,7 @@ describe("Neon PostgreSQL migrations and RLS integrity", () => {
       "db/migrations/0007_crm_workspace_features.sql",
       "db/migrations/0008_ai_pos_erp_accounting.sql",
       "db/migrations/0009_editions_seo_superadmin.sql",
+      "db/migrations/0010_telemetry_feedback_economics.sql",
     ];
 
     for (const file of files) {
@@ -70,6 +71,9 @@ describe("Neon PostgreSQL migrations and RLS integrity", () => {
         "accounting_entries",
         "tenant_subscriptions",
         "seo_campaigns",
+        "publisher_usage_events",
+        "publisher_user_feedback",
+        "publisher_market_signals",
         "webhook_events",
         "webhook_inbox",
         "audit_logs",

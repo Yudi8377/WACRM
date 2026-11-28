@@ -3,7 +3,13 @@ import { z } from "zod";
 import { auth, isAuthConfigured } from "@/lib/auth";
 import { withTenantContext, TenantAccessError } from "@/lib/tenant-context";
 import { encryptConnectorToken } from "@/lib/connectors/token-crypto";
-import { MetaWhatsAppValidationError, validateMetaWhatsAppConnection, type ValidatedMetaWhatsAppConnection } from "@/lib/connectors/meta-whatsapp-validation";
+import {
+  MetaWhatsAppValidationError,
+  validateMetaWhatsAppConnection,
+  validateMetaWhatsAppDirectToken,
+  type ValidatedMetaWhatsAppConnection,
+} from "@/lib/connectors/meta-whatsapp-validation";
+import { cleanMetaAccessToken } from "@/lib/meta-whatsapp-helper";
 import { isUuid } from "@/lib/connectors/whatsapp-policy";
 
 export const runtime = "nodejs";
@@ -48,14 +54,26 @@ export async function POST(request: Request, context: { params: Promise<{ tenant
     return Response.json({ error: "Workspace belum dapat diverifikasi." }, { status: 500 });
   }
 
+  const cleanedToken = cleanMetaAccessToken(parsed.data.accessToken);
+
   let validated: ValidatedMetaWhatsAppConnection;
   try {
-    validated = await validateMetaWhatsAppConnection({
-      appId: process.env.META_APP_ID,
-      appSecret: process.env.META_APP_SECRET,
-      graphApiVersion: process.env.META_GRAPH_API_VERSION,
-      ...parsed.data,
-    });
+    const hasServerMetaApp = Boolean(process.env.META_APP_ID && process.env.META_APP_SECRET);
+    validated = hasServerMetaApp
+      ? await validateMetaWhatsAppConnection({
+          appId: process.env.META_APP_ID,
+          appSecret: process.env.META_APP_SECRET,
+          graphApiVersion: process.env.META_GRAPH_API_VERSION || "v22.0",
+          wabaId: parsed.data.wabaId,
+          phoneNumberId: parsed.data.phoneNumberId,
+          accessToken: cleanedToken,
+        })
+      : await validateMetaWhatsAppDirectToken({
+          graphApiVersion: process.env.META_GRAPH_API_VERSION || "v22.0",
+          wabaId: parsed.data.wabaId,
+          phoneNumberId: parsed.data.phoneNumberId,
+          accessToken: cleanedToken,
+        });
   } catch (error) {
     if (error instanceof MetaWhatsAppValidationError) {
       const status = error.code === "not_configured" ? 503
@@ -77,7 +95,7 @@ export async function POST(request: Request, context: { params: Promise<{ tenant
 
   let encrypted;
   try {
-    encrypted = encryptConnectorToken(parsed.data.accessToken);
+    encrypted = encryptConnectorToken(cleanedToken);
   } catch {
     return Response.json({ error: "Kunci enkripsi token belum dikonfigurasi dengan benar." }, { status: 503 });
   }

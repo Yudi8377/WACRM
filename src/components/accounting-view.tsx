@@ -7,7 +7,9 @@ import {
   BookOpenCheck,
   Cable,
   CheckCircle2,
+  Crown,
   Download,
+  Lock,
   ShieldCheck,
   Wifi,
   X,
@@ -27,14 +29,19 @@ import {
   printViaWifiHtml,
   renderFinancialReportPrintHtml,
 } from "@/lib/printer";
+import { SovereignAccountingSuite } from "@/components/sovereign-corporate-panels";
+import type { AppEditionId, ErpProductRecord } from "@/lib/crm-types";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 interface AccountingViewProps {
   adapter: WorkspaceAdapter;
+  editionId?: AppEditionId;
   storeProfile: StoreBusinessProfile;
   entries: AccountingEntryRecord[];
   orders: PosOrderRecord[];
+  products?: ErpProductRecord[];
   report: FinancialReportSummary;
+  onOpenEditions?: () => void;
   onRefresh: () => Promise<void>;
   onToast: (message: string, tone?: "ok" | "error") => void;
 }
@@ -43,13 +50,17 @@ const PAGE_SIZE = 8;
 
 export function AccountingView({
   adapter,
+  editionId = "starter",
   storeProfile,
   entries,
   orders,
+  products = [],
   report,
+  onOpenEditions,
   onRefresh,
   onToast,
 }: AccountingViewProps) {
+  const isSovereign = editionId === "sovereign";
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [selectedEntryNumber, setSelectedEntryNumber] = useState<string | null>(null);
@@ -153,32 +164,93 @@ export function AccountingView({
         <div>
           <div className="inline-flex items-center gap-2 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-300">
             <BookOpenCheck className="h-3.5 w-3.5" />
-            {storeProfile.businessName} · Akuntansi Double-Entry Otomatis
+            {storeProfile.businessName} ·{" "}
+            {isSovereign
+              ? "Akuntansi Korporat PSAK & SPT Pajak (Sovereign)"
+              : "Pembukuan & Akuntansi Operasional (Enterprise AI Suite)"}
           </div>
           <h2 className="mt-2 text-xl font-bold text-white">
-            Pembukuan, Laba Rugi &amp; Neraca Usaha
+            {isSovereign
+              ? "Pembukuan Double-Entry, Neraca PSAK, SPT Pajak & Rasio Korporat"
+              : "Pembukuan Operasional, Buku Kas & Laba Rugi Ringkas"}
           </h2>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={handleExportCsv} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800">
-            <Download className="h-3.5 w-3.5" /> CSV
+          <button
+            type="button"
+            onClick={() => {
+              if (!isSovereign) {
+                onToast(
+                  "Ekspor Buku Besar CSV Audit & Excel Multi-Sheet eksklusif di Sovereign Corporate.",
+                  "error",
+                );
+                return;
+              }
+              handleExportCsv();
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold ${
+              isSovereign
+                ? "border-slate-700 bg-slate-950 text-slate-200 hover:bg-slate-800"
+                : "border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+            }`}
+          >
+            {isSovereign ? <Download className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+            CSV Audit {!isSovereign && "(Sovereign)"}
           </button>
           <button type="button" onClick={handlePrintBluetooth} className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/25">
             <Bluetooth className="h-3.5 w-3.5" /> Cetak BT
           </button>
           <button type="button" onClick={handlePrintWifi} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-emerald-400">
-            <Wifi className="h-3.5 w-3.5" /> Cetak Laporan WiFi
+            <Wifi className="h-3.5 w-3.5" /> Cetak Ringkas WiFi
           </button>
           <button
             type="button"
-            onClick={() => setShowPrintStudio((v) => !v)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-500/40 bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-500/25"
+            onClick={() => {
+              if (!isSovereign) {
+                onToast(
+                  "Studio Cetak A4/F4 Audit PSAK (USB/LaserJet/EDC) eksklusif di Sovereign Corporate.",
+                  "error",
+                );
+                return;
+              }
+              setShowPrintStudio((v) => !v);
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold ${
+              isSovereign
+                ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-200 hover:bg-indigo-500/25"
+                : "border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+            }`}
           >
-            <Cable className="h-3.5 w-3.5" /> Cetak USB / Inkjet / EDC
+            {isSovereign ? <Cable className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+            Cetak PSAK A4/USB {!isSovereign && "(Sovereign)"}
           </button>
         </div>
       </div>
+
+      {/* Commercial Tier Differentiation Banner for Enterprise AI Suite */}
+      {!isSovereign && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/35 bg-amber-500/10 p-4 text-xs text-amber-100">
+          <div className="max-w-3xl space-y-1">
+            <div className="flex items-center gap-1.5 font-extrabold text-amber-200">
+              <Crown className="h-4 w-4 text-amber-400" />
+              Diferensiasi Edisi: Pembukuan Operasional (Enterprise) vs Akuntansi Korporat PSAK (Sovereign)
+            </div>
+            <p className="text-[11px] leading-relaxed text-amber-100/90">
+              Pada <strong>Enterprise AI Suite</strong>, Anda mendapatkan pembukuan harian (Laba Rugi Ringkas, Buku Kas, Piutang COD, &amp; Jurnal Beban/Pendapatan Operasional). Untuk <strong>Jurnal Ekuitas/Modal</strong>, <strong>Ekspor CSV/Excel Audit</strong>, <strong>Cetak PSAK A4/F4</strong>, <strong>Neraca Balance Sheet</strong>, <strong>COA 4-Digit</strong>, <strong>SPT Pajak PPN/PPh Badan/21/23/4(2)</strong> &amp; <strong>Rasio Keuangan</strong>, silakan upgrade ke <strong>Sovereign Corporate</strong>.
+            </p>
+          </div>
+          {onOpenEditions && (
+            <button
+              type="button"
+              onClick={onOpenEditions}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 px-3.5 py-2 text-xs font-extrabold text-slate-950 hover:bg-amber-300"
+            >
+              <Crown className="h-3.5 w-3.5" /> Lihat Paket Sovereign
+            </button>
+          )}
+        </div>
+      )}
 
       {showPrintStudio && (
         <UniversalPrintPanel
@@ -287,6 +359,18 @@ export function AccountingView({
       <PaginationBar dark page={page} pageSize={PAGE_SIZE} totalItems={filtered.length} onPageChange={setPage} />
 
       {/* Sub-Module Modal: Tambah Jurnal Baru */}
+      {/* Sovereign Corporate Deep Accounting Suite & Desktop Report Exporter */}
+      <SovereignAccountingSuite
+        editionId={editionId}
+        businessName={storeProfile.businessName}
+        summary={report}
+        orders={orders}
+        products={products}
+        entries={entries}
+        onOpenEditions={onOpenEditions}
+        onToast={onToast}
+      />
+
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
           <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white shadow-2xl">
@@ -302,7 +386,9 @@ export function AccountingView({
                 <select value={kind} onChange={(e) => setKind(e.target.value as "expense" | "income" | "capital")} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-white">
                   <option value="expense">Beban Operasional (Debit Beban / Kredit Kas)</option>
                   <option value="income">Pendapatan Lain (Debit Kas / Kredit Pendapatan)</option>
-                  <option value="capital">Setoran Modal (Debit Kas / Kredit Ekuitas)</option>
+                  <option value="capital" disabled={!isSovereign}>
+                    Setoran Modal / Ekuitas (Debit Kas / Kredit Ekuitas) {!isSovereign ? "🔒 Eksklusif Sovereign" : ""}
+                  </option>
                 </select>
               </label>
               <label className="block">

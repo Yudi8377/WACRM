@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { verifySignedLicenseKey } from "@/lib/license-crypto";
+import { checkRateLimit, getClientIpFromRequest } from "@/lib/security";
 
 const VerifySchema = z.object({
   licenseKey: z.string().min(10).max(80),
@@ -10,6 +11,21 @@ const VerifySchema = z.object({
 
 export async function POST(request: Request) {
   try {
+    const ip = getClientIpFromRequest(request);
+    const rate = checkRateLimit(`license_verify:${ip}`, 20, 10 * 60 * 1000);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        {
+          valid: false,
+          error: `Terlalu banyak percobaan verifikasi lisensi. Coba lagi dalam ${rate.retryAfterSeconds} detik.`,
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(rate.retryAfterSeconds) },
+        },
+      );
+    }
+
     const body = await request.json().catch(() => null);
     const parsed = VerifySchema.safeParse(body);
     if (!parsed.success) {

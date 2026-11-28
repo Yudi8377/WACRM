@@ -36,5 +36,13 @@ export default async function WorkspacePage({ params }: { params: Promise<{ tena
     throw error;
   }
 
-  return <WorkspaceClient tenantId={tenantId} name={workspace.name} slug={workspace.slug} role={workspace.role} />;
+  return (
+    <WorkspaceClient
+      tenantId={tenantId}
+      name={workspace.name}
+      slug={workspace.slug}
+      role={workspace.role}
+      accountEmail={session.user.email}
+    />
+  );
 }

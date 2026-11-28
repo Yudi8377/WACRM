@@ -15,8 +15,8 @@ android {
         applicationId = "com.wacrm.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 5
-        versionName = "4.0.0"
+        versionCode = 8
+        versionName = "5.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WACRM_BASE_URL", "\"$wacrmBaseUrl\"")
@@ -58,6 +58,7 @@ dependencies {
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("androidx.webkit:webkit:1.12.1")
+    implementation("androidx.biometric:biometric:1.1.0")
     implementation("com.google.android.material:material:1.12.0")
 
     testImplementation("junit:junit:4.13.2")

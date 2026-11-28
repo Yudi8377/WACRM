@@ -30,7 +30,13 @@ const nextConfig: NextConfig = {
     ];
 
     if (isProd) {
-      baseHeaders.push({ key: "X-Frame-Options", value: "DENY" });
+      baseHeaders.push(
+        { key: "X-Frame-Options", value: "DENY" },
+        {
+          key: "Strict-Transport-Security",
+          value: "max-age=31536000; includeSubDomains; preload",
+        },
+      );
     }
 
     return [

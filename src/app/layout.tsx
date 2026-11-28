@@ -12,7 +12,7 @@ const APP_BASE_URL = (
 export const metadata: Metadata = {
   metadataBase: new URL(APP_BASE_URL),
   title: {
-    default: "WACRM v4.0 — Omnichannel CRM, POS, ERP, Akuntansi & SEO Multi-Agent AI",
+    default: "WACRM v5.0 — Omnichannel CRM, POS COD, ERP Gudang, QR FIFO, Akuntansi & Multi-Agent AI",
     template: "%s | WACRM AI Business Suite",
   },
   description:

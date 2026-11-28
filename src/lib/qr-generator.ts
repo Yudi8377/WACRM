@@ -7,6 +7,9 @@ export interface InvoiceQrInput {
   totalAmount: number;
   paymentMethod: string;
   workspaceName?: string;
+  shippingCourier?: string;
+  shippingService?: string;
+  shippingCost?: number;
 }
 
 function simpleChecksum(input: string): string {
@@ -28,7 +31,11 @@ export function buildInvoiceQrPayload(input: InvoiceQrInput): string {
   const customer = input.customerName.replace(/\|/g, " ").slice(0, 60);
   const address = (input.shippingAddress || "-").replace(/\|/g, " ").slice(0, 100);
   const amount = Math.round(Math.max(0, input.totalAmount));
-  const core = `WACRM-QRIS|${input.invoiceNumber}|${merchant}|${customer}|${address}|IDR:${amount}|${input.paymentMethod.toUpperCase()}`;
+  const courierTag =
+    input.shippingService || input.shippingCourier
+      ? `|SHIP:${(input.shippingService || input.shippingCourier || "").replace(/\|/g, " ").slice(0, 32)}`
+      : "";
+  const core = `WACRM-QRIS|${input.invoiceNumber}|${merchant}|${customer}|${address}|IDR:${amount}|${input.paymentMethod.toUpperCase()}${courierTag}`;
   const sig = simpleChecksum(core);
   return `${core}|CHK:${sig}`;
 }

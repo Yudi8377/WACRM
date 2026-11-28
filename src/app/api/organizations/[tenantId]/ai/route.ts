@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   buildDefaultAiAgents,
   buildDoubleEntryForOrder,
+  buildProactiveFollowUpReply,
   orchestrateMultiAgentReply,
   runSystemGuardianAudit,
 } from "@/lib/ai-agents";
@@ -17,6 +18,8 @@ import {
   type ChannelType,
   type ErpProductRecord,
   type KnowledgeSourceType,
+  type MasterCourierRecord,
+  type MessageRecord,
   type OrderStatus,
   type PaymentMethod,
   type PaymentStatus,
@@ -220,11 +223,52 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ te
   }
 }
 
+const courierTierSchema = z.object({
+  id: z.string().max(80),
+  serviceName: z.string().max(120),
+  ratePerKg: z.number().min(0),
+  minWeightKg: z.number().min(0),
+  maxWeightKg: z.number().min(0),
+  estimatedDays: z.string().max(80),
+  coverageZones: z.string().max(300),
+  codSupported: z.boolean(),
+  codFeePct: z.number().min(0).max(20),
+  insuranceAvailable: z.boolean(),
+  insuranceFeePct: z.number().min(0).max(10),
+});
+
+const courierPayloadSchema = z.object({
+  id: z.string().max(80),
+  code: z.string().max(40),
+  name: z.string().max(120),
+  serviceType: z.string().max(160),
+  baseRate: z.number().min(0),
+  estimatedDays: z.string().max(80),
+  isActive: z.boolean(),
+  serviceTiers: z.array(courierTierSchema).optional(),
+  pickupSchedule: z.string().max(200).optional(),
+  cutoffTime: z.string().max(120).optional(),
+  codSupported: z.boolean().optional(),
+  insuranceSupported: z.boolean().optional(),
+  packagingNotes: z.string().max(400).optional(),
+  claimPolicy: z.string().max(400).optional(),
+  trackingUrlTemplate: z.string().max(300).optional(),
+  maxDimensionsCm: z.string().max(120).optional(),
+  aiShippingNotes: z.string().max(1000).optional(),
+});
+
 const actionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("auto_reply"),
     conversationId: z.string().uuid(),
     simulatedInboundText: z.string().trim().min(1).max(4000).optional(),
+    couriers: z.array(courierPayloadSchema).max(30).optional(),
+  }),
+  z.object({
+    action: z.literal("proactive_followup"),
+    conversationId: z.string().uuid(),
+    attemptNumber: z.union([z.literal(1), z.literal(2)]).default(1),
+    couriers: z.array(courierPayloadSchema).max(30).optional(),
   }),
   z.object({
     action: z.literal("learn_sync"),
@@ -497,6 +541,122 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
         const conv = convRes.rows[0];
         if (!conv) return { error: "Percakapan tidak ditemukan." };
 
+        if (body.action === "proactive_followup") {
+          const convRes = await client.query(
+            `SELECT c.*, ct.display_name, ct.phone_e164, o.name AS workspace_name
+               FROM conversations c
+               JOIN contacts ct ON ct.id = c.contact_id
+               JOIN organizations o ON o.id = c.tenant_id
+              WHERE c.tenant_id = $1::uuid AND c.id = $2::uuid`,
+            [tenantId, body.conversationId],
+          );
+          const convRow = convRes.rows[0];
+          if (!convRow) return { error: "Percakapan tidak ditemukan." };
+
+          const [msgsRes, productsRes] = await Promise.all([
+            client.query(
+              `SELECT * FROM messages WHERE tenant_id = $1::uuid AND conversation_id = $2::uuid ORDER BY created_at ASC LIMIT 40`,
+              [tenantId, body.conversationId],
+            ),
+            client.query(`SELECT * FROM erp_products WHERE tenant_id = $1::uuid AND is_active = true`, [tenantId]),
+          ]);
+
+          const recentMessages: MessageRecord[] = msgsRes.rows.map((m) => ({
+            id: String(m.id),
+            conversationId: String(m.conversation_id),
+            channel: String(m.channel) as ChannelType,
+            externalMessageId: m.external_message_id ? String(m.external_message_id) : null,
+            direction: String(m.direction) as MessageRecord["direction"],
+            messageType: String(m.message_type ?? "text"),
+            bodyText: String(m.body_text ?? ""),
+            deliveryStatus: String(m.delivery_status ?? "sent") as MessageRecord["deliveryStatus"],
+            providerTimestamp: new Date(String(m.provider_timestamp ?? m.created_at)).toISOString(),
+            createdAt: new Date(String(m.created_at)).toISOString(),
+          }));
+
+          const products: ErpProductRecord[] = productsRes.rows.map((r) => ({
+            id: String(r.id),
+            sku: String(r.sku),
+            name: String(r.name),
+            category: String(r.category),
+            description: String(r.description ?? ""),
+            unit: String(r.unit ?? "pcs"),
+            unitPrice: Number(r.unit_price),
+            costPrice: Number(r.cost_price),
+            stockQty: Number(r.stock_qty),
+            minStock: Number(r.min_stock),
+            isActive: Boolean(r.is_active),
+            createdAt: new Date(String(r.created_at)).toISOString(),
+            updatedAt: new Date(String(r.updated_at)).toISOString(),
+          }));
+
+          const lastInboundTopic =
+            [...recentMessages].reverse().find((m) => m.direction === "inbound")?.bodyText ?? null;
+          const followUpPlan = buildProactiveFollowUpReply({
+            customerName: String(convRow.display_name ?? "Pelanggan"),
+            workspaceName: String(convRow.workspace_name ?? "WACRM"),
+            attemptNumber: body.attemptNumber,
+            lastTopic: lastInboundTopic,
+            products,
+            couriers: body.couriers as MasterCourierRecord[] | undefined,
+          });
+
+          const msgRes = await client.query(
+            `INSERT INTO messages (tenant_id, conversation_id, channel, direction, message_type, body_text, delivery_status, provider_timestamp)
+             VALUES ($1::uuid, $2::uuid, $3, 'outbound', 'text', $4, 'sent', now())
+             RETURNING *`,
+            [tenantId, body.conversationId, convRow.channel, followUpPlan.replyText],
+          );
+
+          const tag = body.attemptNumber === 1 ? "ai-followup-1" : "ai-cross-sell";
+          await client.query(
+            `UPDATE conversations
+                SET last_message_at = now(),
+                    tags = CASE WHEN $3 = ANY(tags) THEN tags ELSE array_append(tags, $3) END,
+                    updated_at = now()
+              WHERE tenant_id = $1::uuid AND id = $2::uuid`,
+            [tenantId, body.conversationId, tag],
+          );
+
+          await client.query(
+            `UPDATE ai_agents SET actions_executed = actions_executed + 1, last_run_at = now()
+              WHERE tenant_id = $1::uuid AND agent_key IN ('cs_sales', 'followup_hunter')`,
+            [tenantId],
+          );
+
+          const m = msgRes.rows[0];
+          return {
+            replyMessage: {
+              id: String(m.id),
+              conversationId: String(m.conversation_id),
+              channel: String(m.channel) as ChannelType,
+              externalMessageId: null,
+              direction: "outbound" as const,
+              messageType: "text",
+              bodyText: String(m.body_text),
+              deliveryStatus: "sent" as const,
+              providerTimestamp: new Date(String(m.provider_timestamp)).toISOString(),
+              createdAt: new Date(String(m.created_at)).toISOString(),
+            },
+            agentTrace: followUpPlan.agentTrace,
+            confidence: 0.94,
+            fraudRiskScore: 0,
+            detectedIntent:
+              followUpPlan.stage === "abandon_cross_sell"
+                ? "checkout_abandon_cross_sell"
+                : "proactive_followup",
+            escalationRequired: false,
+            escalationReason: null,
+            followUpStage: followUpPlan.stage,
+            suggestedProducts: followUpPlan.suggestedProducts,
+            createdOrder: null,
+            updatedOrder: null,
+            learnedKnowledge: null,
+            securityIncident: null,
+          };
+        }
+
+        // Default action: auto_reply
         let incomingText = body.simulatedInboundText ?? "";
         if (incomingText) {
           await client.query(
@@ -514,12 +674,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
           incomingText = String(lastIn.rows[0]?.body_text ?? "Halo, minta info katalog produk dan harga terbaru.");
         }
 
-        const [productsRes, knowledgeRes, agentsRes] = await Promise.all([
+        const [productsRes, knowledgeRes, agentsRes, existingOrdRes] = await Promise.all([
           client.query(`SELECT * FROM erp_products WHERE tenant_id = $1::uuid AND is_active = true`, [tenantId]),
           client.query(`SELECT * FROM ai_knowledge_items WHERE tenant_id = $1::uuid ORDER BY updated_at DESC LIMIT 80`, [
             tenantId,
           ]),
           client.query(`SELECT * FROM ai_agents WHERE tenant_id = $1::uuid`, [tenantId]),
+          client.query(
+            `SELECT * FROM pos_orders
+              WHERE tenant_id = $1::uuid AND conversation_id = $2::uuid
+                AND order_status NOT IN ('cancelled', 'delivered')
+              ORDER BY created_at DESC LIMIT 1`,
+            [tenantId, body.conversationId],
+          ),
         ]);
 
         const products: ErpProductRecord[] = productsRes.rows.map((r) => ({
@@ -540,6 +707,48 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
         const knowledgeItems = knowledgeRes.rows.map(mapKnowledge);
         const agents = agentsRes.rows.map(mapAgent);
 
+        let existingConversationOrder: PosOrderRecord | null = null;
+        if (existingOrdRes.rows[0]) {
+          const er = existingOrdRes.rows[0];
+          const ordItemsRes = await client.query(
+            `SELECT * FROM pos_order_items WHERE tenant_id = $1::uuid AND order_id = $2::uuid`,
+            [tenantId, String(er.id)],
+          );
+          existingConversationOrder = {
+            id: String(er.id),
+            invoiceNumber: String(er.invoice_number),
+            conversationId: er.conversation_id ? String(er.conversation_id) : null,
+            contactId: er.contact_id ? String(er.contact_id) : null,
+            customerName: String(er.customer_name),
+            customerPhone: er.customer_phone ? String(er.customer_phone) : null,
+            shippingAddress: String(er.shipping_address ?? ""),
+            channel: String(er.channel) as ChannelType,
+            subtotal: Number(er.subtotal),
+            discountAmount: Number(er.discount_amount),
+            taxAmount: Number(er.tax_amount),
+            totalAmount: Number(er.total_amount),
+            paymentMethod: String(er.payment_method) as PaymentMethod,
+            paymentStatus: String(er.payment_status) as PaymentStatus,
+            orderStatus: String(er.order_status) as OrderStatus,
+            qrPayload: String(er.qr_payload),
+            aiGenerated: Boolean(er.ai_generated),
+            fraudRiskScore: Number(er.fraud_risk_score ?? 0),
+            notes: er.notes ? String(er.notes) : null,
+            items: ordItemsRes.rows.map((ir) => ({
+              id: String(ir.id),
+              productId: ir.product_id ? String(ir.product_id) : null,
+              sku: String(ir.sku),
+              productName: String(ir.product_name),
+              quantity: Number(ir.quantity),
+              unitPrice: Number(ir.unit_price),
+              costPrice: Number(ir.cost_price),
+              lineTotal: Number(ir.line_total),
+            })),
+            createdAt: new Date(String(er.created_at)).toISOString(),
+            updatedAt: new Date(String(er.updated_at)).toISOString(),
+          };
+        }
+
         const plan = orchestrateMultiAgentReply({
           incomingMessage: incomingText,
           customerName: String(conv.display_name ?? "Pelanggan"),
@@ -548,9 +757,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
           products,
           knowledgeItems,
           agents,
+          couriers: body.couriers as MasterCourierRecord[] | undefined,
+          existingConversationOrder,
         });
 
         let createdOrder: PosOrderRecord | null = null;
+        let updatedOrder: PosOrderRecord | null = null;
         if (plan.extractedOrder && !plan.fraud.blocked) {
           const draft = plan.extractedOrder;
           const invoiceNumber = generateInvoiceNumber("INV");
@@ -643,6 +855,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
             qrPayload,
             aiGenerated: true,
             fraudRiskScore: plan.fraud.riskScore,
+            shippingCourier: draft.shippingCourier,
+            shippingService: draft.shippingService,
+            shippingCost: draft.shippingCost,
+            shippingWeightKg: draft.shippingWeightKg,
             notes: "Dibuat otomatis oleh Multi-Agent AI dari chat pelanggan",
             items: orderItems,
             createdAt: new Date(String(orderRow.created_at)).toISOString(),
@@ -670,10 +886,66 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
               ],
             );
           }
+        } else if (plan.shippingUpdate && existingConversationOrder && !plan.fraud.blocked) {
+          const upd = plan.shippingUpdate;
+          const nextCustomerName = upd.customerName ?? existingConversationOrder.customerName;
+          const nextCustomerPhone = upd.customerPhone ?? existingConversationOrder.customerPhone;
+          const nextPaymentMethod = upd.paymentMethod ?? existingConversationOrder.paymentMethod;
+          const nextTotal =
+            Math.max(0, existingConversationOrder.subtotal - existingConversationOrder.discountAmount) +
+            existingConversationOrder.taxAmount +
+            upd.shippingCost;
+          const nextQr = buildInvoiceQrPayload({
+            invoiceNumber: existingConversationOrder.invoiceNumber,
+            customerName: nextCustomerName,
+            shippingAddress: upd.shippingAddress,
+            totalAmount: nextTotal,
+            paymentMethod: nextPaymentMethod,
+            workspaceName: String(conv.workspace_name ?? "WACRM"),
+          });
+
+          await client.query(
+            `UPDATE pos_orders
+                SET customer_name = $3,
+                    customer_phone = $4,
+                    shipping_address = $5,
+                    payment_method = $6,
+                    total_amount = $7,
+                    qr_payload = $8,
+                    notes = $9,
+                    updated_at = now()
+              WHERE tenant_id = $1::uuid AND id = $2::uuid`,
+            [
+              tenantId,
+              existingConversationOrder.id,
+              nextCustomerName,
+              nextCustomerPhone,
+              upd.shippingAddress,
+              nextPaymentMethod,
+              nextTotal,
+              nextQr,
+              `Alamat & kurir (${upd.shippingService || upd.shippingCourier}) diperbarui otomatis oleh Multi-Agent AI`,
+            ],
+          );
+
+          updatedOrder = {
+            ...existingConversationOrder,
+            customerName: nextCustomerName,
+            customerPhone: nextCustomerPhone,
+            shippingAddress: upd.shippingAddress,
+            shippingCourier: upd.shippingCourier,
+            shippingService: upd.shippingService,
+            shippingCost: upd.shippingCost,
+            paymentMethod: nextPaymentMethod,
+            totalAmount: nextTotal,
+            qrPayload: nextQr,
+            updatedAt: new Date().toISOString(),
+          };
         }
 
-        const finalReplyText = createdOrder
-          ? `${plan.replyText}\n\nNo. Invoice: ${createdOrder.invoiceNumber}\nKode Verifikasi QR: ${createdOrder.qrPayload.slice(-12)}`
+        const activeOrder = createdOrder ?? updatedOrder;
+        const finalReplyText = activeOrder
+          ? `${plan.replyText}\n\nNo. Invoice: ${activeOrder.invoiceNumber}\nKode Verifikasi QR: ${activeOrder.qrPayload.slice(-12)}`
           : plan.replyText;
 
         const msgRes = await client.query(
@@ -776,7 +1048,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ ten
           detectedIntent: plan.detectedIntent,
           escalationRequired: plan.escalationRequired,
           escalationReason: plan.escalationReason,
+          followUpStage: plan.followUpStage,
+          suggestedProducts: plan.suggestedProducts,
           createdOrder,
+          updatedOrder,
           learnedKnowledge,
           securityIncident,
         };

@@ -1,3 +1,4 @@
+import { loadLocalMasterData, loadProductImages, saveProductImage } from "@/lib/store-profile";
 import type {
   AccountingEntryRecord,
   AiAgentKey,
@@ -120,6 +121,10 @@ export interface WorkspaceAdapter {
 
   // Multi-Agent AI Swarm
   runAiAutoReply(conversationId: string, simulatedInboundText?: string): Promise<AiAutoReplyExecutionResult>;
+  runAiProactiveFollowUp?(
+    conversationId: string,
+    attemptNumber: 1 | 2,
+  ): Promise<AiAutoReplyExecutionResult>;
   updateAiAgent(
     agentKey: AiAgentKey,
     patch: Partial<{
@@ -153,6 +158,8 @@ export interface WorkspaceAdapter {
     costPrice?: number;
     stockQty: number;
     minStock?: number;
+    imageUrl?: string | null;
+    weightGrams?: number;
   }): Promise<ErpProductRecord>;
   updateProduct(
     productId: string,
@@ -168,6 +175,8 @@ export interface WorkspaceAdapter {
       stockReason: string;
       minStock: number;
       isActive: boolean;
+      imageUrl: string | null;
+      weightGrams: number;
     }>,
   ): Promise<ErpProductRecord>;
   deleteProduct(productId: string): Promise<void>;
@@ -199,6 +208,9 @@ export interface WorkspaceAdapter {
     customerPhone?: string | null;
     shippingAddress: string;
     shippingCourier?: string | null;
+    shippingService?: string | null;
+    shippingCost?: number;
+    shippingWeightKg?: number;
     channel?: ChannelType;
     paymentMethod: PaymentMethod;
     paymentStatus?: PaymentStatus;
@@ -220,10 +232,14 @@ export interface WorkspaceAdapter {
   updatePosOrder(
     orderId: string,
     input: Partial<{
+      customerName: string;
+      customerPhone: string | null;
       paymentStatus: PaymentStatus;
       orderStatus: OrderStatus;
       shippingAddress: string;
       shippingCourier: string;
+      shippingService: string | null;
+      shippingCost: number;
       notes: string;
     }>,
   ): Promise<void>;
@@ -347,6 +363,11 @@ export function createApiWorkspaceAdapter(
       ]);
       workspaceName = wsRes.workspace.name;
       workspaceSlug = wsRes.workspace.slug;
+      const savedImages = loadProductImages(tenantId);
+      const enrichedProducts = erpRes.products.map((p) => ({
+        ...p,
+        imageUrl: p.imageUrl ?? savedImages[p.id] ?? savedImages[p.sku] ?? null,
+      }));
       return {
         workspaceName,
         workspaceSlug,
@@ -361,7 +382,7 @@ export function createApiWorkspaceAdapter(
         aiAgents: aiRes.agents,
         aiKnowledge: aiRes.knowledge,
         aiIncidents: aiRes.incidents,
-        products: erpRes.products,
+        products: enrichedProducts,
         suppliers: supRes.suppliers,
         stockMovements: erpRes.movements,
         orders: posRes.orders,
@@ -429,9 +450,17 @@ export function createApiWorkspaceAdapter(
       });
     },
     async runAiAutoReply(conversationId, simulatedInboundText) {
+      const couriers = loadLocalMasterData(tenantId).couriers;
       return apiJson<AiAutoReplyExecutionResult>(`${base}/ai`, {
         method: "POST",
-        body: JSON.stringify({ action: "auto_reply", conversationId, simulatedInboundText }),
+        body: JSON.stringify({ action: "auto_reply", conversationId, simulatedInboundText, couriers }),
+      });
+    },
+    async runAiProactiveFollowUp(conversationId, attemptNumber) {
+      const couriers = loadLocalMasterData(tenantId).couriers;
+      return apiJson<AiAutoReplyExecutionResult>(`${base}/ai`, {
+        method: "POST",
+        body: JSON.stringify({ action: "proactive_followup", conversationId, attemptNumber, couriers }),
       });
     },
     async updateAiAgent(agentKey, patch) {
@@ -473,18 +502,33 @@ export function createApiWorkspaceAdapter(
       });
     },
     async createProduct(input) {
+      const { imageUrl, ...rest } = input;
       const res = await apiJson<{ product: ErpProductRecord }>(`${base}/erp/products`, {
         method: "POST",
-        body: JSON.stringify(input),
+        body: JSON.stringify(rest),
       });
-      return res.product;
+      if (imageUrl !== undefined) {
+        saveProductImage(tenantId, res.product.id, imageUrl);
+      }
+      return {
+        ...res.product,
+        imageUrl: imageUrl ?? res.product.imageUrl ?? null,
+        weightGrams: input.weightGrams ?? res.product.weightGrams ?? 500,
+      };
     },
     async updateProduct(productId, input) {
+      const { imageUrl, ...rest } = input;
       const res = await apiJson<{ product: ErpProductRecord }>(`${base}/erp/products/${productId}`, {
         method: "PATCH",
-        body: JSON.stringify(input),
+        body: JSON.stringify(rest),
       });
-      return res.product;
+      if (imageUrl !== undefined) {
+        saveProductImage(tenantId, productId, imageUrl);
+      }
+      return {
+        ...res.product,
+        imageUrl: imageUrl !== undefined ? imageUrl : (res.product.imageUrl ?? loadProductImages(tenantId)[productId] ?? null),
+      };
     },
     async deleteProduct(productId) {
       await apiJson(`${base}/erp/products/${productId}`, { method: "DELETE" });

@@ -4,11 +4,15 @@ import {
   buildDefaultAiAgents,
   buildDoubleEntryForOrder,
   buildOrderRecord,
+  buildProactiveFollowUpReply,
   computeFinancialReport,
   evaluateFraudRisk,
   orchestrateMultiAgentReply,
   runSystemGuardianAudit,
 } from "@/lib/ai-agents";
+import { buildInvoiceQrPayload } from "@/lib/qr-generator";
+import { sanitizeImageUrl } from "@/lib/security";
+import { buildCourierKnowledgeSummary, loadLocalMasterData, loadProductImages, saveProductImage } from "@/lib/store-profile";
 import {
   formatIdr,
   type AccountingEntryRecord,
@@ -1110,6 +1114,7 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
     tenantId: "demo-workspace",
     async loadAll() {
       state = loadDemoState();
+      const savedImages = loadProductImages("demo-workspace");
       return {
         workspaceName: state.workspaceName,
         workspaceSlug: state.workspaceSlug,
@@ -1126,7 +1131,10 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
         aiAgents: [...state.aiAgents],
         aiKnowledge: [...state.aiKnowledge],
         aiIncidents: [...state.aiIncidents],
-        products: [...state.products],
+        products: state.products.map((p) => ({
+          ...p,
+          imageUrl: p.imageUrl ?? savedImages[p.id] ?? savedImages[p.sku] ?? null,
+        })),
         suppliers: [...state.suppliers],
         stockMovements: [...state.stockMovements],
         orders: [...state.orders],
@@ -1494,6 +1502,15 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
         incoming = lastInbound?.bodyText ?? "Halo, minta info katalog produk & stok terbaru.";
       }
 
+      const couriers = loadLocalMasterData("demo-workspace").couriers;
+      const existingConversationOrder =
+        state.orders.find(
+          (o) =>
+            o.conversationId === conversationId &&
+            o.orderStatus !== "cancelled" &&
+            o.orderStatus !== "completed",
+        ) ?? null;
+
       const plan = orchestrateMultiAgentReply({
         incomingMessage: incoming,
         customerName: conv.contactName,
@@ -1502,9 +1519,14 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
         products: state.products,
         knowledgeItems: state.aiKnowledge,
         agents: state.aiAgents,
+        couriers,
+        existingConversationOrder,
+        recentMessages: state.messages[conversationId] ?? [],
       });
 
       let createdOrder: PosOrderRecord | null = null;
+      let updatedOrder: PosOrderRecord | null = null;
+
       if (plan.extractedOrder && !plan.fraud.blocked) {
         const draft = plan.extractedOrder;
         createdOrder = buildOrderRecord({
@@ -1513,6 +1535,10 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
           customerName: draft.customerName,
           customerPhone: draft.customerPhone,
           shippingAddress: draft.shippingAddress,
+          shippingCourier: draft.shippingCourier,
+          shippingService: draft.shippingService,
+          shippingCost: draft.shippingCost,
+          shippingWeightKg: draft.shippingWeightKg,
           channel: conv.channel,
           paymentMethod: draft.paymentMethod,
           paymentStatus: "unpaid",
@@ -1562,10 +1588,87 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
           createdAt: now,
         }));
         state.accountingEntries = [...journal, ...state.accountingEntries];
+      } else if (plan.shippingUpdate && existingConversationOrder && !plan.fraud.blocked) {
+        const upd = plan.shippingUpdate;
+        const nextCustomerName = upd.customerName ?? existingConversationOrder.customerName;
+        const nextCustomerPhone = upd.customerPhone ?? existingConversationOrder.customerPhone;
+        const nextPaymentMethod = upd.paymentMethod ?? existingConversationOrder.paymentMethod;
+        const nextTotal =
+          Math.max(0, existingConversationOrder.subtotal - existingConversationOrder.discountAmount) +
+          existingConversationOrder.taxAmount +
+          upd.shippingCost;
+        const nextQr = buildInvoiceQrPayload({
+          invoiceNumber: existingConversationOrder.invoiceNumber,
+          customerName: nextCustomerName,
+          shippingAddress: upd.shippingAddress,
+          totalAmount: nextTotal,
+          paymentMethod: nextPaymentMethod,
+          workspaceName: state.workspaceName,
+        });
+
+        updatedOrder = {
+          ...existingConversationOrder,
+          customerName: nextCustomerName,
+          customerPhone: nextCustomerPhone,
+          shippingAddress: upd.shippingAddress,
+          shippingCourier: upd.shippingCourier,
+          shippingService: upd.shippingService,
+          shippingCost: upd.shippingCost,
+          paymentMethod: nextPaymentMethod,
+          totalAmount: nextTotal,
+          qrPayload: nextQr,
+          notes: "Alamat & ekspedisi diperbarui otomatis oleh Multi-Agent AI dari chat pelanggan",
+          updatedAt: now,
+        };
+        state.orders = state.orders.map((o) => (o.id === existingConversationOrder.id ? updatedOrder! : o));
+
+        // Keep double-entry journal balanced if shipping cost was added
+        const prevShip = existingConversationOrder.shippingCost ?? 0;
+        const shipDiff = upd.shippingCost - prevShip;
+        if (shipDiff > 0) {
+          const jeNum = `JE-SHP-${existingConversationOrder.invoiceNumber.replace(/^INV-/, "")}`;
+          state.accountingEntries = [
+            {
+              id: makeUuid(),
+              entryNumber: jeNum,
+              entryDate: now.slice(0, 10),
+              accountCode: existingConversationOrder.paymentStatus === "paid" ? "1100" : "1120",
+              accountName:
+                existingConversationOrder.paymentStatus === "paid"
+                  ? "Kas & Bank / QRIS"
+                  : "Piutang Usaha (AR)",
+              accountType: "asset",
+              debit: shipDiff,
+              credit: 0,
+              referenceType: "pos_order",
+              referenceId: existingConversationOrder.id,
+              description: `Penambahan Ongkir ${upd.shippingService || upd.shippingCourier} — ${existingConversationOrder.invoiceNumber}`,
+              aiVerified: true,
+              createdAt: now,
+            },
+            {
+              id: makeUuid(),
+              entryNumber: jeNum,
+              entryDate: now.slice(0, 10),
+              accountCode: "4200",
+              accountName: "Pendapatan Pengiriman / Ongkir",
+              accountType: "revenue",
+              debit: 0,
+              credit: shipDiff,
+              referenceType: "pos_order",
+              referenceId: existingConversationOrder.id,
+              description: `Ongkir ${upd.shippingService || upd.shippingCourier} — ${existingConversationOrder.invoiceNumber}`,
+              aiVerified: true,
+              createdAt: now,
+            },
+            ...state.accountingEntries,
+          ];
+        }
       }
 
-      const replyBody = createdOrder
-        ? `${plan.replyText}\n\nNo. Invoice: ${createdOrder.invoiceNumber}\nKode Verifikasi QR: ${createdOrder.qrPayload.slice(-12)}`
+      const activeOrder = createdOrder ?? updatedOrder;
+      const replyBody = activeOrder
+        ? `${plan.replyText}\n\nNo. Invoice: ${activeOrder.invoiceNumber}\nKode Verifikasi QR: ${activeOrder.qrPayload.slice(-12)}`
         : plan.replyText;
 
       const replyMessage: MessageRecord = {
@@ -1676,9 +1779,86 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
         detectedIntent: plan.detectedIntent,
         escalationRequired: plan.escalationRequired,
         escalationReason: plan.escalationReason,
+        followUpStage: plan.followUpStage,
+        suggestedProducts: plan.suggestedProducts,
         createdOrder,
+        updatedOrder,
         learnedKnowledge,
         securityIncident,
+      };
+    },
+
+    async runAiProactiveFollowUp(conversationId, attemptNumber) {
+      state = loadDemoState();
+      const conv = state.conversations.find((c) => c.id === conversationId);
+      if (!conv) throw new Error("Percakapan tidak ditemukan.");
+      const now = new Date().toISOString();
+      const msgs = state.messages[conversationId] ?? [];
+      const couriers = loadLocalMasterData("demo-workspace").couriers;
+
+      const lastInboundTopic =
+        [...msgs].reverse().find((m) => m.direction === "inbound")?.bodyText ?? null;
+      const plan = buildProactiveFollowUpReply({
+        customerName: conv.contactName,
+        workspaceName: state.workspaceName,
+        attemptNumber,
+        lastTopic: lastInboundTopic,
+        products: state.products,
+        couriers,
+      });
+
+      const replyMessage: MessageRecord = {
+        id: makeUuid(),
+        conversationId,
+        channel: conv.channel,
+        externalMessageId: null,
+        direction: "outbound",
+        messageType: "text",
+        bodyText: plan.replyText,
+        deliveryStatus: "delivered",
+        providerTimestamp: now,
+        createdAt: now,
+      };
+
+      const nextTag = attemptNumber === 1 ? "ai-followup-1" : "ai-cross-sell";
+      state.messages[conversationId] = [...msgs, replyMessage];
+      state.conversations = state.conversations.map((c) =>
+        c.id === conversationId
+          ? {
+              ...c,
+              lastMessageAt: now,
+              lastMessageText: plan.replyText.slice(0, 140),
+              tags: [...new Set([...c.tags, nextTag])],
+              updatedAt: now,
+            }
+          : c,
+      );
+      state.aiAgents = state.aiAgents.map((a) =>
+        a.agentKey === "cs_sales"
+          ? { ...a, actionsExecuted: a.actionsExecuted + 1, lastRunAt: now }
+          : a,
+      );
+      pushAudit("ai.proactive_followup.sent", "conversation", conversationId, {
+        attemptNumber,
+        stage: plan.stage,
+        suggestedCount: plan.suggestedProducts.length,
+      });
+      commit();
+
+      return {
+        replyMessage,
+        agentTrace: plan.agentTrace,
+        confidence: 0.94,
+        fraudRiskScore: 0,
+        detectedIntent: plan.stage === "abandon_cross_sell" ? "checkout_abandon_cross_sell" : "proactive_followup",
+        escalationRequired: false,
+        escalationReason: null,
+        followUpStage: plan.stage,
+        suggestedProducts: plan.suggestedProducts,
+        createdOrder: null,
+        updatedOrder: null,
+        learnedKnowledge: null,
+        securityIncident: null,
       };
     },
 
@@ -1713,20 +1893,40 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
           updatedAt: now,
         }));
       const totalRev = state.orders.reduce((s, o) => s + o.totalAmount, 0);
+      const activeCouriers = loadLocalMasterData("demo-workspace").couriers.filter((c) => c.isActive);
+      const courierKnowledgeItems: AiKnowledgeItemRecord[] =
+        activeCouriers.length > 0
+          ? [
+              {
+                id: makeUuid(),
+                sourceType: "sop",
+                sourceId: "master_couriers",
+                title: `Kebijakan & Tarif Kurir Ekspedisi (${activeCouriers.length} Kurir Aktif)`,
+                content: buildCourierKnowledgeSummary(activeCouriers),
+                tags: ["kurir", "ekspedisi", "ongkir", "cod", "pengiriman", "asuransi"],
+                confidence: 0.98,
+                usageCount: 1,
+                autoGenerated: true,
+                createdAt: now,
+                updatedAt: now,
+              },
+            ]
+          : [];
       const synthesis: AiKnowledgeItemRecord = {
         id: makeUuid(),
         sourceType: "autonomous_learning",
         sourceId: null,
         title: `Sintesis Otonom Bisnis (${new Date().toLocaleTimeString("id-ID")})`,
-        content: `AI berhasil mengonsolidasi ${state.products.length} produk ERP, ${state.conversations.length} percakapan aktif, dan ${state.orders.length} transaksi POS dengan omzet ${formatIdr(totalRev)}.`,
-        tags: ["autonomous_learning", "sinkronisasi", "erp"],
+        content: `AI berhasil mengonsolidasi ${state.products.length} produk ERP, ${activeCouriers.length} ekspedisi pengiriman aktif, ${state.conversations.length} percakapan aktif, dan ${state.orders.length} transaksi POS dengan omzet ${formatIdr(totalRev)}.`,
+        tags: ["autonomous_learning", "sinkronisasi", "erp", "kurir"],
         confidence: 0.95,
         usageCount: 1,
         autoGenerated: true,
         createdAt: now,
         updatedAt: now,
       };
-      state.aiKnowledge = [synthesis, ...productItems, ...nonProduct];
+      const cleanedNonProduct = nonProduct.filter((k) => k.sourceId !== "master_couriers");
+      state.aiKnowledge = [synthesis, ...courierKnowledgeItems, ...productItems, ...cleanedNonProduct];
       state.aiAgents = state.aiAgents.map((a) =>
         a.agentKey === "knowledge_learner" ? { ...a, actionsExecuted: a.actionsExecuted + 1, lastRunAt: now } : a,
       );
@@ -1804,6 +2004,7 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
     async createProduct(input) {
       state = loadDemoState();
       const now = new Date().toISOString();
+      const safeImg = sanitizeImageUrl(input.imageUrl);
       const prod: ErpProductRecord = {
         id: makeUuid(),
         sku: input.sku.trim().toUpperCase(),
@@ -1816,9 +2017,14 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
         stockQty: input.stockQty,
         minStock: input.minStock ?? 5,
         isActive: true,
+        imageUrl: safeImg,
+        weightGrams: input.weightGrams ?? 500,
         createdAt: now,
         updatedAt: now,
       };
+      if (safeImg) {
+        saveProductImage("demo-workspace", prod.id, safeImg);
+      }
       state.products = [prod, ...state.products];
       if (prod.stockQty > 0) {
         state.stockMovements.unshift({
@@ -1873,9 +2079,14 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
         ...(input.costPrice !== undefined ? { costPrice: input.costPrice } : {}),
         ...(input.minStock !== undefined ? { minStock: input.minStock } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        ...(input.imageUrl !== undefined ? { imageUrl: sanitizeImageUrl(input.imageUrl) } : {}),
+        ...(input.weightGrams !== undefined ? { weightGrams: input.weightGrams } : {}),
         stockQty: nextStock,
         updatedAt: now,
       };
+      if (input.imageUrl !== undefined) {
+        saveProductImage("demo-workspace", updated.id, updated.imageUrl ?? null);
+      }
       state.products[idx] = updated;
       const delta = nextStock - curr.stockQty;
       if (delta !== 0) {
@@ -1980,6 +2191,10 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
         customerName: input.customerName.trim(),
         customerPhone: input.customerPhone ?? null,
         shippingAddress: input.shippingAddress.trim(),
+        shippingCourier: input.shippingCourier ?? "JNE Express",
+        shippingService: input.shippingService ?? null,
+        shippingCost: input.shippingCost ?? 0,
+        shippingWeightKg: input.shippingWeightKg,
         channel: input.channel ?? "whatsapp",
         paymentMethod: input.paymentMethod,
         paymentStatus: fraud.blocked ? "flagged" : input.paymentStatus,
@@ -2000,10 +2215,6 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
         contactId: input.contactId ?? null,
         notes: input.notes ?? null,
       });
-
-      if (input.shippingCourier) {
-        order.shippingCourier = input.shippingCourier;
-      }
 
       state.orders = [order, ...state.orders];
       for (const item of order.items) {
@@ -2048,16 +2259,39 @@ export function createDemoWorkspaceAdapter(): WorkspaceAdapter {
       const prev = state.orders.find((o) => o.id === orderId);
       const justPaid = prev && prev.paymentStatus !== "paid" && input.paymentStatus === "paid";
 
-      state.orders = state.orders.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              ...input,
-              ...(justPaid ? { paidAt: now, orderStatus: o.orderStatus === "draft" ? "confirmed" : o.orderStatus } : {}),
-              updatedAt: now,
-            }
-          : o,
-      );
+      state.orders = state.orders.map((o) => {
+        if (o.id !== orderId) return o;
+        const nextCustomerName = input.customerName ?? o.customerName;
+        const nextShippingAddress = input.shippingAddress ?? o.shippingAddress;
+        const nextShippingCost = input.shippingCost !== undefined ? Math.max(0, input.shippingCost) : (o.shippingCost ?? 0);
+        const nextTotal =
+          Math.max(0, o.subtotal - o.discountAmount) + o.taxAmount + nextShippingCost;
+        const needsQrRefresh =
+          input.customerName !== undefined ||
+          input.shippingAddress !== undefined ||
+          input.shippingCost !== undefined;
+        const nextQr = needsQrRefresh
+          ? buildInvoiceQrPayload({
+              invoiceNumber: o.invoiceNumber,
+              customerName: nextCustomerName,
+              shippingAddress: nextShippingAddress,
+              totalAmount: nextTotal,
+              paymentMethod: o.paymentMethod,
+              workspaceName: state.workspaceName,
+            })
+          : o.qrPayload;
+        return {
+          ...o,
+          ...input,
+          customerName: nextCustomerName,
+          shippingAddress: nextShippingAddress,
+          shippingCost: nextShippingCost,
+          totalAmount: nextTotal,
+          qrPayload: nextQr,
+          ...(justPaid ? { paidAt: now, orderStatus: o.orderStatus === "draft" ? "confirmed" : o.orderStatus } : {}),
+          updatedAt: now,
+        };
+      });
 
       // Automatically settle Accounts Receivable -> Cash/Bank in Double-Entry Accounting when customer pays!
       if (justPaid && prev) {

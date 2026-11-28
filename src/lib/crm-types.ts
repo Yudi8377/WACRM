@@ -369,6 +369,22 @@ export interface SuperAdminOverview {
   opportunities: PlatformSwotInsight[];
 }
 
+export interface SocialChannelHandles {
+  whatsapp: string;
+  instagram: string;
+  facebook: string;
+  tiktok: string;
+  youtube: string;
+  websiteUrl?: string;
+}
+
+export interface SovereignCorporateConfig {
+  customDomain?: string;
+  brandedApkName?: string;
+  brandedPackageId?: string;
+  dedicatedDbRegion?: string;
+}
+
 export interface StoreBusinessProfile {
   businessName: string;
   businessTagline: string;
@@ -379,18 +395,46 @@ export interface StoreBusinessProfile {
   taxId: string;
   invoiceFooter: string;
   defaultCourier: string;
+  socialHandles?: SocialChannelHandles;
+  sovereignConfig?: SovereignCorporateConfig;
 }
 
 export interface MasterCategoryRecord {
   id: string;
   name: string;
   description: string;
+  /** Kode prefix 2–5 huruf untuk Auto-Generate SKU & QR Barang Datang (contoh: GRO, MNM, SKC) */
+  groupCode?: string;
+  /** Lokasi rak gudang FIFO default (contoh: Rak A-1, Rak Cold-1) */
+  defaultRack?: string;
+  /** Satuan default untuk kelompok barang ini (contoh: pcs, pack, karton, kg) */
+  defaultUnit?: string;
+  /** Masa simpan default dalam hari untuk perhitungan Expired Date FIFO (0 = non-expired) */
+  defaultShelfLifeDays?: number;
+  /** Wajib pelacakan kadaluwarsa FIFO / FEFO Anti-Basi */
+  requiresExpiry?: boolean;
+  /** Warna lencana kelompok barang (hex) */
+  badgeColorHex?: string;
 }
 
 export interface MasterUnitRecord {
   id: string;
   code: string;
   name: string;
+}
+
+export interface CourierServiceTier {
+  id: string;
+  serviceName: string;
+  ratePerKg: number;
+  minWeightKg: number;
+  maxWeightKg: number;
+  estimatedDays: string;
+  coverageZones: string;
+  codSupported: boolean;
+  codFeePct: number;
+  insuranceAvailable: boolean;
+  insuranceFeePct: number;
 }
 
 export interface MasterCourierRecord {
@@ -401,6 +445,16 @@ export interface MasterCourierRecord {
   baseRate: number;
   estimatedDays: string;
   isActive: boolean;
+  serviceTiers?: CourierServiceTier[];
+  pickupSchedule?: string;
+  cutoffTime?: string;
+  codSupported?: boolean;
+  insuranceSupported?: boolean;
+  packagingNotes?: string;
+  claimPolicy?: string;
+  trackingUrlTemplate?: string;
+  maxDimensionsCm?: string;
+  aiShippingNotes?: string;
 }
 
 export interface MasterPaymentAccountRecord {
@@ -485,6 +539,8 @@ export interface ErpProductRecord {
   stockQty: number;
   minStock: number;
   isActive: boolean;
+  imageUrl?: string | null;
+  weightGrams?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -549,6 +605,9 @@ export interface PosOrderRecord {
   aiGenerated: boolean;
   fraudRiskScore: number;
   shippingCourier?: string | null;
+  shippingService?: string | null;
+  shippingCost?: number;
+  shippingWeightKg?: number;
   trackingCode?: string | null;
   paidAt?: string | null;
   notes: string | null;
@@ -606,7 +665,10 @@ export interface AiAutoReplyExecutionResult {
   detectedIntent?: string;
   escalationRequired?: boolean;
   escalationReason?: string | null;
+  followUpStage?: "idle_nudge" | "abandon_cross_sell" | null;
+  suggestedProducts?: ErpProductRecord[];
   createdOrder: PosOrderRecord | null;
+  updatedOrder?: PosOrderRecord | null;
   learnedKnowledge: AiKnowledgeItemRecord | null;
   securityIncident: AiSecurityIncidentRecord | null;
 }

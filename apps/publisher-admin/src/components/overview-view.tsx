@@ -6,6 +6,7 @@ import {
   BookOpenCheck,
   CheckCircle2,
   Crown,
+  Download,
   KeyRound,
   Layers,
   ShieldCheck,
@@ -20,15 +21,20 @@ interface OverviewViewProps {
   state: PublisherEmsState;
   onNavigate: (tab: string) => void;
   onQuickCollectOverdue: (invoiceId: string) => void;
+  onSyncLive?: () => void;
+  syncingLive?: boolean;
 }
 
 export function OverviewView({
   state,
   onNavigate,
   onQuickCollectOverdue,
+  onSyncLive,
+  syncingLive,
 }: OverviewViewProps) {
   const m = computePublisherOverview(state);
   const overdueInvoices = state.invoices.filter((i) => i.status === "overdue" || i.status === "issued");
+  const liveSignups = state.tenants.filter((t) => t.syncedFromLive);
 
   // Compute Unit Economics per Tenant (MRR vs Cloud+AI Cost)
   const unitEcon = state.tenants.map((t) => {
@@ -67,6 +73,23 @@ export function OverviewView({
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <a
+            href="/downloads/WACRM-Publisher-HQ-v5.3-Windows-Offline-Installer.zip"
+            download
+            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 px-3.5 py-2.5 text-xs font-extrabold text-slate-950 hover:bg-amber-300"
+          >
+            <Download className="h-4 w-4" /> Unduh Offline Installer Windows
+          </a>
+          {onSyncLive && (
+            <button
+              type="button"
+              disabled={syncingLive}
+              onClick={onSyncLive}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/15 px-3.5 py-2.5 text-xs font-bold text-cyan-200 hover:bg-cyan-500/25 disabled:opacity-60"
+            >
+              {syncingLive ? "Menyinkronkan..." : `Tarik Pendaftar Live (${liveSignups.length})`}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onNavigate("licenses")}
@@ -82,6 +105,97 @@ export function OverviewView({
             <BookOpenCheck className="h-4 w-4 text-indigo-400" /> Laporan Keuangan PSAK
           </button>
         </div>
+      </div>
+
+      {/* NEW v4.5 Executive Intelligence Quick-Jump Cards */}
+      <div className="grid gap-3 md:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => onNavigate("usage_voc")}
+          className="group flex items-start justify-between gap-4 rounded-2xl border border-emerald-500/35 bg-gradient-to-br from-emerald-950/45 via-slate-900 to-slate-900 p-4 text-left transition hover:border-emerald-400"
+        >
+          <div>
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-300">
+              <Sparkles className="h-3 w-3" /> BARU · TELEMETRI &amp; VOICE OF CUSTOMER
+            </div>
+            <h3 className="mt-2 text-sm font-extrabold text-white">
+              Analitik Penggunaan, Pie Chart Daerah &amp; Komentar/Testimoni Berfoto
+            </h3>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
+              Pantau durasi pemakaian, fitur favorit, jam puncak WIB, distribusi daerah, pengelompokan komentar &amp; rekomendasi pengambilan sikap strategis Owner.
+            </p>
+          </div>
+          <ArrowUpRight className="h-5 w-5 shrink-0 text-emerald-400 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate("economics")}
+          className="group flex items-start justify-between gap-4 rounded-2xl border border-cyan-500/35 bg-gradient-to-br from-cyan-950/45 via-slate-900 to-indigo-950/40 p-4 text-left transition hover:border-cyan-400"
+        >
+          <div>
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/20 px-2.5 py-0.5 text-[10px] font-extrabold text-cyan-200">
+              <TrendingUp className="h-3 w-3" /> BARU · ECONOMIC INTELLIGENCE RADAR
+            </div>
+            <h3 className="mt-2 text-sm font-extrabold text-white">
+              Statistik Ekonomi UMKM, Tren Produk, Pasar &amp; Perilaku Pembeli
+            </h3>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
+              Indeks permintaan kategori produk, pergeseran QRIS vs COD, kanal penjualan terlaris, pertumbuhan regional Indonesia &amp; ekspor laporan CSV 1-klik.
+            </p>
+          </div>
+          <ArrowUpRight className="h-5 w-5 shrink-0 text-cyan-400 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+        </button>
+      </div>
+
+      {/* Live Registered Users Panel from wacrm-seven-dusky.vercel.app */}
+      <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-xs font-bold text-cyan-300">
+              Sinkronisasi Real-Time Pendaftar Baru (wacrm-seven-dusky.vercel.app — Web &amp; Android APK)
+            </div>
+            <p className="mt-0.5 text-[11px] text-slate-300">
+              Setiap pendaftar Starter UMKM Gratis Selamanya, Trial 14 Hari Growth Pro, maupun Trial 7 Hari Enterprise otomatis tersimpan di Neon PostgreSQL dan tampil real-time di Publisher HQ ini.
+            </p>
+          </div>
+          <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-bold text-cyan-200">
+            {liveSignups.length} Pendaftar Live Tersinkron
+          </span>
+        </div>
+
+        {liveSignups.length > 0 && (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {liveSignups.slice(0, 6).map((t) => (
+              <div
+                key={t.id}
+                className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-950/90 px-3 py-2.5 text-xs"
+              >
+                <div className="min-w-0">
+                  <div className="truncate font-bold text-white">{t.companyName}</div>
+                  <div className="truncate text-[11px] text-slate-400">
+                    {t.picName} · {t.picEmail}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1.5 text-[10px]">
+                    <span className="rounded bg-cyan-500/20 px-1.5 py-0.5 font-semibold text-cyan-300">
+                      {t.signupPlatform === "android" ? "Android APK" : "Web SaaS"}
+                    </span>
+                    <span className="rounded bg-amber-500/20 px-1.5 py-0.5 font-semibold text-amber-300">
+                      Trial 14 Hari UMKM
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate("licenses")}
+                  className="shrink-0 rounded-lg bg-emerald-500/20 px-2.5 py-1.5 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/30"
+                >
+                  Lisensi
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Top 6 SaaS & Financial KPIs */}

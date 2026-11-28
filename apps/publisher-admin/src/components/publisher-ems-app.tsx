@@ -7,10 +7,16 @@ import {
   Briefcase,
   Crown,
   Database,
+  Download,
+  ExternalLink,
   KeyRound,
   LayoutDashboard,
+  LineChart,
   Lock,
+  PieChart,
+  RefreshCw,
   Settings,
+  TrendingUp,
 } from "lucide-react";
 import {
   buildInitialPublisherState,
@@ -30,7 +36,14 @@ import type {
   PublisherCompanyProfile,
   PublisherEmsState,
 } from "@/lib/publisher-types";
+import type {
+  CommunityFeedbackItem,
+  PublisherIntelligenceReport,
+} from "@/lib/intelligence-types";
 import { OverviewView } from "./overview-view";
+import { UsageVocView } from "./usage-voc-view";
+import { EconomicRadarView } from "./economic-radar-view";
+import { ForecastingView } from "./forecasting-view";
 import { LicenseManagerView } from "./license-manager-view";
 import { MasterDataView } from "./master-data-view";
 import { PublisherCrmView } from "./publisher-crm-view";
@@ -40,6 +53,9 @@ import { PublisherSettingsView } from "./publisher-settings-view";
 
 type PublisherTabId =
   | "overview"
+  | "forecasting"
+  | "usage_voc"
+  | "economics"
   | "licenses"
   | "master"
   | "crm"
@@ -54,6 +70,9 @@ const NAV_ITEMS: Array<{
   icon: typeof LayoutDashboard;
 }> = [
   { id: "overview", label: "Executive Command", shortLabel: "Overview", icon: LayoutDashboard },
+  { id: "forecasting", label: "Analisa & Forecasting", shortLabel: "Forecast", icon: LineChart },
+  { id: "usage_voc", label: "Analitik & Suara User", shortLabel: "Analitik", icon: PieChart },
+  { id: "economics", label: "Ekonomi & Tren Pasar", shortLabel: "Ekonomi", icon: TrendingUp },
   { id: "licenses", label: "License Management", shortLabel: "Lisensi", icon: KeyRound },
   { id: "master", label: "Master Data", shortLabel: "Master", icon: Database },
   { id: "crm", label: "Publisher CRM B2B", shortLabel: "CRM B2B", icon: Briefcase },
@@ -66,13 +85,14 @@ export function PublisherEmsApp() {
   const [tab, setTab] = useState<PublisherTabId>("overview");
   const [state, setState] = useState<PublisherEmsState>(() => buildInitialPublisherState());
   const [hydrated, setHydrated] = useState(false);
+  const [syncingLive, setSyncingLive] = useState(false);
+  const [intelligence, setIntelligence] = useState<PublisherIntelligenceReport | null>(null);
+  const [loadingIntel, setLoadingIntel] = useState(false);
+  const [liveSyncInfo, setLiveSyncInfo] = useState<{ count: number; lastSyncedAt: string | null }>({
+    count: 0,
+    lastSyncedAt: null,
+  });
   const [toast, setToast] = useState<{ text: string; tone: "success" | "error" } | null>(null);
-
-  useEffect(() => {
-    const loaded = loadPublisherState();
-    setState(loaded);
-    setHydrated(true);
-  }, []);
 
   const showToast = useCallback((text: string, tone: "success" | "error" = "success") => {
     setToast({ text, tone });
@@ -86,6 +106,236 @@ export function PublisherEmsApp() {
       return next;
     });
   }, []);
+
+  const syncLiveRegistrations = useCallback(
+    async (silent = false) => {
+      setSyncingLive(true);
+      try {
+        const res = await fetch("/api/tenants", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const payload = (await res.json()) as {
+          ok?: boolean;
+          count?: number;
+          syncedAt?: string;
+          tenants?: Array<{
+            id: string;
+            fullName: string;
+            businessName: string;
+            email: string;
+            phone: string;
+            city: string;
+            platform: "web" | "android";
+            editionId: EditionId;
+            licenseStatus: "free_umkm" | "trial" | "active" | "grace_period" | "expired" | "suspended";
+            trialStartedAt: string;
+            trialEndsAt: string;
+            licenseKey: string | null;
+            createdAt: string;
+          }>;
+        };
+
+        const liveList = payload.tenants ?? [];
+        setLiveSyncInfo({
+          count: liveList.length,
+          lastSyncedAt: payload.syncedAt ?? new Date().toISOString(),
+        });
+
+        if (liveList.length > 0) {
+          updateState((prev) => {
+            const existingByEmail = new Map(
+              prev.tenants.map((t) => [t.picEmail.toLowerCase(), t]),
+            );
+            const mergedTenants = [...prev.tenants];
+            const mergedLicenses = [...prev.licenses];
+
+            for (const reg of liveList) {
+              const emailKey = reg.email.toLowerCase();
+              const existing = existingByEmail.get(emailKey);
+              const tenantId = existing?.id ?? reg.id;
+
+              const mappedTenant = {
+                id: tenantId,
+                code: existing?.code ?? `LIVE-${reg.id.slice(-4).toUpperCase()}`,
+                companyName: reg.businessName || reg.fullName,
+                npwp: existing?.npwp ?? "-",
+                industry: existing?.industry ?? (reg.platform === "android" ? "UMKM · Android APK" : "UMKM · Web SaaS"),
+                picName: reg.fullName,
+                picEmail: reg.email,
+                picWhatsapp: reg.phone || existing?.picWhatsapp || "-",
+                domain: existing?.domain ?? "wacrm-seven-dusky.vercel.app",
+                city: reg.city || "Indonesia",
+                resellerId: existing?.resellerId ?? null,
+                status:
+                  reg.licenseStatus === "active"
+                    ? ("active" as const)
+                    : ("onboarding" as const),
+                monthlyCloudCogsIdr: existing?.monthlyCloudCogsIdr ?? 35000,
+                monthlyAiTokenCostIdr: existing?.monthlyAiTokenCostIdr ?? 20000,
+                healthScore: existing?.healthScore ?? 92,
+                createdAt: reg.createdAt,
+                trialEndsAt: reg.trialEndsAt,
+                signupPlatform: reg.platform,
+                syncedFromLive: true,
+              };
+
+              if (existing) {
+                const idx = mergedTenants.findIndex((t) => t.id === existing.id);
+                if (idx >= 0) mergedTenants[idx] = mappedTenant;
+              } else {
+                mergedTenants.unshift(mappedTenant);
+              }
+
+              const hasLic = mergedLicenses.some((l) => l.tenantId === tenantId);
+              if (!hasLic) {
+                const defaultKey =
+                  reg.licenseKey ||
+                  (reg.editionId === "starter"
+                    ? `FREE-UMKM-FOREVER-${tenantId.slice(-4).toUpperCase()}`
+                    : reg.editionId === "pro"
+                      ? `TRIAL-PRO-14D-${tenantId.slice(-4).toUpperCase()}`
+                      : `TRIAL-ENT-7D-${tenantId.slice(-4).toUpperCase()}`);
+                const defaultNote =
+                  reg.editionId === "starter"
+                    ? `Starter UMKM Gratis Selamanya via ${reg.platform === "android" ? "Android APK" : "Web"}`
+                    : reg.editionId === "pro"
+                      ? `Trial 14 Hari Growth Pro via ${reg.platform === "android" ? "Android APK" : "Web"}`
+                      : `Trial 7 Hari Enterprise AI via ${reg.platform === "android" ? "Android APK" : "Web"}`;
+                mergedLicenses.unshift({
+                  id: `lic-live-${tenantId}`,
+                  licenseKey: defaultKey,
+                  tenantId,
+                  tenantName: mappedTenant.companyName,
+                  domain: "wacrm-seven-dusky.vercel.app",
+                  editionId: reg.editionId,
+                  status:
+                    reg.licenseStatus === "active"
+                      ? "active"
+                      : reg.licenseStatus === "free_umkm"
+                        ? "active"
+                        : "trial",
+                  billingCycle:
+                    reg.licenseStatus === "active"
+                      ? "monthly"
+                      : reg.licenseStatus === "free_umkm"
+                        ? "perpetual"
+                        : "trial",
+                  maxSeats: reg.editionId === "starter" ? 2 : reg.editionId === "pro" ? 10 : 50,
+                  usedSeats: 1,
+                  maxAiAgents: reg.editionId === "starter" ? 2 : 11,
+                  maxBranches: reg.editionId === "starter" ? 1 : reg.editionId === "pro" ? 5 : 25,
+                  monthlyValueIdr:
+                    reg.licenseStatus === "active"
+                      ? reg.editionId === "pro"
+                        ? 890000
+                        : reg.editionId === "enterprise"
+                          ? 2490000
+                          : 0
+                      : 0,
+                  issuedAt: reg.trialStartedAt,
+                  expiresAt: reg.trialEndsAt,
+                  lastHeartbeatAt: reg.createdAt,
+                  entitlements:
+                    reg.editionId === "starter"
+                      ? ["starter_umkm_free_forever", "inbox_wa", "pos_umkm", "master_data"]
+                      : ["inbox_omnichannel", "erp", "pos", "accounting", "ai_agents", "seo_studio"],
+                  notes: defaultNote,
+                });
+              }
+            }
+
+            return {
+              ...prev,
+              tenants: mergedTenants,
+              licenses: mergedLicenses,
+            };
+          });
+        }
+        if (!silent) {
+          showToast(
+            liveList.length > 0
+              ? `Sinkronisasi berhasil: ${liveList.length} pendaftar live dari wacrm-seven-dusky.vercel.app terhubung!`
+              : "Terhubung ke server WACRM — belum ada pendaftar baru sejak terakhir sinkron.",
+          );
+        }
+      } catch {
+        if (!silent) {
+          showToast("Gagal menyinkronkan pendaftar live dari server WACRM.", "error");
+        }
+      } finally {
+        setSyncingLive(false);
+      }
+    },
+    [showToast, updateState],
+  );
+
+  const syncIntelligenceReport = useCallback(
+    async (silent = false) => {
+      setLoadingIntel(true);
+      try {
+        const res = await fetch("/api/intelligence", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const payload = (await res.json()) as {
+          ok?: boolean;
+          report?: PublisherIntelligenceReport | null;
+        };
+        if (payload.report) {
+          setIntelligence(payload.report);
+          if (!silent) {
+            showToast("Analitik penggunaan, suara user & statistik ekonomi berhasil disinkronkan!");
+          }
+        }
+      } catch {
+        if (!silent) {
+          showToast("Gagal menarik laporan intelijen dari server WACRM.", "error");
+        }
+      } finally {
+        setLoadingIntel(false);
+      }
+    },
+    [showToast],
+  );
+
+  const handleUpdateFeedbackStatus = useCallback(
+    async (feedbackId: string, actionStatus: CommunityFeedbackItem["actionStatus"]) => {
+      setIntelligence((prev) =>
+        prev
+          ? {
+              ...prev,
+              voiceOfCustomer: {
+                ...prev.voiceOfCustomer,
+                recentFeedback: prev.voiceOfCustomer.recentFeedback.map((f) =>
+                  f.id === feedbackId ? { ...f, actionStatus } : f,
+                ),
+                testimonials: prev.voiceOfCustomer.testimonials.map((t) =>
+                  t.id === feedbackId ? { ...t, actionStatus } : t,
+                ),
+              },
+            }
+          : prev,
+      );
+      try {
+        const res = await fetch("/api/intelligence", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ feedbackId, actionStatus }),
+        });
+        if (res.ok) {
+          showToast(`Status tindak lanjut diperbarui menjadi "${actionStatus}".`);
+        }
+      } catch {
+        showToast("Status tersimpan lokal, gagal sinkron ke Neon.", "error");
+      }
+    },
+    [showToast],
+  );
+
+  useEffect(() => {
+    const loaded = loadPublisherState();
+    setState(loaded);
+    setHydrated(true);
+    void syncLiveRegistrations(true);
+    void syncIntelligenceReport(true);
+  }, [syncLiveRegistrations, syncIntelligenceReport]);
 
   function handleIssueLicense(input: {
     tenantId: string;
@@ -105,6 +355,20 @@ export function PublisherEmsApp() {
         return res.state;
       });
       showToast(`License Key resmi diterbitkan: ${issuedKey}`);
+      const targetTenant = state.tenants.find((t) => t.id === input.tenantId);
+      if (targetTenant?.syncedFromLive && issuedKey) {
+        void fetch("/api/tenants", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            email: targetTenant.picEmail,
+            tenantId: targetTenant.id,
+            editionId: input.editionId,
+            licenseStatus: "active",
+            licenseKey: issuedKey,
+          }),
+        }).catch(() => undefined);
+      }
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Gagal menerbitkan lisensi.", "error");
     }
@@ -182,7 +446,7 @@ export function PublisherEmsApp() {
                 WACRM Publisher HQ
               </span>
               <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-300">
-                Super Admin EMS
+                v5.3 · Super Admin EMS
               </span>
             </div>
             <div className="text-[11px] text-slate-400">
@@ -191,13 +455,42 @@ export function PublisherEmsApp() {
           </div>
         </div>
 
-        <div className="hidden items-center gap-2 sm:flex">
-          <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-slate-300">
+        <div className="flex flex-wrap items-center gap-2">
+          <a
+            href="/downloads/WACRM-Publisher-HQ-v5.3-Windows-Offline-Installer.zip"
+            download
+            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-400 px-3 py-1.5 text-[11px] font-extrabold text-slate-950 hover:bg-amber-300"
+            title="Unduh Offline Windows Installer (instalasi 100% offline, operasi terhubung online)"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Windows Offline Installer
+          </a>
+          <a
+            href="https://wacrm-seven-dusky.vercel.app"
+            target="_blank"
+            rel="noreferrer"
+            className="hidden items-center gap-1 rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-bold text-emerald-200 hover:bg-emerald-500/20 md:inline-flex"
+          >
+            <ExternalLink className="h-3.5 w-3.5" /> Aplikasi WACRM v5.3
+          </a>
+          <button
+            type="button"
+            disabled={syncingLive}
+            onClick={() => void syncLiveRegistrations(false)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-bold text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-60"
+            title="Tarik data pendaftar terbaru dari wacrm-seven-dusky.vercel.app secara real-time"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${syncingLive ? "animate-spin" : ""}`} />
+            {syncingLive
+              ? "Menyinkronkan..."
+              : `Sinkron Pendaftar Live (${liveSyncInfo.count})`}
+          </button>
+          <span className="hidden items-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-slate-300 lg:inline-flex">
             <Lock className="h-3.5 w-3.5 text-emerald-400" />
-            Private Internal App (noindex)
+            Private Internal App
           </span>
-          <span className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 font-mono text-[11px] font-bold text-emerald-300">
-            {hydrated ? `${state.licenses.length} Lisensi · ${state.journals.length} Jurnal PSAK` : "Memuat..."}
+          <span className="hidden rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 font-mono text-[11px] font-bold text-emerald-300 sm:inline-block">
+            {hydrated ? `${state.tenants.length} Tenant · ${state.licenses.length} Lisensi` : "Memuat..."}
           </span>
         </div>
       </header>
@@ -245,6 +538,34 @@ export function PublisherEmsApp() {
                 state={state}
                 onNavigate={(next) => setTab(next as PublisherTabId)}
                 onQuickCollectOverdue={handleMarkInvoicePaid}
+                onSyncLive={() => {
+                  void syncLiveRegistrations(false);
+                  void syncIntelligenceReport(true);
+                }}
+                syncingLive={syncingLive}
+              />
+            )}
+            {tab === "forecasting" && (
+              <ForecastingView
+                report={intelligence}
+                loading={loadingIntel}
+                onRefresh={() => void syncIntelligenceReport(false)}
+              />
+            )}
+            {tab === "usage_voc" && (
+              <UsageVocView
+                report={intelligence}
+                loading={loadingIntel}
+                onRefresh={() => void syncIntelligenceReport(false)}
+                onUpdateFeedbackStatus={handleUpdateFeedbackStatus}
+              />
+            )}
+            {tab === "economics" && (
+              <EconomicRadarView
+                report={intelligence}
+                loading={loadingIntel}
+                onRefresh={() => void syncIntelligenceReport(false)}
+                onToast={showToast}
               />
             )}
             {tab === "licenses" && (

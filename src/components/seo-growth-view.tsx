@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import {
   Camera,
@@ -11,8 +11,10 @@ import {
   Globe,
   MessageCircle,
   PlayCircle,
+  Save,
   Search,
   Share2,
+  SlidersHorizontal,
   Sparkles,
   TrendingUp,
   Video,
@@ -28,12 +30,18 @@ import {
   computeStoreSeoSummary,
   generateOmnichannelSeoPack,
 } from "@/lib/seo-engine";
+import { normalizeSocialChannelAccount } from "@/lib/store-profile";
+import { SovereignSeoSuite } from "@/components/sovereign-corporate-panels";
+import type { AppEditionId } from "@/lib/crm-types";
 import type { WorkspaceAdapter } from "@/lib/workspace-adapter";
 
 interface SeoGrowthViewProps {
   adapter: WorkspaceAdapter;
+  editionId?: AppEditionId;
   storeProfile: StoreBusinessProfile;
+  onUpdateStoreProfile?: (next: StoreBusinessProfile) => void;
   products: ErpProductRecord[];
+  onOpenEditions?: () => void;
   onRefresh: () => Promise<void>;
   onToast: (message: string, tone?: "ok" | "error") => void;
 }
@@ -51,25 +59,80 @@ const CHANNEL_TABS: Array<{ key: ChannelKey; label: string }> = [
 
 export function SeoGrowthView({
   adapter,
+  editionId = "starter",
   storeProfile,
+  onUpdateStoreProfile,
   products,
+  onOpenEditions,
   onRefresh,
   onToast,
 }: SeoGrowthViewProps) {
   const [selectedId, setSelectedId] = useState<string>(products[0]?.id ?? "");
-  const [activeChannel, setActiveChannel] = useState<ChannelKey>("google");
+  const [activeChannel, setActiveChannel] = useState<ChannelKey>("whatsapp");
+  const [simpleMode, setSimpleMode] = useState<boolean>(true);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
 
+  // Ultra-simple social channel account form (just type FB, IG, TikTok, YT, WA!)
+  const [waInput, setWaInput] = useState(
+    storeProfile.socialHandles?.whatsapp || storeProfile.phone || "",
+  );
+  const [igInput, setIgInput] = useState(storeProfile.socialHandles?.instagram || "");
+  const [fbInput, setFbInput] = useState(storeProfile.socialHandles?.facebook || "");
+  const [ttInput, setTtInput] = useState(storeProfile.socialHandles?.tiktok || "");
+  const [ytInput, setYtInput] = useState(storeProfile.socialHandles?.youtube || "");
+  const [cityInput, setCityInput] = useState(storeProfile.city || "Indonesia");
+
+  const normalizedChannels = useMemo(
+    () => ({
+      whatsapp: normalizeSocialChannelAccount("whatsapp", waInput),
+      instagram: normalizeSocialChannelAccount("instagram", igInput),
+      facebook: normalizeSocialChannelAccount("facebook", fbInput),
+      tiktok: normalizeSocialChannelAccount("tiktok", ttInput),
+      youtube: normalizeSocialChannelAccount("youtube", ytInput),
+    }),
+    [waInput, igInput, fbInput, ttInput, ytInput],
+  );
+
+  const connectedChannelCount = useMemo(
+    () => Object.values(normalizedChannels).filter((c) => c.connected).length,
+    [normalizedChannels],
+  );
+
+  // Live effective store profile so typing a social account immediately updates SEO copy preview!
+  const effectiveProfile = useMemo<StoreBusinessProfile>(
+    () => ({
+      ...storeProfile,
+      city: cityInput.trim() || storeProfile.city,
+      socialHandles: {
+        whatsapp: waInput.trim(),
+        instagram: igInput.trim(),
+        facebook: fbInput.trim(),
+        tiktok: ttInput.trim(),
+        youtube: ytInput.trim(),
+        websiteUrl: storeProfile.socialHandles?.websiteUrl,
+      },
+    }),
+    [storeProfile, cityInput, waInput, igInput, fbInput, ttInput, ytInput],
+  );
+
+  function handleSaveSimpleAccounts(e: FormEvent) {
+    e.preventDefault();
+    onUpdateStoreProfile?.(effectiveProfile);
+    onToast(
+      `Akun kanal disimpan (${connectedChannelCount}/5 terhubung) — seluruh teks promosi & link SEO 6 kanal otomatis diperbarui!`,
+    );
+  }
+
   const summary = useMemo(
-    () => computeStoreSeoSummary(products, storeProfile),
-    [products, storeProfile],
+    () => computeStoreSeoSummary(products, effectiveProfile),
+    [products, effectiveProfile],
   );
 
   const audits = useMemo(
-    () => products.map((p) => ({ product: p, audit: auditProductSeo(p, storeProfile) })),
-    [products, storeProfile],
+    () => products.map((p) => ({ product: p, audit: auditProductSeo(p, effectiveProfile) })),
+    [products, effectiveProfile],
   );
 
   const selectedProduct = useMemo(
@@ -78,14 +141,14 @@ export function SeoGrowthView({
   );
 
   const selectedAudit = useMemo(
-    () => (selectedProduct ? auditProductSeo(selectedProduct, storeProfile) : null),
-    [selectedProduct, storeProfile],
+    () => (selectedProduct ? auditProductSeo(selectedProduct, effectiveProfile) : null),
+    [selectedProduct, effectiveProfile],
   );
 
   const seoPack = useMemo(() => {
     if (!selectedProduct) return null;
-    return generateOmnichannelSeoPack(selectedProduct, storeProfile);
-  }, [selectedProduct, storeProfile]);
+    return generateOmnichannelSeoPack(selectedProduct, effectiveProfile);
+  }, [selectedProduct, effectiveProfile]);
 
   async function copyText(key: string, text: string, label: string) {
     try {
@@ -176,6 +239,14 @@ export function SeoGrowthView({
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setSimpleMode((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3.5 py-2 text-xs font-bold text-cyan-200 hover:bg-cyan-500/20"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            {simpleMode ? "Mode Simpel UMKM (Aktif)" : "Mode Teknis (JSON-LD)"}
+          </button>
           <Link
             href="/katalog"
             target="_blank"
@@ -194,6 +265,185 @@ export function SeoGrowthView({
           </button>
         </div>
       </div>
+
+      {/* ULTRA-SIMPLE CHANNEL ACCOUNT SETUP (Just input FB, IG, TikTok, YouTube & WA!) */}
+      <form
+        onSubmit={handleSaveSimpleAccounts}
+        className="rounded-2xl border border-cyan-500/35 bg-slate-900/95 p-5 shadow-lg"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="inline-flex items-center gap-1.5 text-xs font-extrabold text-cyan-300">
+              <Sparkles className="h-4 w-4" /> Pengaturan Simpel Akun Kanal (Cukup Isi Username — Tanpa Kode!)
+            </div>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              Cukup ketik nomor WA dan username Facebook, Instagram, TikTok, atau YouTube toko Anda.
+              AI otomatis memasang link &amp; tombol order di semua promosi produk + Google SEO.
+            </p>
+          </div>
+          <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-[11px] font-bold text-emerald-300">
+            {connectedChannelCount}/5 Akun Kanal Terhubung
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <label className="block text-xs font-semibold text-slate-300">
+            WhatsApp Bisnis (No. HP / WA)
+            <input
+              type="text"
+              value={waInput}
+              onChange={(e) => setWaInput(e.target.value)}
+              placeholder="Contoh: 081234567890"
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+            />
+            {normalizedChannels.whatsapp.url && (
+              <span className="mt-1 block truncate text-[10px] text-emerald-400">
+                ✓ Link order otomatis: {normalizedChannels.whatsapp.url}
+              </span>
+            )}
+          </label>
+
+          <label className="block text-xs font-semibold text-slate-300">
+            Akun Instagram (Username saja)
+            <input
+              type="text"
+              value={igInput}
+              onChange={(e) => setIgInput(e.target.value)}
+              placeholder="Contoh: @tokoberkah"
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-pink-500"
+            />
+            {normalizedChannels.instagram.url && (
+              <span className="mt-1 block truncate text-[10px] text-pink-300">
+                ✓ {normalizedChannels.instagram.url}
+              </span>
+            )}
+          </label>
+
+          <label className="block text-xs font-semibold text-slate-300">
+            Halaman Facebook (Username / Page)
+            <input
+              type="text"
+              value={fbInput}
+              onChange={(e) => setFbInput(e.target.value)}
+              placeholder="Contoh: tokoberkah.id"
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+            />
+            {normalizedChannels.facebook.url && (
+              <span className="mt-1 block truncate text-[10px] text-blue-300">
+                ✓ {normalizedChannels.facebook.url}
+              </span>
+            )}
+          </label>
+
+          <label className="block text-xs font-semibold text-slate-300">
+            Akun TikTok / TikTok Shop
+            <input
+              type="text"
+              value={ttInput}
+              onChange={(e) => setTtInput(e.target.value)}
+              placeholder="Contoh: @tokoberkah"
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-cyan-400"
+            />
+            {normalizedChannels.tiktok.url && (
+              <span className="mt-1 block truncate text-[10px] text-cyan-300">
+                ✓ {normalizedChannels.tiktok.url}
+              </span>
+            )}
+          </label>
+
+          <label className="block text-xs font-semibold text-slate-300">
+            Channel YouTube
+            <input
+              type="text"
+              value={ytInput}
+              onChange={(e) => setYtInput(e.target.value)}
+              placeholder="Contoh: @tokoberkah"
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-rose-500"
+            />
+            {normalizedChannels.youtube.url && (
+              <span className="mt-1 block truncate text-[10px] text-rose-300">
+                ✓ {normalizedChannels.youtube.url}
+              </span>
+            )}
+          </label>
+
+          <label className="block text-xs font-semibold text-slate-300">
+            Kota / Area Jualan (SEO Lokal)
+            <input
+              type="text"
+              value={cityInput}
+              onChange={(e) => setCityInput(e.target.value)}
+              placeholder="Contoh: Kediri / Surabaya"
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none focus:border-emerald-500"
+            />
+            <span className="mt-1 block text-[10px] text-slate-400">
+              Dipakai otomatis pada kata kunci pencarian lokal Google &amp; Marketplace.
+            </span>
+          </label>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-3">
+          <div className="flex flex-wrap gap-1.5 text-[11px]">
+            {normalizedChannels.whatsapp.url && (
+              <a
+                href={normalizedChannels.whatsapp.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/15 px-2.5 py-1 font-semibold text-emerald-300 hover:bg-emerald-500/25"
+              >
+                Buka WA <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+            {normalizedChannels.instagram.url && (
+              <a
+                href={normalizedChannels.instagram.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-lg bg-pink-500/15 px-2.5 py-1 font-semibold text-pink-300 hover:bg-pink-500/25"
+              >
+                Buka IG <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+            {normalizedChannels.facebook.url && (
+              <a
+                href={normalizedChannels.facebook.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-lg bg-blue-500/15 px-2.5 py-1 font-semibold text-blue-300 hover:bg-blue-500/25"
+              >
+                Buka FB <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+            {normalizedChannels.tiktok.url && (
+              <a
+                href={normalizedChannels.tiktok.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-lg bg-cyan-500/15 px-2.5 py-1 font-semibold text-cyan-300 hover:bg-cyan-500/25"
+              >
+                Buka TikTok <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+            {normalizedChannels.youtube.url && (
+              <a
+                href={normalizedChannels.youtube.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-lg bg-rose-500/15 px-2.5 py-1 font-semibold text-rose-300 hover:bg-rose-500/25"
+              >
+                Buka YouTube <ExternalLink className="h-3 w-3" />
+              </a>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-500 px-4 py-2 text-xs font-extrabold text-slate-950 hover:bg-cyan-400"
+          >
+            <Save className="h-3.5 w-3.5" /> Simpan Akun &amp; Terapkan ke Semua Kanal
+          </button>
+        </div>
+      </form>
 
       {/* KPI Strip + Technical SEO Checklist */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -384,30 +634,43 @@ export function SeoGrowthView({
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-emerald-300">
-                        Schema.org Product JSON-LD (Siap Rich Snippet Google)
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void copyText("jsonld", seoPack.google.jsonLd, "Schema.org JSON-LD")
-                        }
-                        className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-slate-700"
-                      >
-                        {copiedKey === "jsonld" ? (
-                          <Check className="h-3 w-3 text-emerald-400" />
-                        ) : (
-                          <Copy className="h-3 w-3" />
-                        )}
-                        Salin JSON-LD
-                      </button>
+                  {simpleMode ? (
+                    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-100">
+                      <div className="font-bold text-emerald-300">
+                        ✓ Google SEO &amp; Kode Teknis (JSON-LD) Sudah Otomatis Aktif!
+                      </div>
+                      <p className="mt-1 text-emerald-100/80">
+                        Anda tidak perlu menyalin kode teknis apa pun — akun FB, IG, TikTok, YouTube &amp;
+                        WA yang Anda isi di atas sudah otomatis ditautkan ke halaman Katalog Publik SEO.
+                        Aktifkan <strong>Mode Teknis</strong> di kanan atas jika ingin melihat kode JSON-LD.
+                      </p>
                     </div>
-                    <pre className="mt-2 max-h-52 overflow-auto rounded-lg bg-slate-900 p-3 font-mono text-[11px] text-cyan-200">
-                      {seoPack.google.jsonLd}
-                    </pre>
-                  </div>
+                  ) : (
+                    <div className="rounded-xl border border-slate-800 bg-slate-950 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-emerald-300">
+                          Schema.org Product JSON-LD (Siap Rich Snippet Google)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void copyText("jsonld", seoPack.google.jsonLd, "Schema.org JSON-LD")
+                          }
+                          className="inline-flex items-center gap-1 rounded-lg bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-slate-700"
+                        >
+                          {copiedKey === "jsonld" ? (
+                            <Check className="h-3 w-3 text-emerald-400" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                          Salin JSON-LD
+                        </button>
+                      </div>
+                      <pre className="mt-2 max-h-52 overflow-auto rounded-lg bg-slate-900 p-3 font-mono text-[11px] text-cyan-200">
+                        {seoPack.google.jsonLd}
+                      </pre>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -593,6 +856,14 @@ export function SeoGrowthView({
           )}
         </div>
       </div>
+
+      {/* Sovereign Corporate High-Level SEO Suite (Technical Audit, CWV, Multi-Schema & Keyword ROI) */}
+      <SovereignSeoSuite
+        editionId={editionId}
+        businessName={storeProfile.businessName}
+        onOpenEditions={onOpenEditions}
+        onToast={onToast}
+      />
     </div>
   );
 }

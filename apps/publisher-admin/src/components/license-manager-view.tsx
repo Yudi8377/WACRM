@@ -17,7 +17,11 @@ import {
   TrendingUp,
   X,
 } from "lucide-react";
-import { PUBLISHER_EDITIONS, verifySignedLicenseKey } from "@/lib/license-engine";
+import {
+  PUBLISHER_EDITIONS,
+  V53_EDITION_CAPABILITY_MATRIX,
+  verifySignedLicenseKey,
+} from "@/lib/license-engine";
 import {
   formatIdr,
   type BillingCycle,
@@ -182,6 +186,86 @@ export function LicenseManagerView({
             )}
           </div>
         )}
+      </div>
+
+      {/* v5.3 Commercial 4-Edition Entitlement Reference (Synced with wacrm-seven-dusky.vercel.app) */}
+      <div className="rounded-2xl border border-amber-500/35 bg-slate-900/95 p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-extrabold text-white">
+              Katalog &amp; Diferensiasi 4 Edisi WACRM v5.3 (Sinkron dengan Aplikasi Klien)
+            </h3>
+            <p className="text-[11px] text-slate-400">
+              Enterprise AI Suite dibatasi pada Pembukuan Operasional; Akuntansi PSAK/SPT, HRD Payroll CRUD+Print, ERP Korporat, Suite CRM/POS/SEO &amp; Strategi Marketing Enterprise 5-Agen AI dikunci eksklusif di Sovereign Corporate.
+            </p>
+          </div>
+          <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-[10px] font-extrabold text-amber-300">
+            SYNC v5.3 · 4 EDISI AKTIF
+          </span>
+        </div>
+
+        <div className="grid gap-2.5 md:grid-cols-2 lg:grid-cols-4 text-xs">
+          {(["starter", "pro", "enterprise", "sovereign"] as const).map((edId) => {
+            const spec = PUBLISHER_EDITIONS[edId];
+            return (
+              <div
+                key={edId}
+                className={`rounded-xl border p-3 ${
+                  edId === "sovereign"
+                    ? "border-amber-500/45 bg-amber-950/20"
+                    : edId === "enterprise"
+                      ? "border-violet-500/35 bg-violet-950/15"
+                      : edId === "pro"
+                        ? "border-cyan-500/30 bg-cyan-950/15"
+                        : "border-slate-800 bg-slate-950"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <strong className="text-white">{spec.name}</strong>
+                  <span className="font-mono text-[10px] font-bold text-emerald-300">
+                    {spec.monthlyPriceIdr === 0 ? "Rp 0" : `${formatIdr(spec.monthlyPriceIdr)}/bln`}
+                  </span>
+                </div>
+                <div className="mt-0.5 text-[10px] font-semibold text-amber-300">{spec.badge}</div>
+                <p className="mt-1.5 text-[10px] leading-relaxed text-slate-300">{spec.positioning}</p>
+                <div className="mt-2 font-mono text-[10px] text-slate-400">
+                  {spec.entitlements.length} entitlement · {spec.maxAiAgents} AI Agent ·{" "}
+                  {spec.defaultSeats >= 9999 ? "Unlimited" : `${spec.defaultSeats}`} kursi
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80">
+          <table className="w-full min-w-[640px] text-left text-[11px]">
+            <thead className="border-b border-slate-800 text-slate-400">
+              <tr>
+                <th className="px-3 py-2">Modul &amp; Kapabilitas v5.3</th>
+                <th className="px-2 py-2 text-center">Starter</th>
+                <th className="px-2 py-2 text-center">Growth Pro</th>
+                <th className="px-2 py-2 text-center">Enterprise</th>
+                <th className="px-2 py-2 text-center text-amber-300">Sovereign</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/80">
+              {V53_EDITION_CAPABILITY_MATRIX.map((row) => (
+                <tr key={row.key}>
+                  <td className="px-3 py-1.5 text-slate-200">{row.label}</td>
+                  {(["starter", "pro", "enterprise", "sovereign"] as const).map((edId) => (
+                    <td key={edId} className="px-2 py-1.5 text-center font-bold">
+                      {row.tiers[edId] ? (
+                        <span className="text-emerald-400">✓</span>
+                      ) : (
+                        <span className="text-slate-600">🔒</span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Status Filter */}
